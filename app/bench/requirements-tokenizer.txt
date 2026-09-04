@@ -1,21 +1,3 @@
-# Isolated from requirements.txt so the benchmark client stays aiohttp-only.
-# Only app/bench/src/verify_profiles.py needs this: it measures the pinned prompts against a
-# real tokenizer. The harnesses never tokenize anything — they read token counts from the
-# server's usage field — so this must not reach the bench Dockerfile or its slim image.
-#
-# Pinned exactly, not floated, because token counts depend on the tokenizer implementation:
-# a different transformers release can tokenize the same text differently or apply a different
-# chat template, which would silently change the figures recorded in docs/prompt_tokens/.
-# The version is recorded alongside those counts so they stay attributable.
-#
-# Floor of 5.12.0 matches app/quantize/requirements.txt: Gemma 4 (model_type "gemma4") is only
-# recognised from 5.8.1, and the two apps should agree on what they can load.
-transformers==5.14.1
-
-# Required by transformers to render chat templates, which is how the wire-level token count
-# (raw prompt + role markers) is measured.
+transformers==5.16.1
 jinja2==3.1.6
-# Kimi K3 ships a custom tokenizer whose modeling file imports tiktoken, so loading it fails with
-# an ImportError without this. Needed only for that family; the other tokenizers here do not use
-# it. Pinned for the same reason as the rest: a tokenizer change would silently move the counts.
-tiktoken==0.13.0
+tiktoken==0.14.0

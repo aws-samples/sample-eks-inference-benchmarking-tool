@@ -1,8 +1,1 @@
-# Isolated from requirements.txt so the core harnesses stay aiohttp-only.
-# Only app/bench/src/aiperf_harness.py needs this.
-#
-# AIPerf is a fast-moving 0.x: the CLI surface and export schema can change between
-# minor versions, so the version is PINNED exactly, recorded in every protocol lock,
-# and any upgrade is treated as a protocol change requiring recalibration against a
-# server the throughput harness has already characterized.
 aiperf==0.12.0

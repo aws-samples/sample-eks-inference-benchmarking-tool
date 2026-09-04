@@ -1,8 +1,2 @@
-# Isolated from requirements.txt so the core harnesses stay aiohttp-only.
-# Only app/bench/src/arrival_rate.py needs this.
-#
-# mlcommons-loadgen publishes NO wheels: it builds from source and needs a C++ toolchain.
-# It is auto-published from the master branch of mlcommons/inference, so the version is
-# pinned rather than floated to keep results attributable to a known LoadGen build.
 aiohttp==3.14.3
 mlcommons-loadgen==6.0.17
