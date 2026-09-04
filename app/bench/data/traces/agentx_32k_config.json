@@ -1,0 +1,67 @@
+{
+ "new_tokens_per_turn": {
+  "mu": 7.495541943884256,
+  "sigma": 1.1532357118934957,
+  "mean": 875.0,
+  "median": 450.0,
+  "min": null,
+  "max": null,
+  "bias": 1.0
+ },
+ "generation_length": {
+  "mu": 5.703782474656201,
+  "sigma": 1.0107676525947897,
+  "mean": 500.0,
+  "median": 300.0,
+  "min": null,
+  "max": null
+ },
+ "inter_turn_delay": {
+  "agentic_fraction": 0.7,
+  "agentic_delay": {
+   "mu": 7.495541943884256,
+   "sigma": 0.8105603826637915,
+   "mean": 2500.0,
+   "median": 1800.0,
+   "min": null,
+   "max": null
+  },
+  "human_delay": {
+   "mu": 10.126631103850338,
+   "sigma": 0.9695397147571992,
+   "mean": 40000.0,
+   "median": 25000.0,
+   "min": null,
+   "max": null
+  },
+  "max": null
+ },
+ "reset": {
+  "base_probability": 0.02,
+  "context_scaling": 2.0
+ },
+ "turns": null,
+ "max_prompt_tokens": 28000,
+ "block_size": 512,
+ "cache": {
+  "layer1_tokens": 8000,
+  "layer1_5_tokens": 5000,
+  "layer2": {
+   "mu": 8.517193191416238,
+   "sigma": 1.1774100225154747,
+   "mean": 2500.0,
+   "median": 1250.0,
+   "min": null,
+   "max": null
+  },
+  "layer1_5_groups": {
+   "num_groups": 50,
+   "zipf_alpha": 1.2
+  }
+ },
+ "restart_initial_probability": 0.0,
+ "restart_turn_range": [
+  5,
+  15
+ ]
+}

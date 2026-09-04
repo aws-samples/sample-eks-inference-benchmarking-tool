@@ -1,0 +1,131 @@
+# The Kubernetes Job template that `main.py launch` uses to run benchmarks in-cluster.
+#
+# HOW IT WORKS
+#   The launcher packs the harness code into a ConfigMap (base64 tarball — no image
+#   build or registry push), substitutes the placeholders below (job name, suite args,
+#   git revision, extra requirements), and applies the result. The Job pod installs
+#   dependencies, unpacks the code, runs the suite against the server over cluster DNS,
+#   and returns results through stdout markers that the launcher extracts back to
+#   local disk.
+#
+# WHY IT EXISTS
+#   Measuring through `kubectl port-forward` added roughly 185 ms of tunnel setup to
+#   every TTFT sample (276 ms first byte on a fresh connection vs 90 ms warm) and
+#   dropped connections mid-run, invalidating reps. Running the client in-cluster
+#   removes the tunnel from the measurement path entirely.
+#
+#   The pod deliberately requests no GPU: it is the client, and co-scheduling it onto
+#   the node under test would have it compete with the server it is measuring.
+#
+# DEPENDENCIES
+#   A harness's extra dependencies (aiperf) are pip-installed from a requirements file
+#   inside the payload, via the EXTRA_REQUIREMENTS placeholder the launcher resolves —
+#   so the repo's version pin is the one that runs in-cluster. CPU is sized for the
+#   heaviest client; see the note at `resources` below.
+#
+# WHY ONE ARGS STRING
+#   Every suite flag travels in SUITE_ARGS rather than as its own env var, so adding a
+#   suite flag needs no change here. The launcher refuses any argument containing
+#   whitespace, since this is expanded unquoted below.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: __JOB_NAME__
+  namespace: __NAMESPACE__
+  labels: { app: bench-suite }
+spec:
+  backoffLimit: 0          # a failed benchmark must not silently re-run and re-measure
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: { app: bench-suite }
+    spec:
+      restartPolicy: Never
+      # CPU-only. Deliberately does NOT request a GPU: the harness is a client, and
+      # co-scheduling it onto the GPU node under test would have it compete with the
+      # server it is measuring.
+      tolerations:
+        - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+        - { key: workload, operator: Exists, effect: NoSchedule }
+        - { key: capacity-reservation, operator: Exists, effect: NoSchedule }
+      containers:
+        - name: runner
+          # Full python image, not -slim: mlcommons-loadgen needs a C++ toolchain.
+          image: python:3.12
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              echo "=== installing harness dependencies ==="
+              pip install -q --no-cache-dir aiohttp==3.11.18 mlcommons-loadgen==6.0.17
+
+              # The code arrives as a single base64 gzipped tarball rather than as separate
+              # ConfigMap keys: ConfigMap keys cannot contain '/', so individual files would
+              # need an items->path mapping each. A tarball preserves the tree exactly and
+              # keeps this manifest independent of which files the harness happens to need.
+              echo "=== unpacking harness ==="
+              mkdir -p /work/repo
+              base64 -d /app/code.tar.gz.b64 | tar xzf - -C /work/repo
+              cd /work/repo
+              echo "  unpacked: $(find . -type f | wc -l) files"
+
+              # Some harnesses wrap an external tool with its own dependency set (aiperf).
+              # The requirements file rides inside the payload so the version pin recorded
+              # in the repo is the one installed here, not a copy in this manifest.
+              if [ -n "${EXTRA_REQUIREMENTS}" ]; then
+                echo "=== installing harness extras: ${EXTRA_REQUIREMENTS} ==="
+                pip install -q --no-cache-dir -r "${EXTRA_REQUIREMENTS}"
+              fi
+
+              echo "=== starting run ==="
+              set +e
+              python3 -u app/bench/src/main.py ${RUN_COMMAND} ${SUITE_ARGS}
+              rc=$?
+              set -e
+
+              # Results are returned through stdout between markers. The launcher extracts them,
+              # so nothing depends on the pod still existing afterwards. An accuracy reference
+              # comes back the same way; it is written into the repo tree rather than /work/out,
+              # because accuracy.py resolves its path from the repo root.
+              echo
+              for f in $(find /work/out -maxdepth 2 -name '*.txt' 2>/dev/null | sort) \
+                       $(find /work/repo/docs/accuracy -maxdepth 1 -name '*.json' 2>/dev/null | sort); do
+                case "$f" in
+                  /work/out/*) name="${f#/work/out/}" ;;
+                  *)           name="docs/accuracy/$(basename "$f")" ;;
+                esac
+                echo "===== BEGIN RESULT FILE: ${name} ====="
+                cat "$f"
+                echo "===== END RESULT FILE: ${name} ====="
+              done
+              echo "=== runner exit code: $rc ==="
+              exit $rc
+          env:
+            # Which subcommand the Job runs: `suite` to measure, `accuracy` to capture a
+            # reference. Both need the same packed harness and the same cluster-DNS endpoint,
+            # which is why one Job template serves both.
+            - { name: RUN_COMMAND, value: "__RUN_COMMAND__" }
+            - { name: SUITE_ARGS, value: "__SUITE_ARGS__" }
+            # Path (inside the payload) of an extra requirements file, or empty. Set by the
+            # launcher when the protocol's harness declares one, so the manifest never
+            # hardcodes another tool's dependency pins.
+            - { name: EXTRA_REQUIREMENTS, value: "__EXTRA_REQUIREMENTS__" }
+            # Provenance: a pod has no .git, so without this the protocol lock records the
+            # harness revision as "unknown" and the result cannot be tied to a commit.
+            - { name: HARNESS_GIT_REV, value: "__HARNESS_GIT_REV__" }
+            - { name: PYTHONUNBUFFERED, value: "1" }
+          resources:
+            # Sized for the heaviest client, aiperf, whose multiprocess architecture
+            # (16 workers + 5 service processes) reached client_cpu 0.96 of an 8-CPU
+            # limit in the 2026-08-10 calibration run — a client that saturated its own
+            # CPU may be measuring itself. The aiohttp harnesses use a fraction of this.
+            requests: { cpu: "8", memory: 8Gi }
+            limits:   { cpu: "16", memory: 16Gi }
+          volumeMounts:
+            - { name: code, mountPath: /app }
+            - { name: work, mountPath: /work }
+      volumes:
+        - name: code
+          configMap: { name: __CONFIGMAP__ }
+        - name: work
+          emptyDir: { sizeLimit: 8Gi }

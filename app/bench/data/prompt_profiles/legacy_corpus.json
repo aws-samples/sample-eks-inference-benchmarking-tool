@@ -1,0 +1,21 @@
+{
+  "schema": "prompt-profile/v2",
+  "name": "legacy_corpus",
+  "legacy": true,
+  "use_case": "HISTORICAL ONLY. Cross-instance continuity with the g7e/g6e/p5en corpus. Five FIXED prompts that REPEAT across requests.",
+  "rationale": "Do not use for new claims, for two reasons. A 150-token output budget truncates a reasoning model mid-thought: the budget is spent on chain of thought and the request returns finish_reason=length with zero visible content, so it measures truncation rather than serving. And the five prompts repeat, so with prefix caching enabled server-side it becomes a cache-hit measurement.",
+  "target_input_tokens": 9,
+  "output_tokens": 150,
+  "fixed_prompt_set": true,
+  "prompt_count": 5,
+  "distinct_prompt_count": 5,
+  "intentional_duplicate_indices": [],
+  "duplicate_note": "These indices repeat an earlier prompt verbatim, on purpose. With prefix caching OFF they are indistinguishable from any other prompt. With it ON they are the only prompts able to hit the cache, which is how to measure the caching effect without contaminating the uncached figure.",
+  "prompts": [
+    "Explain quantum computing in simple terms.",
+    "Write a Python function to reverse a linked list.",
+    "What are the main differences between Kubernetes and Docker Swarm?",
+    "Summarize the plot of The Matrix.",
+    "How does a transformer neural network work?"
+  ]
+}

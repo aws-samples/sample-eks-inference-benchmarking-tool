@@ -1,0 +1,66 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+aiperf-venv/
+benchvenv/
+.env
+.venv
+.benchvenv
+.aiperf-venv
+*.log
+.DS_Store
+# Downloaded and quantized weights. Anchored to the repository root so nested
+# documentation directories are not ignored.
+/models/
+/quantized_models/
+.idea/
+.vscode/
+.DS_Store
+
+# Profiler traces. Nsight Systems reports are large binaries (a 90-second vLLM capture is
+# ~138 MB), which exceeds GitHub's 100 MB per-file limit. Keep them out of git and store them
+# in S3; the summary tables that answer the actual question are committed as text alongside
+# the corresponding benchmark_results_*.txt.
+*.nsys-rep
+*.qdrep
+*.sqlite
+docs/results/traces/
+
+# MLPerf LoadGen writes its own logs (summary, detail, trace) per invocation. The runner
+# points these into docs/results/.../reps/ for real runs; this catches ad-hoc invocations.
+loadgen_out/
+mlperf_log_*.txt
+mlperf_log_*.json
+
+# Benchmark results are private to whoever ran them. `suite` and `launch` write one .txt per run
+# into docs/results/, and those files carry the endpoint, cluster context, served model path and
+# pod names of the environment they were measured in. They stay local: a result describes your
+# infrastructure, not the harness. docs/results/README.md documents the format and is tracked.
+docs/results/*.txt
+
+# Written reports are private for the same reason and one more: they interpret the results above,
+# quoting numbers measured on a particular customer's cluster. Each directory's README.md stays
+# tracked and documents the format, so the conventions are public and the measurements are not.
+docs/reports/*.md
+docs/reports/reruns
+docs/reports/aiperf-calibration
+docs/reports/validation
+!docs/reports/README.md
+
+# Implementation plans are working documents, not deliverables. They record intent, file paths and
+# line numbers for work not yet done, so they go stale the moment the work lands and they carry no
+# value to anyone cloning the repo. Kept local for the same reason as the reports above.
+docs/plans/
+
+# Accuracy references and prompt token counts are measurements too, not configuration. A reference
+# is your server's own output, and is only valid ground truth for a server you verified yourself;
+# a token count belongs to the exact tokenizer release that produced it. Both are cheap to
+# regenerate — `accuracy.py --write-reference` and `verify-profiles` — and each directory's
+# README.md explains how. The READMEs also keep the directories present in a clone, which the
+# launcher's payload packing requires.
+docs/accuracy/*.json
+docs/prompt_tokens/*.json

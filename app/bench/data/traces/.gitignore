@@ -1,0 +1,11 @@
+# User-supplied traces for `trace_replay` stay out of git by default: a production
+# trace leaks real workload patterns (arrival timing, session structure, context
+# sizes) and must never land in a public repository by accident. The launcher payload
+# packs from disk, not from git, so ignored traces still ride into the cluster.
+#
+# The pinned artifacts below are the exception: committed once, replayed identically
+# on every run. See README.md for the regeneration policy.
+*.jsonl
+*.json
+!agentx_32k_seed42.jsonl
+!agentx_32k_config.json
