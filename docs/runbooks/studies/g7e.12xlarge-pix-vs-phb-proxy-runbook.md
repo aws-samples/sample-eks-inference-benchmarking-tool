@@ -21,7 +21,7 @@ The retained manifests are cleaned, functionally equivalent versions of the exec
 ## Before you begin
 
 1. Run from the repository root with AWS, `kubectl`, Helm, Python 3, and `sha256sum` available. Setup step 1 creates `$NAMESPACE` idempotently and installs the pinned NVIDIA device plugin. No HF token is needed because both study checkpoints are public.
-2. Use an idle GPU node. Do not repurpose a node with a customer workload.
+2. Use an idle GPU node. Do not repurpose a node that is running another workload.
 3. The eight executed manifests pin `kubernetes.io/hostname` to the placeholder `ip-10-0-0-1.us-east-1.compute.internal`. Every arm must land on the **same** physical node, or the comparison measures two different hosts rather than two transports. Substitute your own node name identically across all eight files before applying anything, and treat them as one versioned set. The namespace is not pinned in the manifests; it comes from `-n "$NAMESPACE"`.
 4. The storage manifest creates `g7e12-switch-model-storage`. 
 5. The client node group incurs EC2 cost. It must inherit the cluster's working system-node launch template/security groups; an ad-hoc launch template can produce a node with broken pod DNS.

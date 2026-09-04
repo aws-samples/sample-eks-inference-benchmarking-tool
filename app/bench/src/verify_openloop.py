@@ -1,9 +1,7 @@
 """Regression checks for the open-loop (MLPerf LoadGen) harness, runnable without a GPU.
 
-Every check here encodes a defect that reached a real run on 2026-08-12, when the
-`server_qps` protocol was first pushed to a customer-facing conclusion and produced
-figures that could not be trusted. All three defects predated the AIPerf work; they were
-latent because no published result had ever come from this protocol.
+Every check here encodes a defect that reached a real run, when the `server_qps` protocol 
+was first used to reach a conclusion and produced figures that could not be relied on. 
 
   certification floor
       LoadGen's Server scenario certifies a p99 only when queries_issued >= h + t, where

@@ -111,7 +111,7 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/qwe
 ## Settings
 
 
-- **`- "/models/Qwen2.5-7B-Instruct"`** BF16 baseline — no quantization flags, matches what H100 customers run today. This is the comparison point: FP8 on g7e should beat this on tokens/sec/$
+- **`- "/models/Qwen2.5-7B-Instruct"`** BF16 baseline — no quantization flags, representing a common H100 deployment. This is the comparison point for FP8 on g7e, measured on tokens/sec/$
 
 - **`- name: VLLM_ATTENTION_BACKEND`** FlashInfer supports sm_120 (Blackwell) kernels; XFormers does not.
 - **`- "--enable-chunked-prefill"`** Breaks long prefills into chunks; reduces TTFT for long prompts

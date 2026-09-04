@@ -4,7 +4,7 @@ Pinned input/output shapes for benchmark runs. One JSON file per profile, each c
 
 ## Why these exist
 
-Every benchmark this repo published before these profiles used a **41-token input** — a UUID nonce plus one task sentence — and **no result file recorded the input size**. Nothing in the output contradicted the assumption that the headline `1,024` was an input length rather than an output cap. That ambiguity survived multiple report revisions and a customer conversation.
+Every benchmark this repo published before these profiles used a **41-token input** — a UUID nonce plus one task sentence — and **no result file recorded the input size**. Nothing in the output contradicted the assumption that the headline `1,024` was an input length rather than an output cap. That ambiguity persisted through multiple report revisions before it was identified.
 
 ## The two design rules
 
