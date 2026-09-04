@@ -1,0 +1,58 @@
+#
+# Job that downloads the Qwen3 235B A22B FP8 weights onto the shared PVC. Apply this once per filesystem before the qwen3-235b recipe, and expect a long transfer: the checkpoint is 48 shards.
+#
+# SUBSTITUTE: fsx-pvc.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: download-qwen3-235b-fp8
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: download-qwen3-235b-fp8
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: downloader
+          image: python:3.12-slim
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          command: ["bash", "-c"]
+          env:
+            - name: MODEL_REPO
+              value: Qwen/Qwen3-235B-A22B-FP8
+            - name: MODEL_DIR
+              value: /models/qwen3-235b-a22b-fp8
+            - name: HF_HUB_VERSION
+              value: "1.28.0"
+            - name: HF_HOME
+              value: /models/.hf-cache
+            - name: HF_XET_HIGH_PERFORMANCE
+              value: "1"
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+          args:
+            - |
+              set -eux
+              pip install --no-cache-dir -q "huggingface_hub==$HF_HUB_VERSION"
+              hf download "$MODEL_REPO" --local-dir "$MODEL_DIR"
+          volumeMounts:
+            - name: models
+              mountPath: /models
+          resources:
+            requests:
+              cpu: "8"
+              memory: 32Gi
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: fsx-pvc
