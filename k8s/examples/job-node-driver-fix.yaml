@@ -1,0 +1,240 @@
+# Repairs a single GPU node that joined the cluster without advertising `nvidia.com/gpu`.
+#
+# The fault: the node's AMI provides the proprietary NVIDIA kernel module, but the GPU requires
+# the open kernel modules, so the driver never loads and the device plugin advertises no GPUs.
+# This Job builds the open module for the running kernel, retires the closed one, and reboots.
+#
+# One-shot: nothing is left running on the cluster once the Job completes.
+# Conservative: the script makes no changes unless it recognizes this specific fault, and it
+# will not reboot unless it has verified that the open module is the one that will load.
+#
+# Before applying, set the instance type in the Job's nodeSelector below.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nvidia-open-driver-fix
+data:
+  heal.sh: |
+    #!/bin/sh
+    # Runs inside the host mount namespace via chroot.
+    # Exit 0 means the node needs nothing or was repaired; non-zero means a repair was
+    # attempted and failed.
+    set -u
+
+    STATE_DIR=/var/lib/nvidia-open-fix
+    SRC_STASH="${STATE_DIR}/src"
+    K=$(uname -r)
+    MARKER="${STATE_DIR}/${K}.done"
+    ATTEMPTS="${STATE_DIR}/${K}.attempts"
+    MAX_ATTEMPTS=3
+
+    log() { echo "[heal] $*"; }
+
+    # --- 0. Already healthy? ---
+    if nvidia-smi -L 2>/dev/null | grep -q "^GPU"; then
+      log "healthy: host enumerates GPUs, nothing to do"
+      exit 0
+    fi
+
+    # --- 1. Is this the fault this script repairs? ---
+    # Three independent signals, because the kernel-log message alone is not reliable: a
+    # previously healed node no longer runs the closed module that emits it, and on a
+    # long-lived node the ring buffer has rotated past it.
+    WHY=""
+    if dmesg 2>/dev/null | grep -q "requires use of the NVIDIA open kernel modules"; then
+      WHY="the kernel log carries the open-module message"
+    elif [ -d "$SRC_STASH" ]; then
+      WHY="this node was healed before and has stashed sources; the running kernel is now ${K}"
+    elif ls /lib/modules/*/extra/nvidia.ko >/dev/null 2>&1; then
+      WHY="an open module is installed for another kernel, and none for ${K}"
+    fi
+
+    if [ -z "$WHY" ]; then
+      log "REFUSING TO ACT: GPUs are absent, but none of the three states this script repairs"
+      log "are present, so this is a different fault. Likely causes: the device plugin is not"
+      log "installed, the node group was built on a non-GPU AMI, or the kernel log has rotated"
+      log "past the message. Triage on the host with:"
+      log "    nvidia-smi -L"
+      log "    modinfo -k ${K} -F license nvidia"
+      log "    dmesg | grep -i nvrm"
+      exit 0
+    fi
+    log "acting because ${WHY}"
+
+    # --- 2. Run at most once per kernel, and give up after MAX_ATTEMPTS failures ---
+    if [ -f "$MARKER" ]; then
+      log "REFUSING TO RETRY: a build already succeeded for kernel ${K} and GPUs are still"
+      log "absent. Rebooting again will not change that. Investigate by hand. Marker contents:"
+      sed 's/^/    /' "$MARKER" 2>/dev/null
+      exit 0
+    fi
+
+    N=0
+    [ -f "$ATTEMPTS" ] && N=$(cat "$ATTEMPTS" 2>/dev/null || echo 0)
+    case "$N" in ''|*[!0-9]*) N=0 ;; esac
+    if [ "$N" -ge "$MAX_ATTEMPTS" ]; then
+      log "REFUSING TO RETRY: ${N} failed attempts for kernel ${K}. Something is wrong that"
+      log "retrying will not fix. Investigate, then reset with: rm ${ATTEMPTS}"
+      exit 0
+    fi
+    mkdir -p "$STATE_DIR"
+    echo $((N + 1)) > "$ATTEMPTS"
+    log "attempt $((N + 1)) of ${MAX_ATTEMPTS} for kernel ${K}"
+
+    set -e
+
+    # --- 3. Install a toolchain matching the RUNNING kernel ---
+    # On 6.12 the headers ship as kernel6.12-devel; plain kernel-devel is a different kernel
+    # stream. Both are pinned to ${K}: headers from any other kernel build a module that
+    # will not load.
+    dnf install -y "kernel6.12-devel-${K}" \
+      || dnf install -y "kernel-devel-${K}" \
+      || { log "FAILED: no -devel package matching the running kernel ${K}"; exit 1; }
+    dnf install -y gcc make
+    [ -d "/lib/modules/${K}/build" ] \
+      || { log "FAILED: /lib/modules/${K}/build absent after installing headers"; exit 1; }
+
+    # --- 4. Locate the driver sources ---
+    # Sort by version and take the highest. Picking the first match instead would build the
+    # older tree whenever two are present, for example nvidia-535 over nvidia-580.
+    pick_tree() {
+      ls -d "$1"/nvidia-*/ 2>/dev/null | sed 's#/$##' | sort -V | tail -1
+    }
+    tree_version() {
+      basename "$1" | sed 's/^nvidia-//; s/^open-//'
+    }
+
+    SRC=$(pick_tree /usr/src || true)
+    if [ -n "$SRC" ]; then
+      VER=$(tree_version "$SRC")
+      log "using the AMI's source tree ${SRC} (driver ${VER})"
+      # Stash before any package operation: installing the open package removes this tree,
+      # which would leave the next kernel upgrade with nothing to build from.
+      mkdir -p "$SRC_STASH"
+      if [ ! -d "${SRC_STASH}/$(basename "$SRC")" ]; then
+        cp -a "$SRC" "${SRC_STASH}/"
+        log "stashed sources to ${SRC_STASH}/$(basename "$SRC") for future kernels"
+      fi
+    else
+      SRC=$(pick_tree "$SRC_STASH" || true)
+      if [ -z "$SRC" ]; then
+        log "FAILED: no source tree at /usr/src/nvidia-* and nothing stashed in ${SRC_STASH}."
+        log "Restore one with: dnf install -y kmod-nvidia-latest-dkms"
+        exit 1
+      fi
+      VER=$(tree_version "$SRC")
+      log "the AMI tree is gone, which is expected on a previously healed node"
+      log "building from the stash ${SRC} (driver ${VER})"
+    fi
+
+    # --- 5. Install the open package matching the source version ---
+    # Deliberately not the newest available: a newer open package removes the source tree.
+    # Override via NVIDIA_OPEN_VERSION only with a version confirmed to ship sources.
+    WANT="${NVIDIA_OPEN_VERSION:-$VER}"
+    if [ "$WANT" != "$VER" ]; then
+      log "NVIDIA_OPEN_VERSION overrides the AMI version: installing ${WANT}, sources are ${VER}"
+    fi
+    dnf install -y --allowerasing "kmod-nvidia-open-dkms-${WANT}" \
+      || log "WARNING: kmod-nvidia-open-dkms-${WANT} not installable; continuing from sources"
+
+    # --- 6. Build the module ---
+    cd "$SRC"
+    make clean >/dev/null 2>&1 || true
+    make -j4 modules KERNEL_UNAME="$K" SYSSRC="/lib/modules/${K}/build"
+
+    # A zero exit from make does not prove the open variant is what got built.
+    [ -s kernel-open/nvidia.ko ] \
+      || { log "FAILED: make succeeded but kernel-open/nvidia.ko is missing or empty"; exit 1; }
+
+    # --- 7. Install the open module and retire the closed one ---
+    mkdir -p "/lib/modules/${K}/extra"
+    cp kernel-open/*.ko "/lib/modules/${K}/extra/"
+
+    # `--allowerasing` above only retires a closed module that RPM owns, not one the AMI baked
+    # in outside RPM. Rename those instead of deleting them, so the change is reversible.
+    # Anything under extra/ was installed by this script and is left alone.
+    find "/lib/modules/${K}" -name 'nvidia*.ko*' -not -path '*/extra/*' 2>/dev/null \
+    | while read -r stale; do
+        mv "$stale" "${stale}.closed-disabled"
+        log "parked stale closed module ${stale}"
+      done
+
+    depmod -a "$K"
+
+    # --- 8. Verify the open module is the one that will load, then reboot ---
+    # The open module reports "Dual MIT/GPL"; the proprietary one reports "NVIDIA". Checking
+    # here is far cheaper than rebooting and discovering the closed module loaded again.
+    LIC=$(modinfo -k "$K" -F license nvidia 2>/dev/null || echo unknown)
+    case "$LIC" in
+      *"Dual MIT/GPL"*)
+        log "verified: modinfo reports license '${LIC}' for kernel ${K}"
+        ;;
+      *)
+        log "FAILED: modinfo reports license '${LIC}', expected Dual MIT/GPL."
+        log "NOT rebooting, because the closed module would load again. Inspect"
+        log "    /lib/modules/${K}/extra  and  modinfo -k ${K} -n nvidia"
+        exit 1
+        ;;
+    esac
+
+    {
+      echo "kernel=${K}"
+      echo "driver_sources=${VER}"
+      echo "package_installed=${WANT}"
+      echo "source_tree=${SRC}"
+      echo "license=${LIC}"
+      echo "built_at=$(date -u +%FT%TZ)"
+    } > "$MARKER"
+    rm -f "$ATTEMPTS"
+
+    log "BUILD OK for kernel ${K}, driver ${VER}; rebooting to load the open module"
+    sync
+    # Let systemd own the reboot; --no-block returns immediately. A backgrounded `reboot` would
+    # depend on the subshell outliving the container, a race that can leave the correct modules
+    # sitting on disk unloaded.
+    systemctl --no-block reboot 2>/dev/null || reboot
+    exit 0
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nvidia-open-driver-fix
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        # SUBSTITUTE: the instance type of the node to repair.
+        node.kubernetes.io/instance-type: g7.24xlarge
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      hostPID: true
+      containers:
+        - name: driver-fix
+          image: public.ecr.aws/amazonlinux/amazonlinux:2023
+          securityContext:
+            privileged: true
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: "8", memory: 16Gi }
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              install -m 0755 /script/heal.sh /host/tmp/nvidia-open-heal.sh
+              chroot /host /tmp/nvidia-open-heal.sh 2>&1
+              echo "=== if the script rebooted, expect nvidia.com/gpu in 2-3 min. Verify with:"
+              echo "===   kubectl get node <node> -o jsonpath='{.status.allocatable}'"
+              echo "===   cat /var/lib/nvidia-open-fix/\$(uname -r).done   # on the host"
+          volumeMounts:
+            - { name: host, mountPath: /host }
+            - { name: script, mountPath: /script, readOnly: true }
+      volumes:
+        - name: host
+          hostPath: { path: / }
+        - name: script
+          configMap:
+            name: nvidia-open-driver-fix

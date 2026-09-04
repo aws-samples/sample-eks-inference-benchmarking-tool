@@ -1,0 +1,17 @@
+#
+# ConfigMap carrying sitecustomize.py, mounted by every recipe that runs the vllm:0.21.0-gpu-py312 image. Apply it before deploying one of those recipes, or the pod fails at startup on a repo-id validation error.
+#
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vllm-sitecustomize
+data:
+  sitecustomize.py: |
+    try:
+        import huggingface_hub.utils._validators as _v
+        _orig = _v.validate_repo_id
+        _v.validate_repo_id = (
+            lambda repo_id, **kw: None if str(repo_id).startswith("/") else _orig(repo_id, **kw)
+        )
+    except Exception:
+        pass

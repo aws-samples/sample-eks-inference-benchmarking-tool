@@ -1,0 +1,387 @@
+# Kubernetes examples
+
+**These are examples, not runnable manifests.** Every identifier in them is a placeholder. Copy one, substitute your own values, and apply it.
+
+These manifests exist because the benchmark harness assumes a cluster with GPU nodes, somewhere to keep model weights, and a few supporting resources. None of that ships with the repo. We have provided examples for the most common Kubernetes manifests you might need.
+
+## What to substitute
+
+Placeholders are structurally valid, so a manifest still parses and AWS validation still gives a useful error. They are also obviously fake, so nothing here can be applied by accident and quietly point at someone else's account.
+
+**The namespace is not one of them.** No example sets `metadata.namespace`, matching the recipes in [`vllm-recipes/`](../../vllm-recipes/). Pass it at apply time and the whole file lands where you put it:
+
+```bash
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f k8s/examples/<file>.yaml
+```
+
+A manifest that pinned its own namespace would either land somewhere you did not intend or be refused outright when the `-n` you passed disagreed with it.
+
+| Placeholder | Meaning |
+|---|---|
+| `012345678901` | AWS account. Twelve digits, because a shorter one fails validation in a way that does not name the cause. |
+| `us-east-1` | Region. A real one so manifests parse. Change it to where your GPU capacity is. |
+| `my-cluster` | EKS cluster name. |
+| `fsx-pvc` | The PVC holding model weights. |
+| `subnet-0123456789abcdef0` | Subnet. Suffix is 17 hex characters. |
+| `sg-0123456789abcdef0` | Security group. |
+| `fs-0123456789abcdef0` | FSx for Lustre filesystem. |
+| `my-model-weights` | S3 bucket for staged weights. |
+| `my-repo:my-tag` | ECR repository and tag. |
+
+Model ids like `Qwen/Qwen2.5-7B-Instruct` are real and left alone, so an example works as written once the infrastructure values are yours.
+
+## The examples
+
+| File | Kind | Purpose |
+|---|---|---|
+| `eksctl-cluster.yaml` | ClusterConfig | EKS cluster with the add-ons a GPU benchmark needs, and a CPU node group only |
+| `eksctl-nodegroup-gpu-efa.yaml` | ClusterConfig | Multi-node GPU group with EFA, one AZ, for distributed serving |
+| `eksctl-nodegroup-gpu-spot.yaml` | ClusterConfig | Single-node Spot GPU group with node-local weights, several AZs |
+| `persistentvolume-fsx-lustre.yaml` | PersistentVolume + PersistentVolumeClaim | Bind an FSx for Lustre filesystem and claim it as `fsx-pvc` |
+| `configmap-vllm-sitecustomize.yaml` | ConfigMap | The runtime patch every `vllm-recipes/` manifest mounts |
+| `job-download-weights-to-pvc.yaml` | Job | Download weights from Hugging Face onto a shared PVC, resumable |
+| `job-stage-weights-to-s3.yaml` | Job | Stage weights into S3 first, when the AZ is not yet decided |
+| `job-quantize-model.yaml` | Job | Quantize a model to FP8 with NVIDIA Model Optimizer |
+| `job-build-image-kaniko.yaml` | ConfigMap + Job | Build a derived serving image in-cluster and push to ECR |
+| `job-node-driver-fix.yaml` | Job | Rebuild the NVIDIA open kernel module when GPUs do not register |
+| `pod-diagnostic-probe.yaml` | Pod | The throwaway-pod pattern for answering one question about a cluster |
+| `pod-profile-nsys.yaml` | Pod | Run vLLM under Nsight Systems to see where step time goes |
+
+Serving manifests are not here. They live in [`vllm-recipes/`](../../vllm-recipes/), one per published result, with the real flags that produced it.
+
+## Notes per example
+
+Each manifest carries a one-line header stating what it is and when to use it, plus its `SUBSTITUTE:` list. Everything else about it is here, so the manifests stay readable and the explanation stays in one place.
+
+### `eksctl-cluster.yaml`
+
+List the availability zones where your GPU capacity is actually offered. The control plane spans them and node groups pick from within, so a zone missing here cannot be used later.
+
+OIDC is required for any add-on that uses IRSA, including the FSx and EBS CSI drivers. The CPU node group exists for the controllers, the add-ons, and any weight-download or image-build Job, so give it room to work rather than the smallest possible disk.
+
+Create the cluster from a substituted copy:
+
+```bash
+eksctl create cluster -f my-cluster.yaml   # your copy of k8s/examples/eksctl-cluster.yaml
+```
+
+### Discover GPU capacity before creating node groups
+
+Instance availability is specific to both type and Availability Zone. Check offerings before choosing subnets or creating same-AZ storage:
+
+```bash
+export AWS_REGION="us-east-1"
+export INSTANCE_TYPE="g7e.12xlarge"
+
+aws ec2 describe-instance-type-offerings \
+  --region "$AWS_REGION" \
+  --location-type availability-zone \
+  --filters "Name=instance-type,Values=$INSTANCE_TYPE" \
+  --query 'InstanceTypeOfferings[].Location' --output text
+```
+
+For Spot node groups, placement scores provide an additional capacity signal. They are not a reservation or guarantee:
+
+```bash
+aws ec2 get-spot-placement-scores \
+  --region "$AWS_REGION" \
+  --instance-types "$INSTANCE_TYPE" \
+  --target-capacity 1 \
+  --region-names "$AWS_REGION"
+```
+
+Use only zones that the cluster has subnets in. Multi-node EFA and FSx-backed workloads normally narrow this further to one zone.
+
+### `eksctl-nodegroup-gpu-efa.yaml`
+
+The node label gives a serving manifest's `nodeSelector` something to target. The taint keeps general workloads off GPU nodes, and serving pods tolerate it explicitly. ECR read access is needed to pull the serving image.
+
+All nodes must sit in one availability zone, which is why there is a single subnet, and that zone should match the filesystem. Create the group from a substituted copy:
+
+```bash
+eksctl create nodegroup -f my-efa-nodegroup.yaml   # copy of k8s/examples/eksctl-nodegroup-gpu-efa.yaml
+```
+
+For multi-node EFA installation, allocatable-resource checks, and transport verification, follow the [Qwen3 multi-node EFA runbook](../../docs/runbooks/qwen3-235b/fp8-g7e.12xlarge-multi-node-efa-runbook.md#quickstart).
+
+### `eksctl-nodegroup-gpu-spot.yaml`
+
+List every zone where the instance type is offered and the cluster has a subnet, so Spot has somewhere to choose from.
+
+Size the volume for the checkpoint plus the image plus the Hugging Face cache, and max throughput and IOPS for gp3, because model load re-reads everything on every start. Spot costs roughly a third of on-demand, paid for with a two-minute reclaim that kills the repetition in flight and re-downloads the weights: fine for one run, poor for a long sweep. Scaling to zero discards the checkpoint, so use the FSx PV instead if that hurts. Confirm instance availability in each cluster subnet before creating the node group, then create it from a substituted copy:
+
+```bash
+eksctl create nodegroup -f my-spot-nodegroup.yaml   # copy of k8s/examples/eksctl-nodegroup-gpu-spot.yaml
+```
+
+### Creating the weights filesystem
+
+Covers [`persistentvolume-fsx-lustre.yaml`](persistentvolume-fsx-lustre.yaml).
+
+Every recipe that mounts `fsx-pvc` needs three things: an FSx for Lustre filesystem, the FSx CSI driver, and a security group that permits Lustre traffic. You create the filesystem with the AWS CLI, then bind it with a PersistentVolume.
+
+No StorageClass is involved. The claim sets `storageClassName: ""` and `volumeName`, which binds it to the named PV and nothing else. Setting the field empty is not the same as omitting it: an absent field means the cluster's default StorageClass applies, and on EKS that default is usually EBS.
+
+Read the subnet and security group from the cluster rather than the console. Use the subnet in the zone step 2 reports.
+
+```bash
+aws eks describe-cluster --name "$EKS_CLUSTER_NAME" \
+  --query 'cluster.resourcesVpcConfig.[clusterSecurityGroupId,subnetIds]'
+```
+
+Using the cluster security group for the filesystem makes step 3 a self-referencing rule instead of a second security group to create and manage.
+
+#### 1. Install the FSx CSI driver
+
+Nothing mounts without it. The PVC stays `Pending` and pods stay `ContainerCreating` with no clear cause. It is not an EKS managed addon, so install the upstream driver.
+
+```bash
+helm repo add aws-fsx-csi-driver https://kubernetes-sigs.github.io/aws-fsx-csi-driver
+helm repo update
+helm upgrade --install aws-fsx-csi-driver aws-fsx-csi-driver/aws-fsx-csi-driver -n kube-system
+```
+
+Confirm the driver registered:
+
+```bash
+kubectl get csidrivers fsx.csi.aws.com
+kubectl -n kube-system get deploy fsx-csi-controller
+```
+
+#### 2. Choose the zone before creating anything
+
+FSx for Lustre is single-AZ and a pod cannot mount a filesystem in another zone. GPU capacity decides the zone, so get the GPU nodes first, then read the zone off them.
+
+```bash
+kubectl get nodes -l node.kubernetes.io/instance-type=g6e.12xlarge \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"  "}{.metadata.labels.topology\.kubernetes\.io/zone}{"\n"}{end}'
+```
+
+Use the subnet in that zone for the next step.
+
+#### 3. Open the Lustre ports
+
+The filesystem's security group must accept inbound TCP 988 and TCP 1018 through 1023 from the nodes' security group. Without those rules the mount hangs and the pod sits in `ContainerCreating` until it times out, which reads as a driver fault rather than a network one.
+
+```bash
+aws ec2 authorize-security-group-ingress --group-id sg-FSX --protocol tcp --port 988       --source-group sg-NODES
+aws ec2 authorize-security-group-ingress --group-id sg-FSX --protocol tcp --port 1018-1023 --source-group sg-NODES
+```
+
+#### 4. Create the filesystem and bind it
+
+Create the filesystem, then read back the values the PV needs. `PERSISTENT_2` accepts 1200 GiB or multiples of 2400 GiB. Creation takes roughly 10 minutes.
+
+```bash
+aws fsx create-file-system \
+  --file-system-type LUSTRE \
+  --file-system-type-version 2.15 \
+  --storage-capacity 1200 \
+  --subnet-ids subnet-0123456789abcdef0 \
+  --security-group-ids sg-0123456789abcdef0 \
+  --lustre-configuration DeploymentType=PERSISTENT_2,PerUnitStorageThroughput=250 \
+  --tags Key=Name,Value=vllm-model-weights \
+  --query "FileSystem.[FileSystemId,Lifecycle]" --output text
+
+aws fsx describe-file-systems --file-system-id fs-0123456789abcdef0 \
+  --query "FileSystems[0].[DNSName,LustreConfiguration.MountName,StorageCapacity,Lifecycle,SubnetIds[0]]" \
+  --output text
+```
+
+The second command returns, in order, the `dnsname`, the `mountname`, the size for both `storage:` fields, the lifecycle state, and the subnet whose zone belongs in `nodeAffinity`. A mount name is eight characters, for example `4ufilamv`. Wait for `AVAILABLE` before applying.
+
+```bash
+kubectl -n "$NAMESPACE" apply -f persistentvolume-fsx-lustre.yaml
+```
+
+Some driver versions want `id::mountname` in `volumeHandle` rather than the filesystem ID alone. If the PVC will not bind, try that form.
+
+`persistentVolumeReclaimPolicy: Retain` keeps the filesystem when the PVC is deleted, so a multi-terabyte checkpoint survives a teardown. It also keeps billing, so delete the filesystem explicitly when the work is finished.
+
+#### 5. Verify the claim binds and a pod can mount it
+
+Binding alone does not prove the mount works, because the network path is only exercised when a pod attaches.
+
+```bash
+kubectl -n "$NAMESPACE" get pvc fsx-pvc
+kubectl -n "$NAMESPACE" apply -f pod-diagnostic-probe.yaml
+kubectl -n "$NAMESPACE" logs diagnostic-probe
+kubectl -n "$NAMESPACE" delete pod diagnostic-probe
+```
+
+Expect `STATUS Bound` from the claim and a `df -h /models` line from the probe. A probe stuck in `ContainerCreating` points at step 1 or step 3.
+
+Both manifests use `ReadWriteMany`, which multi-node serving requires and which lets a download Job and a serving pod share the weights.
+
+### `configmap-vllm-sitecustomize.yaml`
+
+huggingface_hub's `validate_repo_id` rejects an absolute path before anything checks whether it is a local directory, which breaks serving a checkpoint from a PVC. The patch makes the validator a no-op for paths beginning `/`. The GLM and Kimi images do not need it.
+
+It is mounted with `subPath` over the interpreter's own site-packages path, so the Python version in that path must match the image or it mounts a file nothing imports.
+
+Create it from the tracked copy so the two cannot drift:
+
+```bash
+kubectl create configmap vllm-sitecustomize --from-file=sitecustomize.py=k8s/examples/sitecustomize.py
+```
+
+### `job-download-weights-to-pvc.yaml`
+
+This is the template. For the models the recipes in this repo serve, [`model-downloads/`](../../model-downloads/README.md) already holds filled-in Jobs, so start there and come back here only for a model it does not cover.
+
+Runs on a CPU node, because a download needs bandwidth and disk rather than GPU capacity billed by the hour. Re-applying resumes rather than restarting, by counting the shards already on disk against the index.
+
+`backoffLimit` is 0 on purpose: silent retries turn one diagnosable failure into an unbounded transfer bill. Keep the hub cache on the same volume or the container's root disk fills. Verify against the index at the end, because a partial download can exit 0 and fail later at model load.
+
+Xet has been observed stalling and running out of memory on very large repositories, so it is disabled here. That is now a real cost rather than a free choice: `hf_transfer` has been removed from the hub client, so with Xet off there is no accelerated transfer left and downloads run over plain HTTP, measured at roughly 60 MB/s on a 15 GB checkpoint. The Jobs in [`model-downloads/`](../../model-downloads/README.md) take the other side of this and set `HF_XET_HIGH_PERFORMANCE=1`, which is what NVIDIA's [Dynamo GLM recipe](https://github.com/ai-dynamo/dynamo/blob/main/recipes/glm-5.2/model-cache/model-download.yaml) does. Keep Xet off in this template while the stall is only reproducible on very large repositories, and revisit it with a measurement on one of those.
+
+Gated repositories need a Secret named `hf-token` with key `token`.
+
+### `job-stage-weights-to-s3.yaml`
+
+Use it when the zone is undecided: FSx is single-AZ and GPU capacity decides the zone, but S3 is regional, so an hours-long download can start before the filesystem exists. If the filesystem already exists, `job-download-weights-to-pvc.yaml` is one hop shorter.
+
+Xet is disabled for the same reason as the download Job. `--only-show-errors` keeps a per-file line for a few hundred shards from burying a real error. Compare object counts rather than trusting sync's exit code, because a partial upload can look like success and fail later at model load. The scratch volume only holds the checkpoint plus its hub cache, since S3 is the durable copy, so size both.
+
+Keep the bucket in the cluster's region. No Secret is needed, but the node's IAM role must be able to write the bucket, which is worth confirming with `pod-diagnostic-probe.yaml` before starting a multi-hour transfer.
+
+### `job-quantize-model.yaml`
+
+Use this Job when the selected serving runbook requires a checkpoint that is not available through a published-checkpoint staging Job. Start with that runbook: export its values for `AWS_REGION`, `EKS_CLUSTER_NAME`, `HUGGING_FACE_HUB_TOKEN`, `NAMESPACE`, and `INSTANCE_TYPE`, then install the shared prerequisites. This configures the cluster context and creates the namespaced `hf-token` Secret consumed by the Job.
+
+```bash
+export AWS_REGION="us-east-1"
+export EKS_CLUSTER_NAME="my-cluster"
+read -rsp "Hugging Face token: " HUGGING_FACE_HUB_TOKEN && export HUGGING_FACE_HUB_TOKEN
+printf '\n'
+export NAMESPACE="vllm"
+export INSTANCE_TYPE="g7e.4xlarge"
+./scripts/install-prerequisites.sh
+```
+
+Confirm the shared claim is bound in that namespace before starting the quantization Job:
+
+```bash
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
+  --for=jsonpath='{.status.phase}'=Bound pvc/fsx-pvc --timeout=2m
+```
+
+Build and push the quantizer image. `scripts/push-image.sh` uses `AWS_ACCOUNT_ID` and `AWS_REGION` to publish `serving-sweep-quantizer:latest` to ECR, but it does not create the repository. Ensure the repository exists first:
+
+```bash
+export AWS_ACCOUNT_ID="012345678901"
+aws ecr describe-repositories --region "$AWS_REGION" \
+  --repository-names serving-sweep-quantizer >/dev/null 2>&1 \
+  || aws ecr create-repository --region "$AWS_REGION" \
+    --repository-name serving-sweep-quantizer >/dev/null
+./scripts/push-image.sh
+```
+
+Copy the example to a model-specific working manifest, then set the image account and region, `MODEL_ID`, the `fsx-pvc` claim name if yours differs, and the GPU limit. `QUANTIZATION_FORMAT` defaults to `fp8`; change it to `int8` or `awq` when required.
+
+```bash
+export QUANTIZE_JOB="/tmp/job-quantize-model.yaml"
+cp k8s/examples/job-quantize-model.yaml "$QUANTIZE_JOB"
+```
+
+A checkpoint does not depend on which GPU produced it, but the source model must fit on the GPU shape that runs the Job. When a heterogeneous cluster makes placement material, replace the copied manifest's generic GPU selector with the full instance type selected by the runbook:
+
+```yaml
+nodeSelector:
+  node.kubernetes.io/instance-type: g7e.4xlarge
+```
+
+Converting needs more memory than serving the result afterwards, so size both the instance type and GPU count for the load rather than the output.
+
+Apply the copied manifest, wait for completion, and inspect the logs:
+
+```bash
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f "$QUANTIZE_JOB"
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
+  --for=condition=complete job/quantize-model --timeout=3600s
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs -l job-name=quantize-model
+```
+
+`backoffLimit` is 0 because each attempt costs 20 to 40 minutes of GPU time and a failure should be read before repeating. Raise the GPU count to 4 when the model does not fit one GPU. Calibration needs more shared memory than the 64 MB default. To rerun idempotently, delete the immutable completed or failed Job before applying the manifest again:
+
+```bash
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete job quantize-model --ignore-not-found=true
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f "$QUANTIZE_JOB"
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
+  --for=condition=complete job/quantize-model --timeout=3600s
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs -l job-name=quantize-model
+```
+
+For a vision-language model, add both of these. Leaving the vision tower unquantized is normal: it costs quality for no throughput gain on a text benchmark.
+
+```yaml
+- name: MODEL_LOADER
+  value: "image_text_to_text"
+- name: QUANT_EXCLUDE_PATTERNS
+  value: "*vision_tower*,*embed_vision*,*multi_modal_projector*,*vision*,*lm_head*"
+```
+
+### `job-build-image-kaniko.yaml`
+
+Building in-cluster avoids pulling a large base to a laptop that is often the wrong architecture; a vLLM DLC is roughly 25 GB. kaniko needs no Docker daemon, so no privileged mode and no GPU.
+
+`backoffLimit` is 0: read the build log before repeating a long build. Layer caching in the registry makes a second build of a large base much faster. A large base needs real disk and memory to unpack and push.
+
+The node's IAM role must be able to push, either through the imageBuilder add-on policy that the eksctl examples set or through a repository policy.
+
+### `job-node-driver-fix.yaml` and `daemonset-nvidia-open-driver.yaml`
+
+Blackwell parts support only the open NVIDIA kernel module flavor, and the EKS-optimized AL2023 NVIDIA AMI ships the closed one, so the node boots, joins, reports `Ready` and advertises `nvidia.com/gpu: 0` indefinitely. Present on AMI release 1.33.13-20260801 (AL2023 2023.12.20260727, kernel 6.12.94, kmod-nvidia-latest-dkms-580.159.03). Re-check each AMI release rather than assuming this is still needed.
+
+Confirm the cause first with `pod-diagnostic-probe.yaml`. Three unrelated problems leave a node with zero allocatable GPUs and Kubernetes cannot tell them apart. These manifests fix only the second:
+
+1. `nvidia-smi -L` lists the GPUs, so the driver is fine and the device plugin is the problem. These are the wrong fix.
+2. `nvidia-smi` reports "No devices found" and dmesg carries `requires use of the NVIDIA open kernel modules` and `RmInitAdapter failed!`. This is the case they fix.
+3. `nvidia-smi` is absent entirely, so the node group was built on a non-GPU AMI. Recreate it with `--ami-type AL2023_x86_64_NVIDIA` rather than patching nodes one at a time.
+
+Both run privileged, build against the host kernel, and reboot the node, so apply them only to nodes holding no workloads. Choose between them by lifetime: the Job repairs one node and leaves nothing standing, while the DaemonSet keeps every node that joins repaired, which matters because the built module lives on the instance's root volume and a Spot reclaim or a scale-from-zero loses it. If you own the launch template, prefer user data over either, since it runs before workloads exist and needs no reboot.
+
+The Job does not choose a node on its own. A `nodeSelector` on an instance type is not a node name, so set `nodeName` to the one you mean and cordon it first on a shared cluster:
+
+```yaml
+nodeName: ip-10-0-0-1.us-east-1.compute.internal
+```
+
+The script is kept as a ConfigMap file rather than inline shell in the container args, because it runs inside `chroot` and nesting it in quotes expanded variables in the wrong shell. The DaemonSet re-checks on a timer rather than running once and sleeping, and `heal.sh` is idempotent, records one success per kernel and stops after a bounded number of failures. The DaemonSet is scheduled ahead of ordinary workloads and tolerates the taints a GPU node group carries, and it narrows by instance type rather than by `nvidia.com/gpu.present`, so it never lands on hardware whose driver variant is already correct. Both size their container for the build rather than the idle, because parallel compilers need real memory and a small ceiling gets them OOM-killed with `gcc: fatal error: Killed signal terminated program cc1`, which reads like a source problem and is not one.
+
+`NVIDIA_OPEN_VERSION` defaults to the driver version the AMI ships, which is the correct choice, because a newer open package deletes the `/usr/src` tree that carries the kernel-open sources. Set it only if you have confirmed that version's sources are present:
+
+```yaml
+env:
+  - name: NVIDIA_OPEN_VERSION
+    value: "580.167.08"
+```
+
+Two more things to know before editing them. Do not swap the build for `dkms build`: on kernel 6.12 it runs its hardcoded fallback target `make -j2 module` instead of the `modules` target `dkms.conf` declares, and dies. State lives in `/var/lib/nvidia-open-fix`, holding a per-kernel success marker, a failure counter and a copy of the driver sources, so deleting the marker lets a node try again. The two scripts are deliberate copies so each manifest applies on its own: change both or neither.
+
+### `pod-diagnostic-probe.yaml`
+
+A GPU question has to be scheduled onto a GPU node and consumes it while it runs, so drop the `nodeSelector` and the toleration for a storage or credentials probe. Match the image to the question, using the serving image itself when asking what it ships.
+
+Commands worth dropping in:
+
+```bash
+mount works:      echo ok > /models/.probe && cat /models/.probe && rm /models/.probe
+space and layout: df -h /models && ls -la /models
+GPUs visible:     nvidia-smi --query-gpu=index,name,memory.total --format=csv
+GPU topology:     nvidia-smi topo -m
+NCCL version:     python3 -c "import torch; print(torch.cuda.nccl.version())"
+EFA present:      fi_info -p efa && ls /opt/amazon/ofi-nccl/lib*
+credentials:      aws sts get-caller-identity && aws s3 ls s3://my-model-weights
+flag surface:     vllm serve --help=all | grep -- --some-flag
+```
+
+### `pod-profile-nsys.yaml`
+
+nsys has to be the parent of `vllm serve`, because tracing cannot attach to a running process, so this is a separate pod rather than an edit to a recipe. It needs an image that already carries nsys, which the vLLM DLC does not; build one with `job-build-image-kaniko.yaml`.
+
+Use a tensor-parallel size of 2 or more or there is no collective to measure. The capture window has to land on steady-state decode with load arriving during it, otherwise the trace is empty. Driving that load: the Profiling with Nsight Systems section of the [root README](../../README.md).
+
+NVTX is what makes the collective visible, because NCCL emits ranges. The command deliberately avoids `exec`: nsys stops the target when the window closes, and with `exec` the shell is gone, so nothing runs afterwards to print the tables. Those tables are the durable deliverable, since the `.nsys-rep` is large and only needed for the GUI timeline, and the loop avoids pipes because SIGPIPE plus `pipefail` would kill it before it finishes.
+
+The startup probe must exceed model load plus warmup, so raise it substantially for a large checkpoint. Per-request INFO logging becomes a bottleneck under load and distorts what is measured, so it stays off. Without `SYS_ADMIN` the capture still works, it just drops OS-runtime sampling. Pinned memory is for the NCCL transport. Size the scratch volume for several traces: a 90-second window on a busy server produced a 132 MB trace.

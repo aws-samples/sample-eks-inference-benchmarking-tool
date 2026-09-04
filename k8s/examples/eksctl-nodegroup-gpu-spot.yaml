@@ -1,0 +1,43 @@
+#
+# eksctl Spot node group for single-node GPU serving with node-local weights. Use this when you need GPU capacity for a measured run on one node and can tolerate a two-minute reclaim.
+#
+# SUBSTITUTE: my-cluster, us-east-1, the three subnets, the instance type, and the volume size.
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: my-cluster
+  region: us-east-1
+
+managedNodeGroups:
+  - name: gpu-spot-1node
+    instanceType: p5en.48xlarge
+    spot: true
+
+    desiredCapacity: 1
+    minSize: 0
+    maxSize: 1
+
+    subnets:
+      - subnet-0123456789abcdef0
+      - subnet-0123456789abcdef1
+      - subnet-0123456789abcdef2
+
+    privateNetworking: true
+    amiFamily: AmazonLinux2023
+
+    volumeSize: 1600
+    volumeType: gp3
+    volumeThroughput: 1000
+    volumeIOPS: 16000
+
+    labels:
+      role: gpu-spot
+    taints:
+      - key: nvidia.com/gpu
+        value: "true"
+        effect: NoSchedule
+
+    iam:
+      withAddonPolicies:
+        imageBuilder: true

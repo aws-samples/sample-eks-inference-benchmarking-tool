@@ -1,0 +1,42 @@
+#
+# eksctl node group for multi-node GPU serving over EFA. Use this only when a recipe serves one model across more than one node.
+#
+# SUBSTITUTE: my-cluster, us-east-1, us-east-1a, subnet-0123456789abcdef0, the instance type, and the node count.
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: my-cluster
+  region: us-east-1
+
+managedNodeGroups:
+  - name: gpu-efa-2node
+    instanceType: g7e.12xlarge
+    desiredCapacity: 2
+    minSize: 2
+    maxSize: 2
+
+    availabilityZones: ["us-east-1a"]
+    subnets:
+      - subnet-0123456789abcdef0
+
+    efaEnabled: true
+
+    privateNetworking: true
+    amiFamily: AmazonLinux2023
+
+    volumeSize: 500
+    volumeType: gp3
+    volumeThroughput: 1000
+    volumeIOPS: 16000
+
+    labels:
+      role: gpu-efa
+    taints:
+      - key: nvidia.com/gpu
+        value: "true"
+        effect: NoSchedule
+
+    iam:
+      withAddonPolicies:
+        imageBuilder: true

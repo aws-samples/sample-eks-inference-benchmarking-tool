@@ -1,0 +1,39 @@
+#
+# eksctl cluster carrying the add-ons a GPU benchmarking cluster needs. Use this when you need a new cluster, then add a GPU node group separately once a run is ready.
+#
+# SUBSTITUTE: my-cluster, us-east-1, and the availability zones.
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: my-cluster
+  region: us-east-1
+  version: "1.31"
+
+availabilityZones:
+  - us-east-1a
+  - us-east-1b
+  - us-east-1c
+
+iam:
+  withOIDC: true
+
+addons:
+  - name: vpc-cni
+  - name: coredns
+  - name: kube-proxy
+  - name: aws-ebs-csi-driver
+    wellKnownPolicies:
+      ebsCSIController: true
+
+managedNodeGroups:
+  - name: system-cpu
+    instanceType: m5.xlarge
+    desiredCapacity: 2
+    minSize: 2
+    maxSize: 4
+    privateNetworking: true
+    volumeSize: 200
+    volumeType: gp3
+    labels:
+      role: system

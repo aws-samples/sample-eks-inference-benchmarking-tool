@@ -1,0 +1,48 @@
+#
+# Job that quantizes a model with NVIDIA Model Optimizer, writing the result to a PVC. Use this when a recipe serves a quantized checkpoint that does not exist yet.
+#
+# SUBSTITUTE: 012345678901, us-east-1, fsx-pvc, MODEL_ID, and the GPU count.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: quantize-model
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: quantizer
+          image: 012345678901.dkr.ecr.us-east-1.amazonaws.com/serving-sweep-quantizer:latest
+          env:
+            - name: MODEL_ID
+              value: "Qwen/Qwen2.5-7B-Instruct"
+            - name: QUANTIZATION_FORMAT
+              value: "fp8"
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          volumeMounts:
+            - name: models
+              mountPath: /models
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: fsx-pvc
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi

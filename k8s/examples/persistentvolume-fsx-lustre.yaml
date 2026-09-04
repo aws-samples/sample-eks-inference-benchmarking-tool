@@ -1,0 +1,45 @@
+#
+# PersistentVolume binding an FSx for Lustre filesystem, plus a PersistentVolumeClaim to claim it. Use this for every recipe that mounts fsx-pvc, after creating the filesystem with the AWS CLI.
+#
+# SUBSTITUTE: fs-0123456789abcdef0, the dnsname, the mountname, us-east-1a, and the size in both objects.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: fsx-model-weights-pv
+spec:
+  capacity:
+    storage: 1200Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - flock
+  csi:
+    driver: fsx.csi.aws.com
+    volumeHandle: fs-0123456789abcdef0
+    volumeAttributes:
+      dnsname: fs-0123456789abcdef0.fsx.us-east-1.amazonaws.com
+      mountname: abcdefgh
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: topology.kubernetes.io/zone
+              operator: In
+              values:
+                - us-east-1a
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fsx-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: fsx-model-weights-pv
+  resources:
+    requests:
+      storage: 1200Gi

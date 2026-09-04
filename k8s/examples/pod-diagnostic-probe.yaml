@@ -1,0 +1,32 @@
+#
+# Throwaway pod that answers one question about a cluster and is then deleted. Use this to check something before committing GPU time, such as whether the driver sees the GPUs or whether a PVC mounts.
+#
+# SUBSTITUTE: fsx-pvc, the image, and the command.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: diagnostic-probe
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    nvidia.com/gpu.present: "true"
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+  containers:
+    - name: probe
+      image: busybox
+      command: ["sh", "-c"]
+      args:
+        - |
+          set -eux
+          df -h /models
+          ls -la /models | head -20
+      volumeMounts:
+        - name: models
+          mountPath: /models
+  volumes:
+    - name: models
+      persistentVolumeClaim:
+        claimName: fsx-pvc

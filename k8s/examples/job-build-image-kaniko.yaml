@@ -1,0 +1,53 @@
+#
+# Job that builds a container image in-cluster with kaniko and pushes it to ECR. Use this when a recipe or another Job needs an image that does not exist yet.
+#
+# SUBSTITUTE: 012345678901, us-east-1, the repository name and tag, and the Dockerfile in the ConfigMap below.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: image-dockerfile
+data:
+  Dockerfile: |
+    # Replace with the image you need. This example adds a tool to a serving base without rebuilding
+    # it, the common case: profilers, EFA libraries, a newer NCCL.
+    FROM public.ecr.aws/deep-learning-containers/vllm:0.21.0-gpu-py312
+
+    RUN apt-get update -qq && \
+        apt-get install -y --no-install-recommends some-package && \
+        rm -rf /var/lib/apt/lists/*
+
+    # Fail the BUILD, not the run: a build failure costs seconds, the same failure at server start
+    # costs a GPU booking.
+    RUN some-package --version
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: build-image
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        role: system
+      containers:
+        - name: kaniko
+          image: gcr.io/kaniko-project/executor:latest
+          args:
+            - --dockerfile=/workspace/Dockerfile
+            - --context=dir:///workspace
+            - --destination=012345678901.dkr.ecr.us-east-1.amazonaws.com/my-repo:my-tag
+            - --cache=true
+            - --cache-repo=012345678901.dkr.ecr.us-east-1.amazonaws.com/my-repo-cache
+          volumeMounts:
+            - name: dockerfile
+              mountPath: /workspace
+          resources:
+            requests:
+              cpu: "4"
+              memory: 16Gi
+      volumes:
+        - name: dockerfile
+          configMap:
+            name: image-dockerfile
