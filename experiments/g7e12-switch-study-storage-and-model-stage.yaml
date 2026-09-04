@@ -1,0 +1,110 @@
+# Shared gp3 storage and resumable checkpoint staging for the g7e.12xlarge
+# default, explicit-PIX, and forced-SHM switch study.
+# SUBSTITUTE: kubernetes.io/hostname. All arms of this study must pin the SAME node.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: g7e12-switch-model-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 300Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: g7e12-switch-model-stage
+  labels:
+    app: g7e12-switch-model-stage
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: g7e12-switch-model-stage
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: ip-10-0-0-1.us-east-1.compute.internal
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+        - key: workload
+          operator: Equal
+          value: bench
+          effect: NoSchedule
+        - key: capacity-reservation
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: stage
+          image: python:3.12-slim
+          command:
+            - bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export HF_HOME=/models/.cache
+              export HF_XET_HIGH_PERFORMANCE=1
+              export PIP_DISABLE_PIP_VERSION_CHECK=1
+
+              df -h /models
+              pip install --no-cache-dir --quiet huggingface_hub==1.28.0
+              python3 - <<'PY'
+              from importlib.metadata import version
+              from pathlib import Path
+
+              from huggingface_hub import snapshot_download
+
+              print(f"huggingface_hub={version('huggingface_hub')}")
+              models = (
+                  ("nvidia/Llama-3.3-70B-Instruct-FP8", Path("/models/llama3.3-70b-fp8"), 15),
+                  ("Qwen/Qwen3-30B-A3B-FP8", Path("/models/qwen3-30b-a3b-fp8"), 7),
+              )
+
+              def validate(repo_id: str, target: Path, expected_shards: int) -> bool:
+                  config_ok = (target / "config.json").is_file()
+                  shards = list(target.glob("*.safetensors"))
+                  incomplete = list(target.rglob("*.incomplete"))
+                  complete = config_ok and len(shards) == expected_shards and not incomplete
+                  print(
+                      f"validate {repo_id}: config={config_ok}, "
+                      f"shards={len(shards)}/{expected_shards}, incomplete={len(incomplete)}"
+                  )
+                  return complete
+
+              for repo_id, target, expected_shards in models:
+                  if validate(repo_id, target, expected_shards):
+                      print(f"complete, skipping: {repo_id} -> {target}")
+                      continue
+                  target.mkdir(parents=True, exist_ok=True)
+                  print(f"staging/resuming: {repo_id} -> {target}")
+                  snapshot_download(repo_id=repo_id, local_dir=target, max_workers=16)
+                  assert validate(repo_id, target, expected_shards), repo_id
+              PY
+              echo "=== staged checkpoints ==="
+              du -sh /models/llama3.3-70b-fp8 /models/qwen3-30b-a3b-fp8
+              test -z "$(find /models/llama3.3-70b-fp8 /models/qwen3-30b-a3b-fp8 \
+                -name '*.incomplete' -print -quit)"
+              df -h /models
+          resources:
+            requests:
+              cpu: "8"
+              memory: 16Gi
+            limits:
+              cpu: "16"
+              memory: 32Gi
+          volumeMounts:
+            - name: models
+              mountPath: /models
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: g7e12-switch-model-storage

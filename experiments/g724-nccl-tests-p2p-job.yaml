@@ -1,0 +1,80 @@
+# NCCL all-reduce microbenchmark for the PCIe-switch vs host-copy study.
+# Single node, 4 GPUs (intra-node) on g7.24xlarge (4x RTX PRO 4500 Blackwell, PCIe, no NVLink)
+# on the gemma-g7-bench cluster. PREREQ: scale g7-gpu-spot to 1 and re-apply the Blackwell
+# open-kernel-module fix so GPUs register (k8s/examples/job-node-driver-fix.yaml).
+# This is the CLEAN interconnect signal
+# (no model, no vLLM stack). Run it once per NCCL_P2P_LEVEL setting and compare busbw.
+#
+# SWEEP: change NCCL_P2P_LEVEL below (or the disable flag) and re-apply with a new name:
+#   PIX  -> P2P only within a single PCIe switch (direct peer DMA, no host copy)
+#   PHB  -> P2P up through the PCIe host bridge (CPU root complex)
+#   (bookend) set NCCL_P2P_DISABLE="1" to force host staging (lower bound)
+#   (reference) remove the NCCL_P2P_LEVEL env entirely for default/auto
+#
+# NOTE: EFA is inter-node; this single-node test does not use it. We pin to ONE node.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nccl-p2p-allreduce-pix   # rename per setting: -pix / -phb / -disabled / -auto
+  labels:
+    app: nccl-p2p-study
+spec:
+  backoffLimit: 0
+  completions: 1
+  parallelism: 1
+  template:
+    metadata:
+      labels:
+        app: nccl-p2p-study
+    spec:
+      restartPolicy: Never
+      # Pin to the single g7.24xlarge (4x RTX PRO 4500 Blackwell) on gemma-g7-bench.
+      nodeSelector:
+        node.kubernetes.io/instance-type: g7.24xlarge
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: nccl-tests
+          # CUDA devel base; we build nccl-tests from source so we don't depend on a
+          # possibly-wrong prebuilt tag. (~2 min build.) Substitute the cluster's standard
+          # EFA/nccl-tests image if one is already blessed.
+          image: nvidia/cuda:12.4.1-devel-ubuntu22.04
+          command:
+            - bash
+            - -lc
+            - |
+              set -euo pipefail
+              echo "=== GPU topology ==="
+              nvidia-smi topo -m || true
+              echo "=== build nccl-tests ==="
+              apt-get update -qq
+              apt-get install -y -qq git make libnccl2 libnccl-dev
+              git clone -q https://github.com/NVIDIA/nccl-tests /tmp/nccl-tests
+              make -C /tmp/nccl-tests -j MPI=0 CUDA_HOME=/usr/local/cuda
+              echo "=== all_reduce_perf (4 GPUs, 8B -> 2GiB) ==="
+              # -g 4: single process drives all 4 GPUs (intra-node). Report busbw (GB/s).
+              /tmp/nccl-tests/build/all_reduce_perf -b 8 -e 2G -f 2 -g 4
+          env:
+            # ---- the variable under test ----
+            - name: NCCL_P2P_LEVEL
+              value: "PIX"          # <-- change to PHB for the second run
+            # - name: NCCL_P2P_DISABLE
+            #   value: "1"          # <-- uncomment (and drop NCCL_P2P_LEVEL) for the lower bound
+            # ---- diagnostics: prove which transport NCCL actually chose ----
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: NCCL_DEBUG_SUBSYS
+              value: "GRAPH,P2P,NET"
+          resources:
+            limits:
+              nvidia.com/gpu: 4
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi

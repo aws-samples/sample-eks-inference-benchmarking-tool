@@ -1,0 +1,164 @@
+# Controlled two-GPU NCCL matrix on one g7e.12xlarge PIX pair. The three arms
+# compare NCCL default selection, explicit PIX direct P2P, and forced SHM.
+# SUBSTITUTE: kubernetes.io/hostname. All arms of this study must pin the SAME node.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: g7e12-nccl-p2p-shm-matrix
+  labels:
+    app: g7e12-nccl-p2p-shm-matrix
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: g7e12-nccl-p2p-shm-matrix
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: ip-10-0-0-1.us-east-1.compute.internal
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+        - key: workload
+          operator: Equal
+          value: bench
+          effect: NoSchedule
+        - key: capacity-reservation
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: nccl-tests
+          image: nvidia/cuda:13.0.0-devel-ubuntu22.04
+          securityContext:
+            capabilities:
+              add:
+                - IPC_LOCK
+          command:
+            - bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              export CUDA_DEVICE_ORDER=PCI_BUS_ID
+              export NCCL_DEBUG=INFO
+              export NCCL_DEBUG_SUBSYS=INIT,GRAPH,P2P,NET
+              export NCCL_DEBUG_FILE=/dev/stdout
+
+              result_root=/models/results/g7e12-switch/nccl
+              tool_root=/models/tools
+              mkdir -p "$result_root" "$tool_root"
+              rm -f "$result_root"/*.txt "$result_root"/SHA256SUMS
+
+              echo "=== environment ==="
+              nvidia-smi --query-gpu=index,uuid,name,memory.total,pci.bus_id,driver_version \
+                --format=csv,noheader
+              topology=$(nvidia-smi topo -m)
+              echo "$topology"
+              test "$(echo "$topology" | awk '$1=="GPU0" {print $3}')" = PIX
+              cat /etc/os-release | grep PRETTY_NAME
+              nvcc --version
+
+              apt-get update -qq
+              apt-get install -y -qq git make
+              nccl_version=$(dpkg-query -W -f='${Version}' libnccl2)
+              test "$nccl_version" = "$(dpkg-query -W -f='${Version}' libnccl-dev)"
+              case "$nccl_version" in
+                2.27.7*+cuda13.0) ;;
+                *) echo "expected NCCL 2.27.7 for CUDA 13.0, found $nccl_version" >&2; exit 1 ;;
+              esac
+              source_root="$tool_root/nccl-tests-v2.20.0-nccl-$(echo "$nccl_version" \
+                | tr ':+' '__')"
+              echo "libnccl ${nccl_version}"
+
+              if test ! -x "$source_root/build/all_reduce_perf" \
+                  || test ! -x "$source_root/build/all_gather_perf" \
+                  || test ! -x "$source_root/build/reduce_scatter_perf" \
+                  || test ! -x "$source_root/build/alltoall_perf"; then
+                rm -rf "$source_root"
+                git clone --branch v2.20.0 --depth 1 https://github.com/NVIDIA/nccl-tests.git \
+                  "$source_root"
+                make -C "$source_root" -j MPI=0 CUDA_HOME=/usr/local/cuda \
+                  NVCC_GENCODE="-gencode=arch=compute_120,code=sm_120"
+              fi
+              echo "nccl-tests $(git -C "$source_root" rev-parse HEAD)"
+
+              verify_transport() {
+                arm=$1
+                log=$2
+                if test "$arm" = shm; then
+                  grep -Fq 'NCCL_P2P_LEVEL=<unset> NCCL_P2P_DISABLE=1' "$log"
+                  grep -Eq 'SHM/direct/direct|via SHM/' "$log"
+                else
+                  if test "$arm" = default; then
+                    grep -Fq 'NCCL_P2P_LEVEL=<unset> NCCL_P2P_DISABLE=<unset>' "$log"
+                  else
+                    grep -Fq 'NCCL_P2P_LEVEL=PIX NCCL_P2P_DISABLE=<unset>' "$log"
+                  fi
+                  grep -Eq 'P2P/direct pointer|via P2P/' "$log"
+                fi
+              }
+
+              run_arm() {
+                arm=$1
+                repeat=$2
+                unset NCCL_P2P_LEVEL NCCL_P2P_DISABLE
+                if test "$arm" = pix; then
+                  export NCCL_P2P_LEVEL=PIX
+                elif test "$arm" = shm; then
+                  export NCCL_P2P_DISABLE=1
+                fi
+
+                for collective in all_reduce all_gather reduce_scatter alltoall; do
+                  log="$result_root/${collective}-${arm}-rep${repeat}.txt"
+                  {
+                    echo "=== ${arm} repeat ${repeat}: ${collective} ==="
+                    echo "NCCL_P2P_LEVEL=${NCCL_P2P_LEVEL-<unset>} NCCL_P2P_DISABLE=${NCCL_P2P_DISABLE-<unset>}"
+                    "$source_root/build/${collective}_perf" -b 8 -e 2G -f 2 -g 2
+                  } 2>&1 | tee "$log"
+                  verify_transport "$arm" "$log"
+                done
+              }
+
+              for repeat in 1 2 3 4 5; do
+                case "$repeat" in
+                  1) arms=(default pix shm) ;;
+                  2) arms=(shm pix default) ;;
+                  3) arms=(pix default shm) ;;
+                  4) arms=(shm default pix) ;;
+                  5) arms=(default shm pix) ;;
+                esac
+                for arm in "${arms[@]}"; do
+                  run_arm "$arm" "$repeat"
+                done
+              done
+
+              test "$(find "$result_root" -maxdepth 1 -name '*.txt' | wc -l)" -eq 60
+              sha256sum "$result_root"/*.txt | sort > "$result_root/SHA256SUMS"
+              echo "=== result files ==="
+              ls -lh "$result_root"
+          resources:
+            requests:
+              cpu: "16"
+              memory: 32Gi
+              nvidia.com/gpu: "2"
+            limits:
+              cpu: "32"
+              memory: 64Gi
+              nvidia.com/gpu: "2"
+          volumeMounts:
+            - name: models
+              mountPath: /models
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: g7e12-switch-model-storage
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Gi
