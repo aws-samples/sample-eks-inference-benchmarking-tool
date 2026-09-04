@@ -1,0 +1,100 @@
+#
+# Qwen2.5-7B-Instruct at FP8 on one p5en.48xlarge, a single GPU of the eight. Use this as the FP8 half of the p5en precision comparison.
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qwen7b-vllm-p5en-fp8
+  labels: { app: qwen7b-vllm-p5en-fp8 }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: qwen7b-vllm-p5en-fp8 }
+  template:
+    metadata:
+      labels: { app: qwen7b-vllm-p5en-fp8 }
+    spec:
+      nodeSelector:
+        node.kubernetes.io/instance-type: "p5en.48xlarge"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: vllm
+          image: public.ecr.aws/deep-learning-containers/vllm:0.21.0-gpu-py312
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              echo "=== starting vLLM on ${INSTANCE_TYPE}: $(date -u) ==="
+              vllm serve ${MODEL_DIR} \
+                --quantization ${QUANTIZATION} \
+                --kv-cache-dtype fp8_e4m3 \
+                --calculate-kv-scales \
+                --gpu-memory-utilization ${GPU_MEM_UTIL} \
+                --max-num-seqs ${MAX_NUM_SEQS} \
+                --max-num-batched-tokens ${MAX_NUM_BATCHED_TOKENS} \
+                --enable-prefix-caching \
+                --enable-chunked-prefill \
+                --port 8000
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MODEL_DIR
+              value: "/models/quantized/Qwen2.5-7B-Instruct-fp8"
+            - name: MAX_NUM_SEQS
+              value: "512"
+            - name: MAX_NUM_BATCHED_TOKENS
+              value: "32768"
+            - name: GPU_MEM_UTIL
+              value: "0.95"
+            - name: QUANTIZATION
+              value: "fp8"
+            - name: INSTANCE_TYPE
+              value: "p5en.48xlarge"
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef: { name: hf-token, key: token }
+            - name: HF_HOME
+              value: "/models"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: VLLM_ATTENTION_BACKEND
+              value: "FLASHINFER"
+            - name: VLLM_LOGGING_LEVEL
+              value: "WARNING"
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 15
+            failureThreshold: 120
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 30
+            failureThreshold: 6
+          volumeMounts:
+            - { name: dshm, mountPath: /dev/shm }
+            - { name: model-storage, mountPath: /models }
+      volumes:
+        - name: dshm
+          emptyDir: { medium: Memory }
+        - name: model-storage
+          persistentVolumeClaim: { claimName: fsx-pvc }
+      terminationGracePeriodSeconds: 120
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qwen7b-vllm-p5en-fp8
+spec:
+  selector: { app: qwen7b-vllm-p5en-fp8 }
+  ports:
+    - { protocol: TCP, port: 8000, targetPort: 8000 }

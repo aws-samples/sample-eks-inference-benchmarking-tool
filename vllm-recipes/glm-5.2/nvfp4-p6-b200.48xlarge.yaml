@@ -1,0 +1,120 @@
+#
+# GLM-5.2 at NVFP4 on one p6-b200.48xlarge, 8 GPUs, tensor parallel 8. Use this when you want the smaller weight format on B200 rather than B300; NVFP4 is Blackwell only. Weights come from the shared filesystem, so a pod restart does not re-download 433 GiB.
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: glm-52-b200-nvfp4
+  labels: { model: glm-5.2, config: nvfp4 }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: glm-52-b200-nvfp4 }
+  template:
+    metadata:
+      labels: { app: glm-52-b200-nvfp4, model: glm-5.2, config: nvfp4 }
+    spec:
+      tolerations:
+        - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+        - { key: workload, operator: Equal, value: bench, effect: NoSchedule }
+        - { key: capacity-reservation, operator: Exists, effect: NoSchedule }
+      nodeSelector:
+        node.kubernetes.io/instance-type: p6-b200.48xlarge
+      initContainers:
+        - name: wait-for-model
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              D=/models/glm-5.2-nvfp4
+              echo "Waiting for a complete checkpoint at $D ..."
+              until [ -f "$D/config.json" ] && { [ -f "$D/model.safetensors.index.json" ] || [ -f "$D/model.safetensors" ]; }; do
+                echo "  $(date -u) - metadata not present yet, waiting 20s ..."
+                sleep 20
+              done
+              if [ -f "$D/model.safetensors.index.json" ]; then
+                WANT=$(grep -o 'model-[0-9]\{5\}-of-[0-9]\{5\}' "$D/model.safetensors.index.json" | sort -u | wc -l)
+              else
+                WANT=1
+              fi
+              while :; do
+                HAVE=$(ls "$D"/*.safetensors 2>/dev/null | wc -l)
+                PART=$(find "$D" -name '*.incomplete' 2>/dev/null | wc -l)
+                echo "  $(date -u) - shards $HAVE/$WANT, incomplete $PART"
+                if [ "$HAVE" -eq "$WANT" ] && [ "$PART" -eq 0 ]; then break; fi
+                sleep 20
+              done
+              echo "Checkpoint complete: $HAVE shards, no partial files. Proceeding to vLLM startup."
+          volumeMounts:
+            - { name: models, mountPath: /models }
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.26.0
+          ports:
+            - containerPort: 8000
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              ARGS=(
+                /models/glm-5.2-nvfp4
+                --served-model-name glm-5.2-nvfp4
+                --tensor-parallel-size 8
+
+                --reasoning-parser glm45
+                --tool-call-parser glm47
+                --enable-auto-tool-choice
+
+                --max-model-len 32768
+                --max-num-seqs 512
+                --max-num-batched-tokens 32768
+                --gpu-memory-utilization 0.90
+
+                --max-cudagraph-capture-size 512
+
+                --no-enable-prefix-caching
+                --port 8000
+              )
+              echo "=== resolved argv ==="
+              printf '  %s\n' "${ARGS[@]}"
+              echo "====================="
+              nvidia-smi --query-gpu=index,name,memory.total --format=csv || true
+              exec vllm serve "${ARGS[@]}"
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: VLLM_DEEP_GEMM_WARMUP
+              value: "skip"
+            - name: VLLM_LOGGING_LEVEL
+              value: "INFO"
+          resources:
+            limits:
+              nvidia.com/gpu: "8"
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 20
+            failureThreshold: 120
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 20
+          volumeMounts:
+            - { name: models, mountPath: /models, readOnly: true }
+            - { name: dshm, mountPath: /dev/shm }
+      volumes:
+        - name: models
+          persistentVolumeClaim: { claimName: fsx-pvc }
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 64Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: glm-52-b200-nvfp4
+spec:
+  selector: { app: glm-52-b200-nvfp4 }
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000

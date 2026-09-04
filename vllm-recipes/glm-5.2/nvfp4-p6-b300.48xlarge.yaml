@@ -1,0 +1,163 @@
+#
+# GLM-5.2 at NVFP4 on one p6-b300.48xlarge, 8 GPUs, tensor parallel 8. Use this when you want the smaller weight format that frees most of the node for KV cache; NVFP4 is Blackwell only.
+#
+# SUBSTITUTE: kubernetes.io/hostname, or remove it to schedule on any p6-b300.48xlarge.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: glm-52-b300-nvfp4
+  labels: { model: glm-5.2, config: nvfp4 }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: glm-52-b300-nvfp4 }
+  template:
+    metadata:
+      labels: { app: glm-52-b300-nvfp4, model: glm-5.2, config: nvfp4 }
+    spec:
+      tolerations:
+        - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+        - { key: workload, operator: Equal, value: bench, effect: NoSchedule }
+        - { key: capacity-reservation, operator: Exists, effect: NoSchedule }
+      nodeSelector:
+        node.kubernetes.io/instance-type: p6-b300.48xlarge
+        kubernetes.io/hostname: ip-10-0-0-1.ec2.internal
+      initContainers:
+        - name: fetch-weights
+          image: python:3.12-slim
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              echo "=== disk before ==="; df -h "$MOUNT_ROOT"
+
+              # An emptyDir lands wherever kubelet's root is, which is not always the instance store.
+              # Check the space is actually here before pulling a checkpoint this size onto a root disk.
+              avail=$(df -Pk "$MOUNT_ROOT" | awk 'NR==2 {print int($4/1048576)}')
+              if [ "$avail" -lt "$MIN_FREE_GIB" ]; then
+                echo "FATAL: ${avail} GiB free at $MOUNT_ROOT, need ${MIN_FREE_GIB} GiB." >&2
+                echo "  If that looks like a root disk rather than the NVMe array, the node's" >&2
+                echo "  ephemeral storage is not on the instance store and this sync would fill it." >&2
+                exit 1
+              fi
+
+              if [ -f "$MODEL_DIR/model.safetensors.index.json" ]; then
+                WANT=$(grep -o 'model-[0-9]\{5\}-of-[0-9]\{5\}' \
+                       "$MODEL_DIR/model.safetensors.index.json" | sort -u | wc -l)
+                HAVE=$(ls "$MODEL_DIR"/*.safetensors 2>/dev/null | wc -l)
+                PART=$(find "$MODEL_DIR" -name '*.incomplete' 2>/dev/null | wc -l)
+                if [ "$HAVE" -eq "$WANT" ] && [ "$PART" -eq 0 ]; then
+                  echo "checkpoint already staged: $HAVE/$WANT shards, none partial"
+                  exit 0
+                fi
+                echo "partial checkpoint ($HAVE/$WANT, $PART partial), resuming"
+              fi
+
+              pip install --no-cache-dir -q "huggingface_hub==$HF_HUB_VERSION"
+              mkdir -p "$MODEL_DIR" "$HF_HOME"
+
+              echo "=== downloading $MODEL_REPO $(date -u) ==="
+              hf download "$MODEL_REPO" --local-dir "$MODEL_DIR"
+              echo "=== complete $(date -u) ==="
+
+              WANT=$(grep -o 'model-[0-9]\{5\}-of-[0-9]\{5\}' \
+                     "$MODEL_DIR/model.safetensors.index.json" | sort -u | wc -l)
+              HAVE=$(ls "$MODEL_DIR"/*.safetensors | wc -l)
+              PART=$(find "$MODEL_DIR" -name '*.incomplete' | wc -l)
+              echo "shards $HAVE/$WANT, incomplete $PART"
+              { [ "$HAVE" -eq "$WANT" ] && [ "$PART" -eq 0 ]; } \
+                || { echo "FATAL: incomplete checkpoint" >&2; exit 1; }
+              du -sh "$MODEL_DIR"; df -h "$MOUNT_ROOT"
+          env:
+            - name: MODEL_REPO
+              value: nvidia/GLM-5.2-NVFP4
+            - name: MODEL_DIR
+              value: /weights/glm-5.2-nvfp4
+            - name: MOUNT_ROOT
+              value: /weights
+            - name: MIN_FREE_GIB
+              value: "500"
+            - name: HF_HOME
+              value: /weights/.hf-cache
+            - name: HF_XET_HIGH_PERFORMANCE
+              value: "1"
+            - name: HF_HUB_VERSION
+              value: "1.28.0"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          volumeMounts:
+            - { name: weights, mountPath: /weights }
+          resources:
+            requests: { cpu: "8", memory: 32Gi }
+            limits: { cpu: "16", memory: 96Gi }
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.26.0
+          ports:
+            - containerPort: 8000
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              ARGS=(
+                /weights/glm-5.2-nvfp4
+                --served-model-name glm-5.2-nvfp4
+                --tensor-parallel-size 8
+
+                --reasoning-parser glm45
+                --tool-call-parser glm47
+                --enable-auto-tool-choice
+
+                --max-model-len 32768        # pinned, not auto: fixes the KV budget
+                --max-num-seqs 512
+                --max-num-batched-tokens 32768
+                --gpu-memory-utilization 0.90
+
+                --max-cudagraph-capture-size 512
+
+                --no-enable-prefix-caching   # honest baseline
+                --port 8000
+              )
+              echo "=== resolved argv ==="
+              printf '  %s\n' "${ARGS[@]}"
+              echo "====================="
+              nvidia-smi --query-gpu=index,name,memory.total --format=csv || true
+              exec vllm serve "${ARGS[@]}"
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: VLLM_DEEP_GEMM_WARMUP
+              value: "skip"
+            - name: VLLM_LOGGING_LEVEL
+              value: "INFO"
+          resources:
+            limits:
+              nvidia.com/gpu: "8"
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 20
+            failureThreshold: 120
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 20
+          volumeMounts:
+            - { name: weights, mountPath: /weights }
+            - { name: dshm, mountPath: /dev/shm }
+      volumes:
+        - name: weights
+          emptyDir: { sizeLimit: 800Gi }
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 64Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: glm-52-b300-nvfp4
+spec:
+  selector: { app: glm-52-b300-nvfp4 }
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000

@@ -1,0 +1,176 @@
+#
+# Kimi K3 at MXFP4 on one p6-b300.48xlarge, 8 GPUs, with speculative decoding enabled. Run this back to back against the baseline to isolate what speculation buys.
+#
+# SUBSTITUTE: 012345678901 and us-east-1 in the image reference, and WEIGHTS_BUCKET.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kimi-k3-b300-dspark
+  labels: { app: kimi-k3-b300-dspark }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: kimi-k3-b300-dspark }
+  template:
+    metadata:
+      labels: { app: kimi-k3-b300-dspark }
+    spec:
+      serviceAccountName: kimi-k3-bench
+      nodeSelector:
+        node.kubernetes.io/instance-type: p6-b300.48xlarge
+      tolerations:
+        - operator: Exists
+      initContainers:
+        - name: fetch-weights
+          image: public.ecr.aws/aws-cli/aws-cli:latest
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              aws configure set default.s3.max_concurrent_requests 64
+              aws configure set default.s3.multipart_chunksize 64MB
+              aws configure set default.s3.max_queue_size 10000
+
+              echo "weights sync start $(date -u)"
+              # An emptyDir lands wherever kubelet's root is, which is not always the instance store.
+              # Check the space is really here before pulling a checkpoint this size onto a root disk.
+              avail=$(df -Pk /models | awk 'NR==2 {print int($4/1048576)}')
+              if [ "$avail" -lt "$MIN_FREE_GIB" ]; then
+                echo "FATAL: ${avail} GiB free at /models, need ${MIN_FREE_GIB} GiB." >&2
+                echo "  If that is a root disk rather than the NVMe array, this node's ephemeral" >&2
+                echo "  storage is not on the instance store and the sync would fill it." >&2
+                exit 1
+              fi
+
+              aws s3 sync "s3://${WEIGHTS_BUCKET}/${WEIGHTS_PREFIX}/" /models/kimi-k3-mxfp4/ \
+                --region "${AWS_REGION}" --only-show-errors
+              SZ=$(du -s --block-size=1G /models/kimi-k3-mxfp4 | cut -f1)
+              echo "weights staged ${SZ} GiB"
+              test "$SZ" -ge 1400 || (echo "FATAL: expected ~1454 GiB, got ${SZ} GiB" >&2; exit 1)
+
+              echo "draft sync start $(date -u)"
+              aws s3 sync "s3://${WEIGHTS_BUCKET}/${DRAFT_PREFIX}/" /models/kimi-k3-dspark/ \
+                --region "${AWS_REGION}" --only-show-errors
+              test -n "$(ls -A /models/kimi-k3-dspark 2>/dev/null)" \
+                || (echo "FATAL: DSpark draft missing - run kimi-k3-dspark-hf-to-s3.yaml" >&2; exit 1)
+              du -sh /models/kimi-k3-dspark
+              echo "sync done $(date -u)"
+          env:
+            - name: MIN_FREE_GIB
+              value: "1500"
+            - name: WEIGHTS_BUCKET
+              value: "kimi-k3-mxfp4-weights"
+            - name: WEIGHTS_PREFIX
+              value: "kimi-k3-mxfp4"
+            - name: DRAFT_PREFIX
+              value: "kimi-k3-dspark"
+            - name: AWS_REGION
+              value: "us-west-2"
+          volumeMounts:
+            - { name: models, mountPath: /models }
+          resources:
+            requests: { cpu: "16", memory: 32Gi }
+            limits: { cpu: "32", memory: 64Gi }
+      containers:
+        - name: vllm
+          image: 012345678901.dkr.ecr.us-east-1.amazonaws.com/vllm-kimi-k3-efa:nccl2.29.7-efa1.49.0
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              echo "=== provenance ==="
+              nvidia-smi --query-gpu=index,name,memory.total --format=csv
+              nvidia-smi topo -m || true
+              if nvidia-smi topo -m 2>/dev/null | grep -qE '\bNV[0-9]+\b'; then
+                echo "  NVLink mesh detected - good."
+              else
+                echo "  WARNING: no NVLink pairs in topo matrix. Do not trust results."
+              fi
+
+              echo "=== starting vLLM BASELINE + DSpark: $(date -u) ==="
+              ARGS=(
+                /models/kimi-k3-mxfp4
+                --served-model-name kimi-k3
+                --tensor-parallel-size 8
+                --trust-remote-code
+                --load-format fastsafetensors
+                --moe-backend flashinfer_trtllm
+                --max-model-len "${MAX_MODEL_LEN}"
+                --max-num-seqs "${MAX_NUM_SEQS}"
+                --gpu-memory-utilization 0.9
+                --max-cudagraph-capture-size 512
+                --kv-cache-dtype fp8
+                --attention-config '{"mla_prefill_backend":"FLASHINFER","use_prefill_query_quantization":true}'
+                --speculative-config "{\"model\":\"/models/kimi-k3-dspark\",\"method\":\"dspark\",\"num_speculative_tokens\":${NUM_SPEC_TOKENS},\"attention_backend\":\"FLASHINFER_MLA\",\"draft_sample_method\":\"probabilistic\",\"rejection_sample_method\":\"block\"}"
+                --enable-auto-tool-choice
+                --tool-call-parser kimi_k3
+                --reasoning-parser kimi_k3
+                --port 8000
+              )
+              printf '  argv: %s\n' "${ARGS[@]}"
+              exec vllm serve "${ARGS[@]}"
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MAX_MODEL_LEN
+              value: "32768"
+            - name: MAX_NUM_SEQS
+              value: "512"
+            - name: NUM_SPEC_TOKENS
+              value: "7"
+            - name: VLLM_ENGINE_READY_TIMEOUT_S
+              value: "3600"
+            - name: NCCL_DMABUF_ENABLE
+              value: "0"
+            - name: VLLM_ALLREDUCE_USE_FLASHINFER
+              value: "1"
+            - name: VLLM_USE_RUST_FRONTEND
+              value: "1"
+            - name: VLLM_USE_V2_MODEL_RUNNER
+              value: "1"
+            - name: INSTANCE_TYPE
+              value: "p6-b300.48xlarge"
+            - name: QUANTIZATION
+              value: "mxfp4"
+            - name: BENCH_CONFIG
+              value: "b300-dspark-tp8-spec7"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          resources:
+            limits:
+              nvidia.com/gpu: "8"
+              memory: 3000Gi
+            requests:
+              cpu: "96"
+              memory: 1024Gi
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 15
+            failureThreshold: 280
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 10
+            failureThreshold: 3
+          volumeMounts:
+            - { name: models, mountPath: /models }
+            - { name: dshm, mountPath: /dev/shm }
+      volumes:
+        - name: models
+          emptyDir: { sizeLimit: 2000Gi }
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 64Gi }
+      terminationGracePeriodSeconds: 120
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kimi-k3-b300-dspark
+spec:
+  selector: { app: kimi-k3-b300-dspark }
+  ports:
+    - { protocol: TCP, port: 8000, targetPort: 8000 }

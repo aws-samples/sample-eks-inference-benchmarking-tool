@@ -1,0 +1,135 @@
+# Qwen3-30B-A3B FP8 g7e.12xlarge switch study: NCCL default transport selection.
+# SUBSTITUTE: kubernetes.io/hostname. All arms of this study must pin the SAME node.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qwen3-30b-a3b-g7e12-switch-default
+  labels:
+    app: qwen3-30b-a3b-g7e12-switch-default
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: qwen3-30b-a3b-g7e12-switch-default
+  template:
+    metadata:
+      labels:
+        app: qwen3-30b-a3b-g7e12-switch-default
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: ip-10-0-0-1.us-east-1.compute.internal
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+        - key: workload
+          operator: Equal
+          value: bench
+          effect: NoSchedule
+        - key: capacity-reservation
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.26.0
+          securityContext:
+            capabilities:
+              add:
+                - IPC_LOCK
+          command:
+            - bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              python3 - <<'PY' || echo "version probe failed"
+              from importlib.metadata import version
+              import torch
+              print(f"vLLM={version('vllm')}")
+              print(f"PyTorch={torch.__version__}")
+              print(f"PyTorch CUDA={torch.version.cuda}")
+              print(f"NCCL={torch.cuda.nccl.version()}")
+              PY
+              nvidia-smi --query-gpu=index,uuid,name,memory.total,pci.bus_id,driver_version \
+                --format=csv,noheader
+              nvidia-smi topo -m
+              env | grep -E '^NCCL_(P2P_LEVEL|P2P_DISABLE)=' \
+                || echo "NCCL transport overrides: none"
+              exec vllm serve /models/qwen3-30b-a3b-fp8 \
+                --served-model-name qwen3-30b-a3b-fp8 \
+                --kv-cache-dtype bfloat16 \
+                --tensor-parallel-size 2 \
+                --enable-expert-parallel \
+                --all2all-backend allgather_reducescatter \
+                --gpu-memory-utilization 0.90 \
+                --max-model-len 8192 \
+                --max-num-seqs 512 \
+                --max-num-batched-tokens 8192 \
+                --async-scheduling \
+                --enable-chunked-prefill \
+                --no-enable-prefix-caching \
+                --port 8000
+          env:
+            - name: CUDA_DEVICE_ORDER
+              value: "PCI_BUS_ID"
+            - name: HF_HOME
+              value: "/models/.cache"
+            - name: VLLM_LOGGING_LEVEL
+              value: "WARNING"
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: NCCL_DEBUG_SUBSYS
+              value: "INIT,GRAPH,P2P,NET"
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              nvidia.com/gpu: "2"
+            limits:
+              nvidia.com/gpu: "2"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 15
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 30
+            failureThreshold: 6
+          volumeMounts:
+            - name: models
+              mountPath: /models
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: g7e12-switch-model-storage
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+      terminationGracePeriodSeconds: 120
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qwen3-30b-a3b-g7e12-switch-default
+spec:
+  selector:
+    app: qwen3-30b-a3b-g7e12-switch-default
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000

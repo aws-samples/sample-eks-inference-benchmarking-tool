@@ -1,0 +1,233 @@
+#
+# Kimi K3 at MXFP4 across two p6-b200.48xlarge nodes as a LeaderWorkerSet, 16 GPUs, with speculative decoding enabled. Run this back to back against the lws baseline to isolate what speculation buys.
+#
+---
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: kimi-k3-b200-latency-lws
+spec:
+  replicas: 1
+  startupPolicy: LeaderCreated
+  leaderWorkerTemplate:
+    size: 2
+    restartPolicy: RecreateGroupOnPodRestart
+    leaderTemplate:
+      metadata:
+        labels: { app: kimi-k3-b200-latency, role: leader }
+      spec:
+        nodeSelector:
+          node.kubernetes.io/instance-type: p6-b200.48xlarge
+        containers:
+          - name: vllm-leader
+            image: vllm/vllm-openai:kimi-k3
+            command:
+              - bash
+              - -c
+              - |
+                set -euo pipefail
+                echo "=== EFA / NCCL sanity (capture into the result record) ==="
+                fi_info -p efa | head -20 || echo "WARNING: EFA provider not visible"
+                ls /opt/amazon/ofi-nccl/lib* 2>/dev/null \
+                  || echo "WARNING: aws-ofi-nccl missing -> NCCL falls back to TCP, numbers invalid"
+                nvidia-smi topo -m || true
+
+                if [ ! -d /models/kimi-k3-dspark ]; then
+                  echo "ERROR: DSpark draft not found at /models/kimi-k3-dspark." >&2
+                  echo "Stage /models/kimi-k3-dspark on fsx-pvc before deployment." >&2
+                  exit 1
+                fi
+
+                echo "=== starting vLLM leader (LATENCY config): $(date -u) ==="
+                vllm serve moonshotai/Kimi-K3 \
+                  --served-model-name kimi-k3 \
+                  --tensor-parallel-size ${TP_SIZE} \
+                  --nnodes 2 \
+                  --node-rank 0 \
+                  --dist-init-addr ${LWS_LEADER_ADDRESS}:29500 \
+                  --trust-remote-code \
+                  --load-format fastsafetensors \
+                  --moe-backend deep_gemm_mega_moe \
+                  --all2all-backend deepep_v2 \
+                  --max-model-len ${MAX_MODEL_LEN} \
+                  --max-num-seqs ${MAX_NUM_SEQS} \
+                  --gpu-memory-utilization 0.9 \
+                  --max-cudagraph-capture-size 256 \
+                  --kv-cache-dtype fp8 \
+                  --attention-config '{"mla_prefill_backend":"FLASHINFER","use_prefill_query_quantization":true}' \
+                  --enable-prefix-caching \
+                  --speculative-config "{\"model\":\"/models/kimi-k3-dspark\",\"method\":\"dspark\",\"num_speculative_tokens\":${NUM_SPEC_TOKENS},\"attention_backend\":\"FLASHINFER_MLA\",\"draft_sample_method\":\"probabilistic\",\"rejection_sample_method\":\"block\"}" \
+                  --enable-auto-tool-choice \
+                  --tool-call-parser kimi_k3 \
+                  --reasoning-parser kimi_k3 \
+                  --port 8000
+            ports:
+              - containerPort: 8000
+            env:
+              - name: TP_SIZE
+                value: "16"
+              - name: MAX_MODEL_LEN
+                value: "auto"
+              - name: MAX_NUM_SEQS
+                value: "32"
+              - name: NUM_SPEC_TOKENS
+                value: "7"
+              - name: VLLM_USE_V2_MODEL_RUNNER
+                value: "1"
+              - name: VLLM_PREFIX_CACHE_RETENTION_INTERVAL
+                value: "0"
+              - name: VLLM_ENGINE_READY_TIMEOUT_S
+                value: "3600"
+              - name: NCCL_DMABUF_ENABLE
+                value: "0"
+              - name: VLLM_ALLREDUCE_USE_FLASHINFER
+                value: "1"
+              - name: VLLM_USE_RUST_FRONTEND
+                value: "1"
+              - name: FI_PROVIDER
+                value: "efa"
+              - name: FI_EFA_USE_DEVICE_RDMA
+                value: "1"
+              - name: UCX_TLS
+                value: "rc,cuda_copy"
+              - name: NCCL_DEBUG
+                value: "INFO"
+              - name: INSTANCE_TYPE
+                value: "p6-b200.48xlarge-2nodes"
+              - name: QUANTIZATION
+                value: "mxfp4"
+              - name: BENCH_CONFIG
+                value: "latency-dspark-prefixcache-seqs32"
+              - name: PYTHONUNBUFFERED
+                value: "1"
+              - name: HF_HOME
+                value: "/models/.hfcache"
+              - name: HUGGING_FACE_HUB_TOKEN
+                valueFrom:
+                  secretKeyRef: { name: hf-token, key: token }
+            resources:
+              limits:
+                nvidia.com/gpu: "8"
+                vpc.amazonaws.com/efa: "8"
+              requests:
+                cpu: "96"
+                memory: 1024Gi
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            startupProbe:
+              httpGet: { path: /health, port: 8000 }
+              periodSeconds: 15
+              failureThreshold: 280
+            readinessProbe:
+              httpGet: { path: /health, port: 8000 }
+              periodSeconds: 10
+              failureThreshold: 3
+            volumeMounts:
+              - { name: models, mountPath: /models }
+              - { name: dshm, mountPath: /dev/shm }
+        volumes:
+          - name: models
+            persistentVolumeClaim: { claimName: fsx-pvc }
+          - name: dshm
+            emptyDir: { medium: Memory, sizeLimit: 128Gi }
+        terminationGracePeriodSeconds: 120
+    workerTemplate:
+      metadata:
+        labels: { app: kimi-k3-b200-latency, role: worker }
+      spec:
+        nodeSelector:
+          node.kubernetes.io/instance-type: p6-b200.48xlarge
+        containers:
+          - name: vllm-worker
+            image: vllm/vllm-openai:kimi-k3
+            command:
+              - bash
+              - -c
+              - |
+                set -euo pipefail
+                echo "worker starting, rank=${LWS_WORKER_INDEX}, leader=${LWS_LEADER_ADDRESS}"
+                vllm serve moonshotai/Kimi-K3 \
+                  --served-model-name kimi-k3 \
+                  --tensor-parallel-size ${TP_SIZE} \
+                  --nnodes 2 \
+                  --node-rank ${LWS_WORKER_INDEX} \
+                  --dist-init-addr ${LWS_LEADER_ADDRESS}:29500 \
+                  --trust-remote-code \
+                  --load-format fastsafetensors \
+                  --moe-backend deep_gemm_mega_moe \
+                  --all2all-backend deepep_v2 \
+                  --max-model-len ${MAX_MODEL_LEN} \
+                  --max-num-seqs ${MAX_NUM_SEQS} \
+                  --gpu-memory-utilization 0.9 \
+                  --kv-cache-dtype fp8 \
+                  --attention-config '{"mla_prefill_backend":"FLASHINFER","use_prefill_query_quantization":true}' \
+                  --enable-prefix-caching \
+                  --speculative-config "{\"model\":\"/models/kimi-k3-dspark\",\"method\":\"dspark\",\"num_speculative_tokens\":${NUM_SPEC_TOKENS},\"attention_backend\":\"FLASHINFER_MLA\",\"draft_sample_method\":\"probabilistic\",\"rejection_sample_method\":\"block\"}" \
+                  --port 8000
+            env:
+              - name: TP_SIZE
+                value: "16"
+              - name: MAX_MODEL_LEN
+                value: "auto"
+              - name: MAX_NUM_SEQS
+                value: "32"
+              - name: NUM_SPEC_TOKENS
+                value: "7"
+              - name: VLLM_USE_V2_MODEL_RUNNER
+                value: "1"
+              - name: VLLM_PREFIX_CACHE_RETENTION_INTERVAL
+                value: "0"
+              - name: VLLM_ENGINE_READY_TIMEOUT_S
+                value: "3600"
+              - name: NCCL_DMABUF_ENABLE
+                value: "0"
+              - name: VLLM_ALLREDUCE_USE_FLASHINFER
+                value: "1"
+              - name: VLLM_USE_RUST_FRONTEND
+                value: "1"
+              - name: FI_PROVIDER
+                value: "efa"
+              - name: FI_EFA_USE_DEVICE_RDMA
+                value: "1"
+              - name: UCX_TLS
+                value: "rc,cuda_copy"
+              - name: NCCL_DEBUG
+                value: "INFO"
+              - name: PYTHONUNBUFFERED
+                value: "1"
+              - name: HF_HOME
+                value: "/models/.hfcache"
+              - name: HUGGING_FACE_HUB_TOKEN
+                valueFrom:
+                  secretKeyRef: { name: hf-token, key: token }
+            resources:
+              limits:
+                nvidia.com/gpu: "8"
+                vpc.amazonaws.com/efa: "8"
+              requests:
+                cpu: "96"
+                memory: 1024Gi
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            volumeMounts:
+              - { name: models, mountPath: /models }
+              - { name: dshm, mountPath: /dev/shm }
+        volumes:
+          - name: models
+            persistentVolumeClaim: { claimName: fsx-pvc }
+          - name: dshm
+            emptyDir: { medium: Memory, sizeLimit: 128Gi }
+        terminationGracePeriodSeconds: 120
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kimi-k3-b200-latency-lws
+spec:
+  selector:
+    app: kimi-k3-b200-latency
+    role: leader
+  ports:
+    - { protocol: TCP, port: 8000, targetPort: 8000 }

@@ -1,0 +1,104 @@
+#
+# Gemma 4 31B at BF16 on one g6e.12xlarge, 4 GPUs, tensor parallel 4. Use this as the BF16 reference for the g6e generation.
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gemma4-31b-vllm-g6e-bf16
+  labels: { app: gemma4-31b-vllm-g6e-bf16 }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: gemma4-31b-vllm-g6e-bf16 }
+  template:
+    metadata:
+      labels: { app: gemma4-31b-vllm-g6e-bf16 }
+    spec:
+      nodeSelector:
+        node.kubernetes.io/instance-type: "g6e.12xlarge"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: vllm
+          image: public.ecr.aws/deep-learning-containers/vllm:0.21.0-gpu-py312
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              echo "=== starting vLLM on ${INSTANCE_TYPE}: $(date -u) ==="
+              vllm serve ${MODEL_DIR} \
+                --tensor-parallel-size ${TP_SIZE} \
+                --gpu-memory-utilization ${GPU_MEM_UTIL} \
+                --max-model-len ${MAX_MODEL_LEN} \
+                --max-num-seqs ${MAX_NUM_SEQS} \
+                --max-num-batched-tokens ${MAX_NUM_BATCHED_TOKENS} \
+                --enable-prefix-caching \
+                --enable-chunked-prefill \
+                --port 8000
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MODEL_DIR
+              value: "/models/gemma-4-31b-it"
+            - name: TP_SIZE
+              value: "4"
+            - name: MAX_MODEL_LEN
+              value: "8192"
+            - name: MAX_NUM_SEQS
+              value: "512"
+            - name: MAX_NUM_BATCHED_TOKENS
+              value: "32768"
+            - name: GPU_MEM_UTIL
+              value: "0.90"
+            - name: INSTANCE_TYPE
+              value: "g6e.12xlarge"
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef: { name: hf-token, key: token }
+            - name: HF_HOME
+              value: "/models"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: VLLM_ATTENTION_BACKEND
+              value: "FLASHINFER"
+            - name: VLLM_LOGGING_LEVEL
+              value: "WARNING"
+          resources:
+            limits:
+              nvidia.com/gpu: 4
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 15
+            failureThreshold: 120
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 30
+            failureThreshold: 6
+          volumeMounts:
+            - { name: dshm, mountPath: /dev/shm }
+            - { name: model-storage, mountPath: /models }
+            - { name: sitecustomize, mountPath: /usr/local/lib/python3.12/dist-packages/sitecustomize.py, subPath: sitecustomize.py }
+      volumes:
+        - name: dshm
+          emptyDir: { medium: Memory }
+        - name: model-storage
+          persistentVolumeClaim: { claimName: fsx-pvc }
+        - name: sitecustomize
+          configMap: { name: vllm-sitecustomize }
+      terminationGracePeriodSeconds: 120
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gemma4-31b-vllm-g6e-bf16
+spec:
+  selector: { app: gemma4-31b-vllm-g6e-bf16 }
+  ports:
+    - { protocol: TCP, port: 8000, targetPort: 8000 }
