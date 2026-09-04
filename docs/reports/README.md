@@ -1,36 +1,36 @@
 # Reports
 
-**This directory is empty in a fresh clone by design.** `docs/reports/*.md` is gitignored. A report interprets one person's measurements on their infrastructure: it quotes numbers from `docs/results/`, which is private for the same reason, and carries cluster names, namespaces, weight paths and account-specific details. This README is the only tracked file in this directory.
+This directory is empty in a fresh clone. `docs/reports/*.md` is gitignored. A report interprets measurements taken on your own infrastructure: it quotes numbers from `docs/results/`, which is gitignored for the same reason, and carries cluster names, namespaces, weight paths, and account-specific details. This README is the only tracked file in this directory.
 
-A report is the deliverable. The harness produces a `.txt` per run that proves what was measured; the report is what a reader who was not there can act on. Those are different documents with different audiences, which is why this file exists to show the report format we use to create reports.
+The harness produces a `.txt` per run recording what was measured. A report is the accompanying document that a reader who was not present can act on. The two have different audiences, so this file documents the report format.
 
 ## Report format
 
 | Section | Answers |
 |---|---|
 | **Title** and bold subtitle | What was measured, on what hardware, at what precision, and whether this is a baseline or a tuned run |
-| **Caveat blockquote** | The one thing that would make a reader misread every number below. State it before the numbers, not after |
+| **Caveat blockquote** | Any condition that changes how the numbers below should be read. State it before the numbers, not after |
 | **Executive Summary** | The headline figure in context, and what the shape of the curve means |
 | **Key numbers** | Peak throughput and its concurrency, a recommended operating point, and single-stream latency |
 | **Benchmark Results** | A provenance line (model, GPU, vLLM version, precision, parallelism), then the sweep table: concurrency, tokens/sec, req/sec, p50, p99 |
-| **Key insight** | Read the table for the reader. Where does it saturate, what does doubling concurrency actually buy |
-| **Batch offline vs real-time** | Which knobs to change for throughput-first versus latency-first, because one server yields two verdicts |
+| **Key insight** | An interpretation of the table: where it saturates, and what doubling concurrency buys |
+| **Batch offline vs real-time** | Which settings to change for throughput-first versus latency-first, since one server supports both objectives |
 | **vLLM Configuration** | Every flag as Parameter / Value / Note, with ✅ and ❌ marking what must and must not be set |
-| **Key parameters explained** | Why each non-obvious flag is set the way it is, and what breaks otherwise |
+| **Key parameters explained** | Why each non-obvious flag is set the way it is, and what changes otherwise |
 | **Why this hardware** | Memory arithmetic, interconnect, whether pipeline parallelism is needed, weight staging — then an instance comparison table with a verdict per candidate |
-| **Deployment notes** | What operators hit in practice: image tag, staging time, node-local storage, startup timings, concurrency planning |
+| **Deployment notes** | What operators encounter in practice: image tag, staging time, node-local storage, startup timings, concurrency planning |
 | **Configuration Stack** | The manifest inline, with `<ACCOUNT>`, `<REGION>`, `<NAMESPACE>` and `<WEIGHTS_BUCKET>` left as placeholders |
 
-### Rules
+### Conventions
 
-- **Quote numbers inline. Never point at a result file, a report, or a section of one.** Both directories are gitignored, so a reader outside your account has none of them — a citation by path, by filename, or as "see section 6 of the b300 report" is dead either way. Name the recipe, protocol and profile instead: that is provenance someone can act on, because they can run it themselves.
-- **State the output token budget wherever throughput appears.** The same server on the same node recorded 14,992 tokens/sec at a 1,024-token budget and 3,785 at 150, a 4.0x difference that is purely an artifact of truncation.
-- **Say what was not measured.** An absent number is not a passing one. Streaming latency, accuracy, and multi-node scaling are the three most often assumed.
-- **Placeholders in the Deployment manifest you paste**, matching [`k8s/examples/`](../../k8s/examples/): `012345678901`, `my-namespace`, `my-cluster`. 
+- **Quote numbers inline rather than citing a result file, a report, or a section of one.** Both directories are gitignored, so a reader in another environment does not have them, and a citation by path, by filename, or as "see section 6 of the b300 report" cannot be followed. Name the recipe, protocol, and profile instead, which is provenance a reader can reproduce.
+- **State the output token budget wherever throughput appears.** The same server on the same node recorded 14,992 tokens/sec at a 1,024-token budget and 3,785 at 150, a 4.0x difference attributable to truncation alone.
+- **State what was not measured.** An absent number is not a passing one. Streaming latency, accuracy, and multi-node scaling are the three most commonly assumed.
+- **Use placeholders in the Deployment manifest**, matching [`k8s/examples/`](../../k8s/examples/): `012345678901`, `my-namespace`, `my-cluster`.
 
 ## Template
 
-A filled-out report with the model name replaced by a label and the figures replaced by illustrative ones. Copy it, replace every value, and delete any section you cannot fill rather than leaving an empty heading.
+Below is a filled-out report with the model name replaced by a label and the figures replaced by illustrative ones. Copy it, replace every value, and delete any section you cannot fill rather than leaving an empty heading.
 
 ````markdown
 # vLLM Inference on p6-b200 (Blackwell)
@@ -68,10 +68,10 @@ A single p6-b200.48xlarge serves MoE Model A at 12,288 tokens/sec at a 1,024-tok
 
 ## Batch Offline vs. Real-Time Inference
 
-One server produces two verdicts, and the settings that win each are different.
+One server supports both objectives, and the settings for each differ.
 
-* For batch work, run at concurrency 512 and leave the batch-token budget high. Total job time is the objective and per-request latency does not matter.
-* For real-time work, run at concurrency 128 or below, drop `--max-num-batched-tokens` to 4096 or 8192 and `--max-num-seqs` to 128 or 256, then re-measure with a latency protocol at a realistic input size. A throughput sweep cannot answer a latency question, and tuning for latency then validating with short prompts measures nothing that matters.
+* For batch work, run at concurrency 512 and leave the batch-token budget high. Total job time is the objective and per-request latency is not constrained.
+* For real-time work, run at concurrency 128 or below, drop `--max-num-batched-tokens` to 4096 or 8192 and `--max-num-seqs` to 128 or 256, then re-measure with a latency protocol at a realistic input size. A throughput sweep does not report latency metrics, and validating a latency-tuned configuration with short prompts does not exercise the shape it was tuned for.
 
 ## vLLM Configuration
 
@@ -85,13 +85,13 @@ One server produces two verdicts, and the settings that win each are different.
 | `--quantization` | fp8 | halves memory traffic against BF16 |
 | `--kv-cache-dtype` | fp8_e4m3 | doubles KV capacity per GiB |
 | `--enable-chunked-prefill` | ✅ On | prevents head-of-line blocking |
-| `--enable-prefix-caching` | ❌ Off | required off for an honest baseline |
+| `--enable-prefix-caching` | ❌ Off | required off for an uncached baseline |
 | `--enforce-eager` | ❌ Not set | would disable CUDA graphs |
 | `--speculative-config` | ❌ Not tested | clean baseline |
 
 ## Key parameters explained
 
-- **`--enable-prefix-caching` off.** A cache hit skips prefill, so any throughput figure taken with it on is inflated. The provenance block records the observed hit rate. Confirm it reads 0% before quoting anything.
+- **`--enable-prefix-caching` off.** A cache hit skips prefill, so any throughput figure taken with it on is inflated. The provenance block records the observed hit rate; confirm it reads 0% before quoting the figure as uncached.
 - **`--max-model-len` pinned, not auto.** Left to vLLM it is inferred from the model and moves between deployments, which makes two runs non-comparable. It must also stay at or below `--max-num-batched-tokens` or the server refuses to start.
 - **`--max-num-batched-tokens` set explicitly.** This is the token budget for one forward pass and the strongest control on first-token latency. At concurrency 512 with 2,048-token inputs the batch owes 32 passes before every request has started prefilling.
 - **`--kv-cache-dtype` fp8_e4m3.** Doubles the KV cache per GiB, which is what allows concurrency 512 at this context length. Some attention backends reject FP8 KV; confirm yours accepts it before assuming the flag took effect.
@@ -158,11 +158,11 @@ Split the configuration commentary under **Settings specific to this model** and
 ## Naming
 
 ```
-<model>-<instance>-customer-report.md      # the deliverable above
-<model>-<instance>-benchmark-report.md     # internal write-up, same evidence, less framing
+<model>-<instance>-report.md               # the full report format above, written for a reader
+<model>-<instance>-benchmark-report.md     # working notes, same evidence, less surrounding context
 <topic>-findings.md                        # a focused study, e.g. nccl-p2p-findings.md
-<topic>-plan.md                            # method agreed before running, not after
-integration-friction-report-<model>.md     # what broke and what it cost, kept for the next run
+<topic>-plan.md                            # method agreed before the run
+integration-friction-report-<model>.md     # what failed and what it cost, kept for the next run
 ```
 
-Use the **full** instance type, never the family. Reports predating this convention exist locally and are not renamed.
+Use the full instance type rather than the family. Reports predating this convention may exist locally and are not renamed.

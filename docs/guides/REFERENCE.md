@@ -1,6 +1,6 @@
 # Reference
 
-Complete specification of the measurement tool: the commands, their flags, the environment variables a run sets, and the benchmark protocols. See the [README](../../README.md) for the recipes and runbooks. The standard local setup is `./scripts/install-benchmark-client.sh`; then use `python3 app/cli.py <command> [flags]`. `app/utils.py` bootstraps the virtual environment, and the operator CLI execs `app/bench/src/main.py`, which dispatches the implementation commands. Individual requirements filenames below identify implementation dependencies; installing them directly is an expert/minimal-environment path.
+Complete specification of the measurement tool: the commands, their flags, the environment variables a run sets, and the benchmark protocols. See the [README](../../README.md) for the recipes and runbooks. The standard local setup is `./scripts/install-benchmark-client.sh`; then use `python3 app/cli.py <command> [flags]`. `app/utils.py` bootstraps the virtual environment, and the operator CLI execs `app/bench/src/main.py`, which dispatches the implementation commands. Individual requirements filenames below identify implementation dependencies; installing them directly is a minimal-environment path.
 
 - [CLI commands](#cli-commands)
 - [`launch` flags](#launch-flags)
@@ -31,7 +31,7 @@ Complete specification of the measurement tool: the commands, their flags, the e
 | `validate-manifests [recipe…]` | Prove a recipe in [`vllm-recipes/`](../../vllm-recipes/) passes the flags it is written to pass, that its Service points at the port vLLM binds, and that no variable its script reads is left undefined. Checks every recipe when given no argument, which is the pre-deploy gate; name one to check only what you are about to apply. Nothing under `k8s/examples/` is in scope. | `app/requirements-cli.txt` |
 | `launch` | Run `suite`, or capture an accuracy reference, **in-cluster** over cluster DNS. Required for any TTFT figure. | n/a |
 
-**Why throughput and latency are separate clients.** Streaming is the only way to observe TTFT and TPOT, but per-token SSE parsing on one asyncio loop can itself become the bottleneck at high concurrency, contaminating the throughput number that matters most at peak. Keeping the throughput harness non-streaming protects it, and the latency pass is scoped to the concurrency range where first-token latency is meaningful. `arrival_rate` answers a third question (whether an SLA holds at a given arrival rate) and its figures must never share a table with the closed-loop sweeps.
+**Why throughput and latency are separate clients.** Streaming is the only way to observe TTFT and TPOT, but per-token SSE parsing on one asyncio loop can itself become the bottleneck at high concurrency, which would affect the throughput figure at peak. Keeping the throughput harness non-streaming avoids that, and the latency pass is scoped to the concurrency range where first-token latency is meaningful. `arrival_rate` answers a third question, whether an SLA holds at a given arrival rate, and its figures are not comparable with the closed-loop sweeps.
 
 ## `launch` flags
 
@@ -40,7 +40,7 @@ Everything `launch` does not recognise is forwarded verbatim to `suite`, so prot
 | Flag | Default | Meaning |
 | ---- | ------- | ------- |
 | `--context` | required | kubectl context. |
-| `--namespace` | none (required) | Namespace holding the vLLM Service and the runner Job. No default: it builds the cluster-DNS endpoint, so a guess would look for a Service somewhere the run has nothing to do with. |
+| `--namespace` | none (required) | Namespace holding the vLLM Service and the runner Job. No default, because it forms part of the cluster-DNS endpoint and a default could resolve to an unrelated Service. |
 | `--service` | required | vLLM Service name. The endpoint is derived as `http://<service>.<namespace>.svc.cluster.local:<port>/v1`. |
 | `--port` | `8000` | Service port. |
 | `--out-dir` | required | Local directory for results extracted from the Job's stdout, normally `docs/results`. Same convention as `suite`; still required in reference-capture mode even though the reference is restored under `docs/accuracy/`. |
@@ -53,7 +53,7 @@ Everything `launch` does not recognise is forwarded verbatim to `suite`, so prot
 | Flag | Default | Meaning |
 | ---- | ------- | ------- |
 | `--protocol` | required | Which measurement protocol to run, see [Which benchmark to run](#which-benchmark-to-run) to choose one and [Protocols](#protocols) for the comparability rules. Pair with `--profile`: `corpus` + `legacy_corpus`, `reasoning` + `legacy_reasoning`, `latency` + `coding_completion`, `server_qps` + `coding_completion`. The trace-replay protocols take no profile. One invocation writes one result file. |
-| `--instance` | required | **Full** instance type recorded in the result header and filename, e.g. `p6-b300.48xlarge`. Not a family tag: `g7e` alone once covered a 2xlarge, a 12xlarge and a 24xlarge, making three different measurements look like one. |
+| `--instance` | required | Full instance type recorded in the result header and filename, e.g. `p6-b300.48xlarge`. Not a family tag: `g7e` alone covers 2xlarge, 12xlarge, and 24xlarge, so three different measurements would appear identical. |
 | `--config` | required | Server-config tag, e.g. `nvfp4`. Selects the accuracy reference. |
 | `--model-tag` | `kimik3` | Model tag for the reference path `docs/accuracy/<model-tag>-<config>.json`. |
 | `--quant` | `mxfp4` | Precision tag recorded in the result header. |
@@ -62,19 +62,19 @@ Everything `launch` does not recognise is forwarded verbatim to `suite`, so prot
 | `--endpoint` | `http://127.0.0.1:8000/v1` | Base URL under test. |
 | `--reps` | `3` | Repetitions. The aggregate reports the median per cell and flags spread above 10%. |
 | `--profile` | protocol default | Pinned prompt profile. Overrides the protocol's prompt settings **and** its output cap, because a profile pins both ends of the shape. |
-| `--no-profile` | off | Serve generated prompts instead. Input size becomes implicit; avoid for anything published. |
+| `--no-profile` | off | Serve generated prompts instead. Input size becomes implicit, so this is not recommended for published figures. |
 | `--trace` | protocol default | Repo-relative path to a timestamped trace for the trace-replay protocols, e.g. `app/bench/data/traces/agentx_32k_seed42.jsonl`. Required by `trace_replay`, which pins none. Keep traces under `app/bench/data/traces/` so the in-cluster payload carries them. The lock records the path **and** a SHA-256 of the file, so two results claiming the same trace can be checked rather than assumed. |
 | `--no-latency` | off | Skip the companion streaming-latency pass after a throughput sweep. Roughly halves GPU time, and reports no TTFT/TPOT/ITL. |
-| `--allow-loopback-latency` | off | Permit a streaming pass against a loopback endpoint. Refused by default: a tunnel adds 150-200 ms to every TTFT sample. Stamped into the lock, so the result declares itself unfit for a latency claim. |
+| `--allow-loopback-latency` | off | Permit a streaming pass against a loopback endpoint. Refused by default, because a tunnel adds 150-200 ms to every TTFT sample. Recorded in the lock, so the result is identifiable as unsuitable for a latency claim. |
 | `--skip-accuracy` | off | Skip the correctness gate. Recorded in the lock, so the run stays identifiable as unverified. |
 | `--ttft-target` | protocol default | Override the TTFT target in milliseconds for `server_qps`. Forwarded through `launch`; changes the capacity question and result filename when it differs from the shipped value. |
 | `--tpot-target` | protocol default | Override the TPOT target in milliseconds for `server_qps`. Forwarded through `launch`; changes the capacity question and result filename when it differs from the shipped value. |
-| `--out-dir` | required | Results directory, normally `docs/results`, which is flat: the filename carries model, quantisation and instance, so there are no subdirectories. Required rather than defaulted, because a hardcoded default once wrote one instance's results into another's directory. |
+| `--out-dir` | required | Results directory, normally `docs/results`, which is flat: the filename carries model, quantisation and instance, so there are no subdirectories. Required rather than defaulted, so results cannot be written to an unintended directory. |
 | `--pod` | auto-discovered | Pod to capture provenance from. Found automatically: the Running pod with a `vllm` container in `--namespace`. Pass this only to disambiguate when several match. |
 | `--no-provenance` | off | Skip provenance capture. The result then carries no evidence of NCCL transport, KV sizing or GPU topology. |
 | `--k8s-context` | current kubectl context | Context used for pod discovery and provenance capture only. `launch` does not need it: it captures provenance itself, reusing `--context`. |
 | `--namespace` | none (required) | Namespace used for pod discovery and provenance capture only. Required unless `--no-provenance` is given, and checked before the sweep starts rather than after it. |
-| `--dry-run` | off | Print the protocol lock and output paths, run nothing. Needs no server. Always do this first. |
+| `--dry-run` | off | Print the protocol lock and output paths, run nothing. Needs no server. Useful as a first step to review the conditions before spending GPU time. |
 
 ## Environment knobs
 
@@ -92,7 +92,7 @@ Everything `launch` does not recognise is forwarded verbatim to `suite`, so prot
 | `MIN_DURATION_S` | `60` throughput / `120` arrival-rate | Bare-harness duration floor per level. Protocol locks override it: `corpus=0`, `reasoning=90`, and `server_qps=120`. Latency protocols use their own sample floors rather than this duration setting. |
 | `WARMUP_REQUESTS` | `0` | Requests discarded per level before measuring. The open-loop harness issues them before LoadGen starts and resets its counters afterwards, so warmup can never enter a reported figure. |
 | `MIN_QUERY_COUNT` | `1500` | Open-loop query floor per level. This covers roughly five over-target samples under LoadGen's early-stopping arithmetic, but no fixed floor guarantees certification; the observed tail determines the requirement. An uncertified level is `UNDERSAMPLED` and `INVALID`, not an SLA pass. |
-| `ABORT_AFTER_FAILURES` | `50` | Consecutive open-loop failures after which the client stops sending. A level whose server vanished cannot produce a measurement, and continuing to issue against nothing only delays discovering that. |
+| `ABORT_AFTER_FAILURES` | `50` | Consecutive open-loop failures after which the client stops sending. A level whose server has become unreachable cannot produce a measurement, so the run stops rather than continuing to issue requests. |
 | `THROUGHPUT_FILL_LEVELS` | on | Size each level to whole waves so it reaches its labelled in-flight depth. |
 | `THROUGHPUT_MIN_WAVES` | `2` | Minimum whole waves per level. |
 | `PROMPT_PROFILE` | unset | Pinned profile name. Takes precedence over the generated modes. |
@@ -118,10 +118,10 @@ This table is the reference summary. [Which benchmark to run](#which-benchmark-t
 | Protocol | Harness | Sweeps | What it answers |
 | -------- | ------- | ------ | --------------- |
 | `corpus` | `throughput.py` | concurrency 1→512 | Sizing: tokens/sec and req/sec against in-flight depth, 150-token outputs. The canonical sweep. |
-| `reasoning` | `throughput.py` | concurrency 1→512 | The same sweep with a reasoning-length output budget. Reads higher tok/s than `corpus` because longer decodes amortise per-request overhead, not a better result, a different workload. |
+| `reasoning` | `throughput.py` | concurrency 1→512 | The same sweep with a reasoning-length output budget. Reads higher tok/s than `corpus` because longer decodes amortise per-request overhead, which makes it a different workload rather than a better result. |
 | `latency` | `latency.py` | concurrency 1→512 | TTFT / TPOT / ITL, streaming. |
 | `latency_longctx` | `latency.py` | input length 4k→28k | First-token cost against context length, at fixed concurrency 8. |
-| `latency_sharedprefix` | `latency.py` | concurrency 1→512 | Cache-hit behavior on a shared prefix. Inflated by construction; never compare against a unique-prompt baseline. |
+| `latency_sharedprefix` | `latency.py` | concurrency 1→512 | Cache-hit behavior on a shared prefix. Inflated by construction, so not comparable with a unique-prompt baseline. |
 | `server_qps` | `arrival_rate.py` | target arrival rate 1→16 QPS | Interactive capacity: does the server hold TTFT p99 ≤ 500 ms and TPOT p99 ≤ 50 ms at a given request rate. Open loop, MLPerf LoadGen. |
 | `corpus_aiperf` | `aiperf_harness.py` | concurrency 1→512 | **Calibration only.** The `corpus` workload driven by NVIDIA AIPerf instead of this repo's client, so two independent clients can be checked against each other. |
 | `agentx` | `aiperf_harness.py` | one trace replay | Agentic coding traffic: 40 multi-turn sessions with think-time gaps and KV-cache-faithful prefix structure, replayed on its recorded timeline. |
@@ -129,20 +129,20 @@ This table is the reference summary. [Which benchmark to run](#which-benchmark-t
 
 ## What may be compared with what
 
-These rules exist because each was learned from a measurement that would otherwise have been misread.
+Each of these rules reflects a case where two figures are not directly comparable.
 
-- **`corpus_aiperf` numbers are not corpus results.** The protocol exists to check one client against the other, and its file says so in the lock. On an MoE model with NVFP4 weights the two clients agreed within measurement noise at concurrency 512, which is what makes the canonical `corpus` figures credible. Quoting the calibration run as a product number throws that away and reports an unpinned client instead.
-- **AIPerf streaming metrics never share a column with `latency.py` metrics.** They are different quantities: AIPerf separates client-side queueing from time-to-first-token, `latency.py` folds them together, and the gap reached 41% at concurrency 32 on the same server. `latency.py` owns every published TTFT/TPOT figure; the AIPerf-backed protocols report their own streaming columns and are read on their own terms.
-- **Trace replays compare only against replays of the same trace.** The lock records the trace path and its SHA-256 for exactly this reason. A regenerated trace is a new workload even when the generator and seed look familiar.
-- **Open-loop figures never share a table with the concurrency sweeps.** Arrival rate and in-flight depth are different independent variables, and `openloop_tokens_per_sec` is named so the difference is visible in the column itself.
-- **A flagged cell is not a result.** Any cell whose spread across reps exceeds 10% is marked `distrust this cell` in the file, and any level that lost requests excludes its whole rep from the medians. Both are printed, not hidden, so the file states its own limits.
+- **`corpus_aiperf` numbers are not corpus results.** The protocol exists to check one client against the other, and the lock records which client ran. On an MoE model with NVFP4 weights the two clients agreed within measurement noise at concurrency 512, which supports the canonical `corpus` figures. Quoting the calibration run in place of a `corpus` result reports a different client than the one the protocol pins.
+- **AIPerf streaming metrics do not share a column with `latency.py` metrics.** They are different quantities: AIPerf separates client-side queueing from time-to-first-token, `latency.py` folds them together, and the gap reached 41% at concurrency 32 on the same server. `latency.py` is the source for published TTFT/TPOT figures; the AIPerf-backed protocols report their own streaming columns and are read on their own terms.
+- **Trace replays compare only against replays of the same trace.** The lock records the trace path and its SHA-256 for this reason. A regenerated trace is a new workload even when the generator and seed are the same.
+- **Open-loop figures do not share a table with the concurrency sweeps.** Arrival rate and in-flight depth are different independent variables, and `openloop_tokens_per_sec` is named so the difference is visible in the column itself.
+- **A flagged cell is not a usable result.** Any cell whose spread across reps exceeds 10% is marked `distrust this cell` in the file, and any level that lost requests excludes its whole rep from the medians. Both are printed in the file rather than suppressed.
 
 ## Trusting the open-loop verdict
 
 `server_qps` is the one protocol whose pass/fail verdict comes from outside this repo, and LoadGen's verdict alone is not sufficient:
 
-- **A percentile has to be certifiable.** LoadGen certifies a p99 only when the query count clears `h + t`: 459 queries with no SLA violations, 662 with one. Below that it reports `UNDERSAMPLED`, which is a sample-size statement and **not** an SLA violation. `MIN_QUERY_COUNT` defaults above the floor for this reason.
-- **LoadGen can report a pass on a server that answered nothing.** Failed requests are completed to LoadGen (it has no failed-query concept), so they enter its latency record as instant responses and *improve* its percentiles. Measured against a killed server with 84% of requests failing, LoadGen reported `sla=MET, loadgen_result=VALID`. The `REQUEST_SUCCESS` line every harness emits is what catches this: a level below 95% success excludes its rep, and the aggregate names which and why. `python3 app/cli.py verify-openloop` re-creates that scenario on every run of the checks.
+- **A percentile has to be certifiable.** LoadGen certifies a p99 only when the query count clears `h + t`: 459 queries with no SLA violations, 662 with one. Below that it reports `UNDERSAMPLED`, which is a sample-size statement rather than an SLA violation. `MIN_QUERY_COUNT` defaults above the floor for this reason.
+- **LoadGen can report a pass on a server that returned no successful responses.** Failed requests are completed to LoadGen, which has no failed-query concept, so they enter its latency record as instant responses and improve its percentiles. Measured against a killed server with 84% of requests failing, LoadGen reported `sla=MET, loadgen_result=VALID`. The `REQUEST_SUCCESS` line every harness emits catches this: a level below 95% success excludes its rep, and the aggregate names which and why. `python3 app/cli.py verify-openloop` re-creates that scenario on every run of the checks.
 
 ---
 

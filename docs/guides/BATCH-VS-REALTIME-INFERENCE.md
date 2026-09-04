@@ -13,20 +13,18 @@ Throughput matters in both cases, but in a different role. Batch work seeks a hi
 
 A closed-loop concurrency sweep normally has a recognizable shape: aggregate throughput rises as batching improves, then approaches a plateau, while queueing, TTFT, and often TPOT worsen as the server saturates. The useful operating point is workload- and SLO-specific; there is no repository-wide concurrency value that represents it.
 
-The `corpus` and `reasoning` protocols collect throughput with the non-streaming `throughput.py` implementation harness and, unless disabled, run a separate streaming-latency pass. These passes target the same server and sweep but send different requests. Read their throughput and latency curves side by side, never as metrics from one request.
+The `corpus` and `reasoning` protocols collect throughput with the non-streaming `throughput.py` implementation harness and, unless disabled, run a separate streaming-latency pass. These passes target the same server and sweep but send different requests. Read their throughput and latency curves side by side rather than as metrics from a single request.
 
-Run the protocol on the selected recipe and preserve the complete curve. A single peak-throughput or minimum-latency cell hides both the knee and the tradeoff needed for deployment sizing.
+Run the protocol on the selected recipe and preserve the complete curve. A single peak-throughput or minimum-latency cell omits both the knee and the tradeoff needed for deployment sizing.
 
 ---
 
-## Mental model: saturation vs. responsiveness
+## Saturation vs. responsiveness
 
-Think of the GPU as a kitchen.
+- **Batch work** optimizes aggregate progress against a deadline. Per-request latency can be high if total throughput and reliability are acceptable.
+- **Real-time work** optimizes against a per-request response-time target. More batching can improve efficiency, but not if queueing pushes requests outside that target.
 
-- **Batch is catering:** keep useful work flowing and finish the whole order by its deadline. Per-dish latency can be high if aggregate progress and reliability are acceptable.
-- **Real-time is à la carte:** each order has a response-time target. More batching can improve efficiency, but not if queueing pushes requests outside that target.
-
-The distinction is an objective and an arrival model, not a different class of server.
+The distinction is one of objective and arrival model, not a different class of server.
 
 ## Which protocol answers which question
 
@@ -38,13 +36,13 @@ A protocol fixes the harness, prompt shape, output budget, and swept axis. The r
 | `reasoning` | `throughput.py` | Canonical concurrency sweep; `legacy_reasoning`; reasoning-length output cap | Historical closed-loop reasoning-model capacity. Reported tokens include reasoning tokens. |
 | `latency` | `latency.py` | Canonical concurrency sweep; `coding_completion` | Streaming TTFT, TPOT, and ITL as in-flight depth changes. |
 | `latency_longctx` | `latency.py` | Configured input-length sweep at fixed concurrency | First-token behavior as unique prompt length grows; not concurrency capacity. |
-| `latency_sharedprefix` | `latency.py` | Canonical concurrency sweep; generated shared prefix | A deliberately cache-seeking experiment. Prefix caching must be enabled; never treat it as a unique-prompt baseline. |
+| `latency_sharedprefix` | `latency.py` | Canonical concurrency sweep; generated shared prefix | A deliberately cache-seeking experiment. Prefix caching must be enabled, and results are not a unique-prompt baseline. |
 | `server_qps` | `arrival_rate.py` | Configured offered-QPS levels; `coding_completion` | Open-loop capacity under Poisson arrivals: whether success, achieved-rate, TTFT, and TPOT requirements hold. |
 | `corpus_aiperf` | `aiperf_harness.py` | Canonical concurrency sweep; `legacy_corpus` | Cross-client calibration against `corpus`, not a replacement result. |
 | `agentx` | `aiperf_harness.py` trace mode | Committed trace schedule and per-record output budgets | Multi-turn agentic traffic with think-time and cache-faithful prefix structure. |
 | `trace_replay` | `aiperf_harness.py` trace mode | User-supplied trace schedule and per-record budgets | Replay of recorded traffic; compare only replays of the identical trace digest. |
 
-Closed-loop concurrency, open-loop arrival rate, context length, and trace time are different independent variables. Do not combine their numbers in one comparative table. In particular, `openloop_tokens_per_sec` is not the closed-loop `tokens_per_sec` metric.
+Closed-loop concurrency, open-loop arrival rate, context length, and trace time are different independent variables. Their numbers do not belong in one comparative table. In particular, `openloop_tokens_per_sec` is not the closed-loop `tokens_per_sec` metric.
 
 Use the public CLI for operator commands:
 
@@ -54,7 +52,7 @@ python3 app/cli.py suite --help
 python3 app/cli.py validate-manifests <model>/<recipe>.yaml
 ```
 
-`python3 app/cli.py launch ... --protocol <name>` is the normal in-cluster path for latency claims; `suite` is useful when the endpoint and provenance path are already available. The CLI dispatches to implementation harnesses such as `throughput.py`, `latency.py`, `arrival_rate.py`, and `aiperf_harness.py`. Those names explain metric semantics but are not the preferred user command.
+`python3 app/cli.py launch ... --protocol <name>` is the normal in-cluster path for latency claims; `suite` is useful when the endpoint and provenance path are already available. The CLI dispatches to implementation harnesses such as `throughput.py`, `latency.py`, `arrival_rate.py`, and `aiperf_harness.py`. Those names are referenced below to explain metric semantics; the CLI is the supported entry point.
 
 ## Prompt length and aggregate prefill pressure
 
@@ -77,7 +75,7 @@ A TTFT figure without its measured input shape is not portable. Nominal profile 
 
 ## Prompt profiles
 
-Profiles pin both input text and output cap. Choose one that resembles the intended workload with `--profile`; do not infer request shape from the serving recipe. The canonical files and tokenizer caveats are documented in the [prompt-profile reference](../../app/bench/data/prompt_profiles/README.md).
+Profiles pin both input text and output cap. Choose one that resembles the intended workload with `--profile`; the serving recipe does not determine request shape. The canonical files and tokenizer caveats are documented in the [prompt-profile reference](../../app/bench/data/prompt_profiles/README.md).
 
 | Profile | Prompts | Nominal input | Output cap | Intended shape |
 |---|---:|---:|---:|---|
@@ -92,7 +90,7 @@ Profiles pin both input text and output cap. Choose one that resembles the inten
 
 The representative profiles differ at position zero except for their declared intentional duplicates. `legacy_corpus` is different: its five prompts are reused throughout the run. Consequently, the corpus is not automatically cache-free. Whether it measures cold work, warmed cache hits, or a mixture depends on prompt selection, server-side prefix caching, warmup/history, and the provenance recorded with the result.
 
-`latency_sharedprefix` asks the opposite question on purpose. It generates a byte-identical shared prefix and requires prefix caching so the run can characterize cache-hit behavior. Compare cache experiments only when prefix shape, warmup, server configuration, and observed cache state are known; do not compare them directly with unique-prompt latency.
+`latency_sharedprefix` addresses the opposite question. It generates a byte-identical shared prefix and requires prefix caching so the run can characterize cache-hit behavior. Compare cache experiments only when prefix shape, warmup, server configuration, and observed cache state are known, and not directly against unique-prompt latency.
 
 ## Reasoning output and user-visible latency
 
@@ -119,7 +117,7 @@ Treat each setting below as a hypothesis to test on the selected model, image, b
 
 ### `--max-num-seqs`
 
-This caps how many sequences the scheduler can consider concurrently. More capacity can improve batch fill, but a larger active set can increase per-step work, queueing, and KV demand. For real-time service, set it high enough not to impose an artificial ceiling at the chosen operating point; do not maximize it without measuring latency and memory behavior.
+This caps how many sequences the scheduler can consider concurrently. More capacity can improve batch fill, but a larger active set can increase per-step work, queueing, and KV demand. For real-time service, set it high enough not to impose a ceiling below the chosen operating point, and measure latency and memory behavior before raising it further.
 
 ### `--max-num-batched-tokens`
 
@@ -127,7 +125,7 @@ This is the per-iteration token budget across scheduled sequences. A larger budg
 
 ### `--enable-chunked-prefill`
 
-Chunking lets long prefills interleave with decode work and can reduce head-of-line blocking. The benefit and overhead depend on the vLLM version, scheduler, model, and prompt mix. Validate both latency distribution and throughput for the exact recipe instead of treating the flag as universally required.
+Chunking lets long prefills interleave with decode work and can reduce head-of-line blocking. The benefit and overhead depend on the vLLM version, scheduler, model, and prompt mix. Validate both latency distribution and throughput for the exact recipe rather than treating the flag as universally required.
 
 ### `--enable-prefix-caching`
 
@@ -151,9 +149,9 @@ A draft path can reduce sequential decode steps when proposals are accepted, but
 
 ### Attention backend and request logging
 
-Attention-backend compatibility is scoped to the selected recipe, image/version, model, dtype, and GPU architecture. Inspect the manifest and startup logs. [`TROUBLESHOOTING.md`](./TROUBLESHOOTING.md) documents a tested XFormers/sm_120 failure and workaround, but that does not imply every g7e recipe must set FlashInfer or that one backend is correct across images.
+Attention-backend compatibility is scoped to the selected recipe, image/version, model, dtype, and GPU architecture. Inspect the manifest and startup logs. [`TROUBLESHOOTING.md`](./TROUBLESHOOTING.md) documents a tested XFormers/sm_120 failure and workaround, which is specific to that stack rather than a requirement for every g7e recipe or evidence that one backend is correct across images.
 
-Per-request logging can add overhead and jitter at high request rates. Preserve enough diagnostics for failures, then measure any logging-level change instead of assuming all recipes use the same setting.
+Per-request logging can add overhead and jitter at high request rates. Preserve enough diagnostics for failures, and measure the effect of any logging-level change rather than assuming all recipes use the same setting.
 
 ---
 
@@ -165,9 +163,9 @@ Per-request logging can add overhead and jitter at high request rates. Preserve 
 4. **Measure the closed-loop latency curve.** Use `latency` for a representative profile; use `latency_longctx` or `latency_sharedprefix` only for their specialized questions.
 5. **Change one serving variable at a time.** Scheduling, caching, precision, backend, and parallelism changes can interact, so isolate them before combining winners.
 6. **Verify sustainable arrivals.** Run `server_qps` to find the highest offered rate that meets latency, success, achieved-rate, and certification requirements.
-7. **Repeat the correctness gate and retain the full curve.** A faster configuration that changes answers or only survives a short sample is not a deployment result.
+7. **Repeat the correctness gate and retain the full curve.** A faster configuration that changes answers, or that holds only over a short sample, is not a deployment result.
 
-Do not validate an interactive service with `legacy_corpus`: its nominal input is historical, its output cap can truncate reasoning, and its repeated prompts make it cache-sensitive.
+`legacy_corpus` is not suitable for validating an interactive service: its nominal input is historical, its output cap can truncate reasoning, and its repeated prompts make it cache-sensitive.
 
 ## Metrics by workload
 
@@ -202,7 +200,7 @@ If only the closed-loop operating point is available, the provisional form is:
 replicas = ceil(H * lambda_peak * W* / C*)
 ```
 
-Then validate that replica count with open-loop traffic and the real load-balancing path. Dividing requests per second only by concurrency is dimensionally incomplete.
+Then validate that replica count with open-loop traffic and the real load-balancing path. Dividing requests per second by concurrency alone is dimensionally incomplete.
 
 For a batch deadline, derive the required work rate first. If `T_total` output tokens must complete within `D` seconds and one replica sustains `tau` output tokens per second on the representative workload:
 
