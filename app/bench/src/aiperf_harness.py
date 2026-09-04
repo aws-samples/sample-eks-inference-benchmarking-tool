@@ -22,10 +22,9 @@ What maps where (verified against a captured aiperf 0.12.0 export, schema 1.4):
                    transport_failures is 0 — ok_fraction, which drives the suite's
                    exclusion rule, is unaffected by the split
 
-Deliberate non-goals, from the integration plan: this harness never hosts the
-canonical sweep (corpus comparability and fill verification stay on throughput.py),
-and generated prompt modes are unsupported — a pinned profile is required, so both
-clients always measure the identical committed workload.
+Deliberate non-goals: this harness never hosts the canonical sweep (corpus comparability 
+and fill verification stay on throughput.py), and generated prompt modes are unsupported — 
+a pinned profile is required, so both clients always measure the identical committed workload.
 
 TRACE MODE (AIPERF_MODE=trace): replays a committed timestamped trace once, streaming,
 under aiperf's --fixed-schedule — arrivals come from the trace's timestamps and
@@ -34,12 +33,12 @@ shape (multi-turn agentic traffic, real arrival timing, KV-prefix structure) tha
 aiohttp harness structurally cannot express. It emits a `TRACE_ROW key=value` line
 (following arrival_rate's QPS_ROW precedent) keyed as pseudo-level 1, since a replay
 is one run, not a sweep. Streaming metrics (TTFT/ITL) here are aiperf's definitions —
-per the latency calibration (docs/reports/aiperf-calibration/latency-findings.md)
-they are NOT interchangeable with latency.py's columns and only appear in protocols
-that never had latency.py history. TOKEN_SHAPE is deliberately not emitted: a trace
-has per-record output budgets, not a scalar cap, and the shape lives in the committed
-trace artifact. CONCURRENCY_FILL is likewise omitted — fixed-schedule is open-loop,
-so requested-vs-achieved depth is not the integrity question; request success is.
+per latency calibration they are NOT interchangeable with latency.py's columns and
+only appear in protocols that never had latency.py history. TOKEN_SHAPE is deliberately 
+not emitted: a trace has per-record output budgets, not a scalar cap, and the shape 
+lives in the committed trace artifact. CONCURRENCY_FILL is likewise omitted — 
+fixed-schedule is open-loop, so requested-vs-achieved depth is not the integrity question; 
+request success is.
 """
 from __future__ import annotations
 
@@ -83,8 +82,8 @@ def build_argv(level: int, requests: int, dataset: Path, artifacts: Path) -> lis
         "--custom-dataset-type", "single_turn",
         "--concurrency", str(level),
         # Scaled with the level by the SAME rule as throughput.py (imported, not copied):
-        # a flat count below the level cannot fill it, and the 2026-08-10 calibration run
-        # showed exactly that — c>=128 under-filled at 100 requests while the baseline
+        # a flat count below the level cannot fill it, and a calibration run showed exactly
+        # that — c>=128 under-filled at 100 requests while the baseline
         # ran 256/512/1024. Identical scaling is what makes the two clients comparable.
         "--request-count", str(requests),
         "--workers-max", str(AIPERF_WORKERS_MAX),

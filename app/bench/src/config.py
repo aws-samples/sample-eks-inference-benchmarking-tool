@@ -159,8 +159,8 @@ MIN_LEVEL_SUCCESS = env_float("MIN_LEVEL_SUCCESS", 0.95)
 
 # Share of a level's requests that may fail on TRANSPORT before the sweep is abandoned. Once
 # the client's connections are failing at this rate the apparatus is broken, and every
-# remaining level and rep produces unusable data — the 2026-08-08 latency run continued for two
-# further hours after its tunnel had already collapsed.
+# remaining level and rep produces unusable data — one latency run continued for two further
+# hours after its tunnel had already collapsed.
 TRANSPORT_ABORT_SHARE = env_float("TRANSPORT_ABORT_SHARE", 0.10)
 
 # Guarantee each level reaches its labelled in-flight depth. On by default: a level with fewer
@@ -206,14 +206,14 @@ TPOT_SLA_MS = env_float("TPOT_SLA_MS", 50)
 # BetaRegularized(0.99, h, 1+t) <= 0.01. That means 459 queries with ZERO over-target
 # samples, 662 with one, 1001 with three, 1307 with five, 2010 with ten. The former default
 # of 200 could not certify any level no matter how well the server behaved, so every
-# 2026-08-12 open-loop level came back UNDERSAMPLED and therefore LoadGen-INVALID.
+# open-loop level came back UNDERSAMPLED and therefore LoadGen-INVALID.
 #
 # NO FLOOR CAN GUARANTEE CERTIFICATION, so do not read this number as one. Each additional
 # over-target sample adds roughly 130 to the requirement while 100 extra queries buy only one
 # more permitted sample, so the requirement always outruns the floor. What decides it is how
-# many samples land past the target, and that is a property of the tail, not of the median: on
-# 2026-08-14 a g7.24xlarge level whose TTFT p99 was 215 ms against a 500 ms target still failed
-# to certify at 1000 queries, because a handful of far-tail samples crossed 500 ms.
+# many samples land past the target, and that is a property of the tail, not of the median: a
+# g7.24xlarge level whose TTFT p99 was 215 ms against a 500 ms target still failed to certify
+# at 1000 queries, because a handful of far-tail samples crossed 500 ms.
 #
 # 1500 covers a level with about five stragglers and will not cover one with ten. Raising it
 # lengthens every level, since a level runs until this count is reached, and at 1 QPS that is
@@ -344,12 +344,12 @@ PROTOCOLS: dict[str, dict] = {
     },
     "server_qps": {
         "harness": "arrival_rate",
-        # Levels bracket the SLA boundary rather than spanning orders of magnitude. The
-        # 2026-08-12 run located the interactive limit between 2 and 8 QPS (p99 TTFT
+        # Levels bracket the SLA boundary rather than spanning orders of magnitude. A
+        # calibration run located the interactive limit between 2 and 8 QPS (p99 TTFT
         # 386 ms at 2, 499 ms at 4, 10 s at 8), so 3, 5 and 6 are where a capacity answer
         # is actually decided; 16 is kept as the one saturated level, which is what
         # establishes the throughput ceiling (~13.9 QPS achieved). 32 is dropped: it
-        # measured the same ceiling with a 144 s p99, telling us nothing 16 did not.
+        # measured the same ceiling with a 144 s p99, adding nothing 16 did not show.
         "qps_levels": [1, 2, 3, 4, 5, 6, 8, 16],
         # Seconds to let the server drain between levels; see suite.sweep_qps_levels.
         "settle_s": 60,
@@ -365,7 +365,7 @@ PROTOCOLS: dict[str, dict] = {
             # MIN_QUERY_COUNT in this file for why no floor is one.
             "MIN_QUERY_COUNT": "1500",
             "MIN_DURATION_S": "120",
-            # Absorbs first-request costs that flipped an SLA verdict on 2026-08-12.
+            # Absorbs first-request costs that were observed to flip an SLA verdict.
             "WARMUP_REQUESTS": "20",
         },
         "note": "OPEN LOOP (Poisson arrivals). NOT comparable to the concurrency sweep.",
@@ -377,8 +377,8 @@ PROTOCOLS: dict[str, dict] = {
         # the committed trace (see app/bench/data/traces/README.md for the pin and the
         # 32k scaling rationale). The workload the aiohttp harness structurally cannot
         # express; supersedes the shared-prefix latency probe for the coding-assistant
-        # question. Streaming metrics are aiperf's definitions — never comparable to
-        # latency.py columns (docs/reports/aiperf-calibration/latency-findings.md).
+        # question. Streaming metrics are aiperf's definitions, so they are not
+        # comparable to latency.py columns.
         "profile": None,
         "env": {
             "AIPERF_MODE": "trace",

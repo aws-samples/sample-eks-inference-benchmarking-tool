@@ -10,17 +10,16 @@ Two behaviors are deliberately hostile, because a friendly mock hides bugs:
   UNCAPPED GENERATION. A request that carries neither `max_completion_tokens` nor
   `max_tokens` gets ~2,000 completion tokens, mimicking a real model generating to
   EOS. The first mock defaulted the cap to 150, and that forgiveness let the adapter
-  ship without sending a cap at all: the 2026-08-10 calibration run decoded ~1,900
-  tokens per request against a 150-token budget and its numbers were invalid. A
+  ship without sending a cap at all: a calibration run decoded ~1,900 tokens per
+  request against a 150-token budget and its numbers were invalid. A
   harness bug in cap propagation now shows up locally as a conspicuously wrong
   output_per_request, exactly as it did in-cluster.
 
   DETERMINISTIC FAILURE INJECTION. With MOCK_FAIL_EVERY=N, every Nth request per
-  worker process returns HTTP 500. The integration plan requires proving "the
-  success-floor exclusion fires correctly on a deliberately broken run"
-  (docs/reports/aiperf-integration.md, Phase 1 verification); this knob is how a
-  local check breaks the run on purpose. Deterministic rather than random so the
-  same command always produces the same failure count.
+  worker process returns HTTP 500. This is how a local check confirms that the
+  success-floor exclusion fires correctly on a deliberately broken run.
+  Deterministic rather than random so the same command always produces the same
+  failure count.
 
 Usage:
     python3 mock_server.py                      # serve on 127.0.0.1:8199

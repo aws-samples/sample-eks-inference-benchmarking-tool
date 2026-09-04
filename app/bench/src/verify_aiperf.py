@@ -1,10 +1,10 @@
 """Regression checks for the aiperf adapter, runnable on a laptop without a GPU.
 
-Every check here exists because its absence let a bug ship. The 2026-08-10 calibration
-run (docs/reports/aiperf-calibration/findings.md) was invalid for two adapter reasons —
-no output cap sent, flat request counts under-filling high levels — and the mock used
-for local verification at the time could not catch the first because it forgave a
-missing cap. These checks encode the failure modes so they cannot silently recur:
+Every check here exists because its absence let a bug ship. A calibration run was
+invalid for two adapter reasons — no output cap sent, flat request counts under-filling
+high levels — and the mock used for local verification at the time could not catch the
+first because it forgave a missing cap. These checks encode the failure modes so they
+cannot silently recur:
 
   static  (no aiperf needed)
     converter        every dataset line carries the profile's prompt (cycled in
@@ -209,7 +209,7 @@ def wire_checks() -> None:
             check("aiperf level completes against mock", False, row["detail"])
             return
         check("aiperf level completes against mock", True)
-        check("output capped at exactly 150 (the bug the 2026-08-10 run shipped with)",
+        check("output capped at exactly 150 (the bug the calibration run shipped with)",
               row["output_per_request"] == 150.0,
               f"output_per_request={row['output_per_request']}")
         check("request count scaled for the level",

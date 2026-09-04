@@ -13,7 +13,7 @@ The suite runs inside the Job rather than only a harness, because the suite owns
 medians, spread flags, the protocol lock and the accuracy gate. That also means the companion
 streaming-latency pass runs in-cluster automatically, since it runs inside the suite.
 
-Everything this does not recognise is forwarded verbatim to `main.py suite`, so protocol,
+Everything this does not recognize is forwarded verbatim to `main.py suite`, so protocol,
 profile and gate flags need no duplicate definition here.
 
     python3 app/bench/src/main.py launch \\
@@ -320,9 +320,9 @@ def cleanup(context: str, namespace: str, job: str, configmap: str, keep: bool,
     A run whose runner exited non-zero is kept for the same reason, and the file count alone
     does not catch it. Every run echoes the accuracy reference files, so the extractor writes
     several of them even when the benchmark never started, and the count never reaches zero.
-    On 2026-08-13 a preflight failure was therefore cleaned up on the strength of five
-    round-tripped references, and the pod log holding the actual reason had to be reproduced
-    by launching the run a second time with --keep-job.
+    A preflight failure was therefore once cleaned up on the strength of five round-tripped
+    references, and the pod log holding the actual reason had to be reproduced by launching
+    the run a second time with --keep-job.
     """
     if extracted == 0 or runner_exit != 0:
         why = ("no result files were extracted" if extracted == 0

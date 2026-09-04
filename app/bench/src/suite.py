@@ -40,7 +40,7 @@ from stats import git_revision, shell_output, shell_result, spread_fraction, utc
 # Client CPU fraction above which a level may be measuring the harness, not the server.
 CLIENT_CPU_SUSPECT = config.CLIENT_CPU_SUSPECT
 
-# Fraction of the median that a cell's peak-to-peak spread may reach before we distrust it.
+# Fraction of the median that a cell's peak-to-peak spread may reach before it is flagged.
 MAX_SPREAD = config.MAX_SPREAD
 
 # Sizing for the companion latency pass, matching the standalone `latency` protocol so its
@@ -86,8 +86,8 @@ COLS_QPS = ["achieved_qps", "ttft_p50_ms", "ttft_p99_ms", "tpot_p50_ms", "tpot_p
             "openloop_tokens_per_sec", "input_tokens_median", "completed", "failed"]
 
 # Streaming metrics in trace replays are aiperf's definitions; the column names carry no
-# tpot_* on purpose — aiperf exports ITL, and the latency calibration showed its streaming
-# numbers are not interchangeable with latency.py's (docs/reports/aiperf-calibration/).
+# tpot_* on purpose — aiperf exports ITL, and latency calibration showed its streaming
+# numbers are not interchangeable with latency.py's.
 COLS_TRACE = ["tokens_per_sec", "req_per_sec", "ttft_p50_s", "ttft_p99_s",
               "itl_p50_ms", "itl_p99_ms"]
 COLS = {"throughput": COLS_THROUGHPUT, "latency": COLS_LATENCY, "arrival_rate": COLS_QPS,
@@ -246,9 +246,9 @@ def refuse_loopback_latency(args, protocol: dict, want_latency: bool) -> None:
     A port-forward or SSH tunnel adds roughly 185 ms of connection setup to every TTFT sample,
     measured at 276 ms first byte on a fresh connection against 90 ms warm. That is most of a
     500 ms SLA budget, and it is the harness's own tunnel being reported as the server's
-    latency. Refused rather than warned because a warning did not stop it: the 2026-08-08 GLM
-    run produced a full latency table through a port-forward and every cell carried a variance
-    flag for this reason.
+    latency. Refused rather than warned because a warning did not stop it: one run produced a
+    full latency table through a port-forward with every cell carrying a variance flag for
+    this reason.
 
     Throughput-only runs are unaffected — tokens/sec and TPOT do not materially change through
     a tunnel — so this fires only when the run will report TTFT.
@@ -267,8 +267,8 @@ def refuse_loopback_latency(args, protocol: dict, want_latency: bool) -> None:
     sys.exit(
         f"REFUSING TO MEASURE: endpoint {args.endpoint} is loopback.\n\n"
         f"A kubectl port-forward multiplexes every connection through ONE tunnel to the\n"
-        f"kubelet. It does not survive hundreds of sustained concurrent streams: on\n"
-        f"2026-08-08 it dropped every request in 2 of 3 latency reps with `error creating\n"
+        f"kubelet. It does not survive hundreds of sustained concurrent streams: in one\n"
+        f"observed run it dropped every request in 2 of 3 latency reps with `error creating\n"
         f"error stream ... Timeout occurred`, and the surviving rep's percentiles were the\n"
         f"only thing left to report.\n"
         + (f"\nIt also adds ~150-200 ms of connection setup to every TTFT sample, which is the\n"
@@ -1120,14 +1120,14 @@ def sweep_qps_levels(protocol: dict, env: dict, rep: RepResult,
         # leave a real backlog behind: arrivals are independent of completions, so a saturated
         # level can still be working through queued requests when the harness process exits.
         # Whatever is left in that queue lands in the NEXT level's first percentiles, which is
-        # a plausible mechanism for the 2026-08-12 instability, where the same target rate
-        # measured 522 ms and 22 s p99 TTFT in consecutive reps. Cheap to remove as a variable.
+        # a plausible mechanism for observed instability where the same target rate measured
+        # 522 ms and 22 s p99 TTFT in consecutive reps. Cheap to remove as a variable.
         if index and settle_s:
             print(f"  settle {settle_s}s (drain before next level) ...", flush=True)
             time.sleep(settle_s)
         # Liveness per LEVEL, not just per rep. Each open-loop level takes minutes, so a rep
         # that loses its server early otherwise spends the rest of the sweep measuring
-        # nothing: on 2026-08-12 seven consecutive levels ran to completion against a deleted
+        # nothing: in one run seven consecutive levels ran to completion against a deleted
         # deployment. One request per level is free next to the level itself.
         if not server_alive(env["VLLM_API_URL"], env["MODEL_ID"]):
             print(f"  !! server not serving {env['MODEL_ID']!r} — abandoning the rest of this "
@@ -1146,8 +1146,8 @@ def sweep_qps_levels(protocol: dict, env: dict, rep: RepResult,
         level_key = int(round(float(qps) * 1000))
         # Re-keyed onto this protocol's level units, as the context sweep does: without this
         # the open-loop path recorded no success data at all, so degraded_levels() saw an
-        # empty dict and never excluded a rep. A 2026-08-12 rep with 100% request failures at
-        # 7 of 8 levels was aggregated as successful.
+        # empty dict and never excluded a rep. A rep with 100% request failures at 7 of 8
+        # levels was aggregated as successful.
         for entry in parse_success(stdout).values():
             rep.success[level_key] = entry
         client_cpu.setdefault(level_key, []).append(cpu)
@@ -1411,9 +1411,9 @@ def success_table(harness: str, per_rep: list[dict[int, dict]],
 
     Reported per rep rather than aggregated: a median hides exactly the case this exists to
     expose, where one rep is intact and another lost most of its requests. Before this, the
-    only record of a lost request was an `(n/total ok)` line inside a rep file, and the
-    2026-08-08 latency run published percentiles from a single surviving rep while two others
-    had failed every request to a collapsed port-forward.
+    only record of a lost request was an `(n/total ok)` line inside a rep file, and one latency
+    run published percentiles from a single surviving rep while two others had failed every
+    request to a collapsed port-forward.
     """
     if not per_rep or not any(per_rep):
         return [], []
@@ -1815,9 +1815,9 @@ def main() -> int:
     for rep_number in range(1, args.reps + 1):
         print(f"\n=== rep {rep_number}/{args.reps} — {args.protocol} / {args.config} ===")
         # Re-check the server before every rep, not just before the first. A run is hours
-        # long and the server can disappear inside it: on 2026-08-12 the deployment was
-        # deleted during rep 3, and with preflight running only once the suite discovered it
-        # by accumulating failures for 50 minutes. Reaching the endpoint is one request, so
+        # long and the server can disappear inside it: in one run the deployment was deleted
+        # during rep 3, and with preflight running only once the suite discovered it by
+        # accumulating failures for 50 minutes. Reaching the endpoint is one request, so
         # there is no reason to assume it is still there.
         if rep_number > 1 and not server_alive(args.endpoint, args.model_id):
             print(f"  !! server no longer serving {args.model_id!r} at rep {rep_number}. "
@@ -1849,7 +1849,7 @@ def main() -> int:
             print(f"  !! rep {rep_number} EXCLUDED: levels {degraded} below "
                   f"{config.MIN_LEVEL_SUCCESS:.0%} request success")
         # Stop after the first transport-broken rep. Continuing measures the same broken
-        # connection: the 2026-08-08 run spent two further hours producing two dead reps.
+        # connection: one run spent two further hours producing two dead reps.
         if any(rep.success[level]["transport"] for level in degraded):
             print_transport_remedy(args, rep_number, args.reps)
             break
@@ -1877,8 +1877,8 @@ def main() -> int:
     results_path = out_dir / f"{stem}.txt"
     # A result file is evidence, so never overwrite one. Two runs can share a stem and still be
     # different measurements: a changed query floor, a new harness revision, or simply a rerun
-    # hours later. On 2026-08-14 a second open-loop run silently replaced the first and the only
-    # surviving copy of the original was a launcher log in /tmp. Refusing to write would be worse,
+    # hours later. A second open-loop run once silently replaced the first, leaving the only
+    # surviving copy of the original in a launcher log. Refusing to write would be worse,
     # because it would discard the run that just finished, so the older file is moved aside.
     if results_path.exists():
         superseded = out_dir / f"{stem}.superseded-{utc_stamp('%Y%m%dT%H%M%SZ')}.txt"

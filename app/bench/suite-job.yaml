@@ -81,8 +81,7 @@ spec:
             - { name: HARNESS_GIT_REV, value: "__HARNESS_GIT_REV__" }
             - { name: PYTHONUNBUFFERED, value: "1" }
           resources:
-            # Sized for aiperf, the heaviest client: 16 workers plus 5 service processes
-            # reached client_cpu 0.96 of an 8-CPU limit in the 2026-08-10 calibration run.
+            # Sized for aiperf, the heaviest client: 16 workers plus 5 service processes reached client_cpu 0.96 of an 8-CPU limit in a calibration run.
             requests: { cpu: "8", memory: 8Gi }
             limits:   { cpu: "16", memory: 16Gi }
           volumeMounts:

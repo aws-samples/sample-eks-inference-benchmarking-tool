@@ -22,13 +22,13 @@ GLM-5.2 NVFP4 sweep on a p6-b200 capacity block.
   the failure it must still catch
       A hybrid-thinking model left in its default mode spends its whole budget on the reasoning
       trace and truncates about 90% of responses. That is the defect the check exists for, it
-      was observed on this same model on 2026-08-20, and it must still fail. The checks below
-      pin both edges: noise passes, 90% truncation fails.
+      was observed on this same model, and it must still fail. The checks below pin both
+      edges: noise passes, 90% truncation fails.
 
   what the binomial numbers are worth
       The false-trip figures printed below assume each response truncates independently at the
-      reference rate. Live sampling on gemma4-31b-fp8 (g7.24xlarge, 2026-08-20, eight runs of
-      the fingerprint set) gave counts [5, 5, 4, 4, 4, 3, 3, 4], a standard deviation of 0.76
+      reference rate. Live sampling on gemma4-31b-fp8 (g7.24xlarge, eight runs of the
+      fingerprint set) gave counts [5, 5, 4, 4, 4, 3, 3, 4], a standard deviation of 0.76
       against the model's 1.79, because truncation is mostly decided by the question rather
       than by sampling. Treat them as an upper bound on risk. They are asserted only as
       strictly-better-and-small, never quoted as the measured failure rate.

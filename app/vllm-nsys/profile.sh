@@ -1,13 +1,13 @@
 #!/bin/bash
-# profile.sh — Capture an Nsight Systems (nsys) trace of a vLLM server
-# so you can see WHERE step time goes: attention vs MLP vs NCCL all-reduce vs
-# scheduling gaps. This complements the client-side latency metrics (TTFT/TPOT/ITL)
-# in app/bench/src/main.py — the harness tells you HOW SLOW, nsys tells you WHY.
+# profile.sh — Capture an Nsight Systems (nsys) trace of a vLLM server to show where step
+# time goes: attention vs MLP vs NCCL all-reduce vs scheduling gaps. This complements the
+# client-side latency metrics (TTFT/TPOT/ITL) in app/bench/src/main.py, which report how
+# long a request took rather than which stage consumed the time.
 #
-# WHY launch-wrap (not attach): CUDA/NCCL tracing needs the profiler present at
-# process start, so we launch `vllm serve` UNDER nsys. --delay skips model load +
-# warmup; --duration bounds the capture to a steady-state window. Kick off a
-# benchmark burst (below) so the captured window contains real decode traffic.
+# The script launch-wraps rather than attaches, because CUDA/NCCL tracing needs the profiler
+# present at process start, so `vllm serve` runs under nsys. --delay skips model load and
+# warmup; --duration bounds the capture to a steady-state window. Start a benchmark burst
+# (below) so the captured window contains real decode traffic.
 #
 # Model-agnostic: works on ANY vLLM-servable model. Set MODEL (env or first arg).
 #

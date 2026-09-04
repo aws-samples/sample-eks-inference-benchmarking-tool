@@ -1,7 +1,7 @@
 """Regression checks for the open-loop (MLPerf LoadGen) harness, runnable without a GPU.
 
-Every check here encodes a defect that reached a real run, when the `server_qps` protocol 
-was first used to reach a conclusion and produced figures that could not be relied on. 
+Every check here encodes a defect that reached a real run, when the `server_qps` protocol
+was first used to reach a conclusion and produced figures that could not be relied on.
 
   certification floor
       LoadGen's Server scenario certifies a p99 only when queries_issued >= h + t, where
@@ -32,7 +32,7 @@ was first used to reach a conclusion and produced figures that could not be reli
   circuit breaker and liveness
       A rep that loses its server must stop measuring nothing: the harness opens a
       breaker after ARRIVAL_ABORT_AFTER_FAILURES consecutive failures, and the runner
-      probes liveness per rep AND per level (one 2026-08-12 rep ran seven consecutive
+      probes liveness per rep AND per level (one observed rep ran seven consecutive
       levels against a deleted deployment).
 
 Wire checks need mlcommons-loadgen (requirements-loadgen.txt) and are SKIPPED with a
@@ -219,7 +219,7 @@ def wire_checks() -> None:
         check("warmup requests stay out of the reported total",
               warmed["success"].get("total") == "500",
               f"total={warmed['success'].get('total')} with 20 warmup requests")
-        check("REQUEST_SUCCESS is emitted at all (it was not before 2026-08-12)",
+        check("REQUEST_SUCCESS is emitted at all (it was absent in an earlier version)",
               bool(warmed["success"]))
         check("REQUEST_SUCCESS reports full success against a healthy server",
               warmed["success"].get("ok_fraction") == "1.0000",

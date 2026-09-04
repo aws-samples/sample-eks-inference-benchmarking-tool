@@ -35,7 +35,7 @@ Complete specification of the measurement tool: the commands, their flags, the e
 
 ## `launch` flags
 
-Everything `launch` does not recognise is forwarded verbatim to `suite`, so protocol, profile and gate flags need no duplicate definition.
+Everything `launch` does not recognize is forwarded verbatim to `suite`, so protocol, profile and gate flags need no duplicate definition.
 
 | Flag | Default | Meaning |
 | ---- | ------- | ------- |

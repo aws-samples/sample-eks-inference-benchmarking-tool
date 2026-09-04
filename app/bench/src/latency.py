@@ -196,7 +196,7 @@ async def run_sweep(num_requests: int, levels: list[int]) -> list[dict]:
         rows.append(row)
         # Same abort as the throughput sweep: once the client's connections are failing, the
         # remaining levels measure the broken connection. This sweep is the expensive one —
-        # on 2026-08-08 it ran for two hours after its tunnel had already collapsed.
+        # one run continued for two hours after its tunnel had already collapsed.
         total = row.get("total") or 0
         share = (row.get("transport_failures", 0) / total) if total else 0.0
         if share > config.TRANSPORT_ABORT_SHARE:

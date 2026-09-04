@@ -14,8 +14,8 @@ runs would no longer be measuring the same workload.
 Every line carries `output_length`, which aiperf's SingleTurnDatasetLoader maps to the
 turn's max_tokens and sends as `max_completion_tokens` (loader/single_turn.py:142 in
 0.12.0). Without it aiperf sends NO output cap at all and the server generates to EOS:
-the 2026-08-10 calibration run decoded ~1,900 tokens per request against the profile's
-150 budget, and its numbers were not comparable to throughput.py's on any level.
+a calibration run decoded ~1,900 tokens per request against the profile's 150 budget,
+and its numbers were not comparable to throughput.py's on any level.
 """
 from __future__ import annotations
 

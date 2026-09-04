@@ -28,7 +28,7 @@ data:
       exit 0
     fi
 
-    # ------------------------------------------------- 1. is this the fault we know how to fix?
+    # ------------------------------------------------- 1. is this the fault this script fixes?
     # The kernel-log message alone is not enough: a healed node no longer has the closed module
     # that emits it, and the ring buffer rotates on a long-lived node.
     WHY=""
@@ -142,7 +142,7 @@ data:
     cp kernel-open/*.ko "/lib/modules/${K}/extra/"
 
     # `--allowerasing` retires the closed module through RPM, but not when the AMI baked it in
-    # outside RPM. Do it explicitly and reversibly; anything under extra/ is ours.
+    # outside RPM. Do it explicitly and reversibly; anything under extra/ was built here.
     find "/lib/modules/${K}" -name 'nvidia*.ko*' -not -path '*/extra/*' 2>/dev/null \
     | while read -r stale; do
         mv "$stale" "${stale}.closed-disabled"

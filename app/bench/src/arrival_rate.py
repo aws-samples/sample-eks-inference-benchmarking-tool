@@ -118,7 +118,7 @@ class SystemUnderTest:
         self.server_failures = 0
         # Circuit breaker. LoadGen owns the test loop and cannot be stopped early, so once the
         # server is clearly gone the SUT stops attempting requests and fast-completes the rest.
-        # Without it, the 2026-08-12 rep whose server was deleted mid-run kept issuing against
+        # Without it, an observed rep whose server was deleted mid-run kept issuing against
         # nothing for seven levels — 50 minutes producing a rep that was invalid from its first
         # failure. Fast-failing keeps the level's verdict identical (its requests are still
         # counted as failures, so the runner excludes it) while ending it in seconds.
@@ -269,9 +269,9 @@ def test_settings() -> "lg.TestSettings":
     """Build LoadGen's test settings from the configured arrival rate and SLAs."""
     settings = lg.TestSettings()
     settings.scenario = lg.TestScenario.Server
-    # PerformanceOnly, always. A FindPeakPerformance toggle existed from 2026-08-03 to
-    # 2026-08-12 but no protocol set it and no published result used it; removed rather
-    # than left as an untested code path (deleted alongside the FIND_PEAK_QPS flag).
+    # PerformanceOnly, always. A FindPeakPerformance toggle existed briefly, but no protocol
+    # set it and no published result used it; removed rather than left as an untested code
+    # path (deleted alongside the FIND_PEAK_QPS flag).
     settings.mode = lg.TestMode.PerformanceOnly
     settings.server_target_qps = config.SERVER_TARGET_QPS
     settings.min_query_count = config.MIN_QUERY_COUNT
@@ -387,8 +387,8 @@ def print_results(sut: SystemUnderTest, summary: dict, wall_seconds: float) -> N
           f"completed={sut.completed} failed={sut.failures} "
           f"sla={sla} early_stopping={early} loadgen_result={overall}")
     # The same REQUEST_SUCCESS line the closed-loop harnesses emit, so the runner's
-    # success-floor exclusion covers open-loop reps too. It did not, and on 2026-08-12 a rep
-    # whose server was deleted mid-run — 100% of requests failing at 7 of 8 levels — was
+    # success-floor exclusion covers open-loop reps too. It did not, and a rep whose server
+    # was deleted mid-run — 100% of requests failing at 7 of 8 levels — was
     # still aggregated as "3/3 successful reps", because the failure counts lived only inside
     # QPS_ROW where nothing enforced a floor. Failures are also completed to LoadGen (it has
     # no failed-query concept), so they enter its percentiles as if real: a level with
@@ -401,8 +401,8 @@ def print_results(sut: SystemUnderTest, summary: dict, wall_seconds: float) -> N
         sut.completed, sut.completed + sut.failures,
         sut.transport_failures, sut.server_failures))
     print(f"  wall clock: {wall_seconds:.1f}s   LoadGen logs: {config.LOADGEN_OUTDIR}/")
-    # Measured against target, rather than a MET/NOT_MET word. The verdict was ours, not
-    # LoadGen's, and it restated the two percentiles printed on the line above it while reading
+    # Measured against target, rather than a MET/NOT_MET word. The verdict was this harness's,
+    # not LoadGen's, and it restated the two percentiles printed on the line above it while reading
     # as a failed run. A sweep is meant to walk past the point where latency breaks.
     ttft_p99 = summary_ms(summary, "99.00 percentile first token latency (ns)")
     tpot_p99 = summary_ms(summary, "99.00 percentile time to output token (ns)")
@@ -444,8 +444,8 @@ def warm_up(sut: "SystemUnderTest", count: int) -> None:
 
     Without this, the first arrivals of a run carry one-time costs — first CUDA graph
     capture, cold caches on the server, and this client's first TLS/TCP handshakes — and
-    they land in the percentiles LoadGen certifies. Measured on GLM-5.2/B300 on
-    2026-08-12: p99 TTFT was 6.0 s in rep 1 at 1 QPS against 378 ms in reps 2 and 3, a
+    they land in the percentiles LoadGen certifies. Measured on GLM-5.2/B300: p99 TTFT was
+    6.0 s in rep 1 at 1 QPS against 378 ms in reps 2 and 3, a
     16x artifact that flipped the SLA verdict for that level. A closed-loop run absorbs
     this in its own warmup; the open-loop harness had none.
 

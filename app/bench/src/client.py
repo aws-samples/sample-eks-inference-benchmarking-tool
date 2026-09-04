@@ -41,7 +41,7 @@ def classify_failure(exc: BaseException) -> str:
 
     aiohttp raises ClientResponseError for an HTTP status, which is the server answering, so
     it is attributed to the server. Everything in TRANSPORT_ERRORS is the connection itself
-    failing. Anything unrecognised is treated as transport, because the conservative reading
+    failing. Anything unrecognized is treated as transport, because the conservative reading
     of an unknown failure is that the sample is untrustworthy rather than that the server
     misbehaved.
     """
