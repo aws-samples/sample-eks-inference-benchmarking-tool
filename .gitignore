@@ -64,3 +64,6 @@ docs/plans/
 # launcher's payload packing requires.
 docs/accuracy/*.json
 docs/prompt_tokens/*.json
+
+# Build metadata from `pip install -e .`
+*.egg-info/

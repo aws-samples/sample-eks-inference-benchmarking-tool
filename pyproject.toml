@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eks-inference-benchmarking-tool"
+version = "0.1.0"
+description = "Benchmark and validate self-managed vLLM inference on Amazon EKS with reproducible protocols"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+
+# Core dependencies are only what the operator CLI and the benchmark client need. Everything
+# else is an extra, because a single unsatisfiable pin in one optional harness would otherwise
+# block installing the CLI at all.
+dependencies = [
+    "click==8.5.0",
+    "rich==15.0.0",
+    "PyYAML==6.0.3",
+    "aiohttp==3.14.3",
+]
+
+[project.optional-dependencies]
+# Measure prompt profiles against a real tokenizer: verify-prompts, list-prompts.
+tokenizer = [
+    "transformers==5.16.1",
+    "jinja2==3.1.6",
+    "tiktoken==0.14.0",
+]
+# Open-loop arrivals via MLPerf LoadGen: harness-arrival-rate, the server_qps protocol,
+# selftest-openloop. Needs a C++ toolchain to build.
+loadgen = [
+    "mlcommons-loadgen==6.0.17",
+]
+# Second independent load generator and trace replay: the corpus_aiperf, agentx and
+# trace_replay protocols, and selftest-aiperf. Pins a narrower Python range than this project.
+aiperf = [
+    "aiperf==0.12.0",
+]
+
+[project.scripts]
+# Both names install and behave identically. The long one is canonical; eks-bench is the
+# short alias documentation quotes, because the full name adds 22 characters to every
+# command line in a runbook.
+eks-inference-benchmarking-tool = "app.cli:main"
+eks-bench = "app.cli:main"
+
+[tool.setuptools]
+# Install editable from a clone: `pip install -e .`
+#
+# A non-editable install does not work, and this is a property of the tool rather than an
+# oversight. app/bench/src/config.py derives PROJECT_ROOT from its own location and resolves
+# docs/accuracy, docs/prompt_tokens and docs/results beneath it; `measure` packs app/bench/src
+# into a ConfigMap; `validate-manifests` reads vllm-recipes/. Copied into site-packages, all of
+# those resolve to the wrong tree.
+#
+# Only app itself is a package. app/bench, app/quantize and app/vllm-nsys are container build
+# contexts, not importable subpackages.
+packages = ["app"]

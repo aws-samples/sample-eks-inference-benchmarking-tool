@@ -1,153 +1,209 @@
 #!/usr/bin/env python3
-"""Console-pretty front end for the serving-sweep benchmark tool."""
-from __future__ import annotations
+"""
+Command-line interface for the EKS Inference Benchmarking Tool.
+
+ORGANIZATION:
+    1. Help styling - a Flags heading and tree-ordered command listing
+    2. Root group - the top-level command
+    3. Command builder - construct one Click command per tree entry
+    4. Registration - attach every command to the root group
+
+ARCHITECTURE:
+    Click owns parsing, dispatch and help for the command tree. The vocabulary itself lives in
+    utils.COMMAND_TREE, and each command execs the unchanged `app/bench/src/main.py`, so the
+    argparse layer and the in-cluster invocation are untouched.
+
+    Per-command flags are not declared here yet: they are still owned by each legacy command's
+    argparse parser, and `--help` on a command delegates to it. Declaring them as Click options
+    is the next step and will remove that delegation.
+"""
 
 import os
-import subprocess
 import sys
-
-from utils import (
-    CLI_USAGE,
-    HARNESS_COMMANDS,
-    HARNESS_FLAGS,
-    HELP_FLAGS,
-    MAIN_SCRIPT,
-    PARSER_COMMANDS,
-    benchmark_main,
-)
+from importlib.metadata import PackageNotFoundError, version
 
 import click
 from rich.console import Console
-from rich.table import Table
-from rich.text import Text
+
+# Allow running via `python3 app/cli.py ...` without installing the package.
+# When installed, the console script already has the correct import path.
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from app.utils import (
+    COMMAND_TREE,
+    DISTRIBUTION_NAME,
+    HELP_FLAGS,
+    PROG_NAME,
+    Leaf,
+    execute_leaf,
+    print_leaf_help,
+)
+
+console = Console()
+stderr_console = Console(stderr=True)
 
 
-def _console() -> Console:
-    """Build a console that respects standard no-color behavior."""
-    return Console(no_color=bool(os.environ.get("NO_COLOR")), force_terminal=None)
+def _version() -> str:
+    """
+    Resolve the installed version, falling back when running from an uninstalled clone.
+
+    Returns:
+        The distribution version, or "0.0.0+local" when the package is not installed
+    """
+    try:
+        return version(DISTRIBUTION_NAME)
+    except PackageNotFoundError:
+        return "0.0.0+local"
 
 
-def _print_root_help() -> None:
-    """Render the complete command inventory."""
-    console = _console()
-    console.print("[bold]serving-sweep[/bold]")
-    console.print("Benchmark and validate self-managed vLLM inference with reproducible protocols.")
-    console.print()
-    console.print("[bold]Usage:[/bold]")
-    console.print(f"  {CLI_USAGE}", markup=False)
-    console.print()
-    console.print("[bold]Commands:[/bold]")
-    table = Table(show_header=False, box=None, padding=(0, 2), collapse_padding=True)
-    table.add_column(style="cyan", no_wrap=True)
-    table.add_column()
-    for name, description in benchmark_main.COMMANDS.items():
-        table.add_row(name, description)
-    console.print(table)
-    console.print()
-    console.print("Run [cyan]python3 app/cli.py <command> --help[/cyan] for command flags.")
+# =============================================================================
+# Help Styling
+# =============================================================================
 
 
-def _print_simple_help(command: str) -> None:
-    """Render help for commands that do not own an argparse parser."""
-    console = _console()
-    console.print(f"[bold]Usage:[/bold] python3 app/cli.py {command} [flags]")
-    console.print()
-    console.print(benchmark_main.COMMANDS[command])
-    console.print()
-    console.print("[bold]Flags:[/bold]")
-    table = Table(show_header=False, box=None, padding=(0, 2), collapse_padding=True)
-    table.add_column(style="cyan", no_wrap=True)
-    table.add_column()
-    if command in HARNESS_COMMANDS:
-        for names, description in HARNESS_FLAGS:
-            table.add_row(names, description)
-    table.add_row("-h, --help", "Show this message and exit")
-    console.print(table)
+class FlagsHelpFormatter(click.HelpFormatter):
+    """Click help formatter that labels the option section "Flags"."""
+
+    def write_heading(self, heading: str) -> None:
+        """
+        Write a section heading, renaming Click's "Options" to "Flags".
+
+        Args:
+            heading: The section heading Click is about to write
+        """
+        super().write_heading("Flags" if heading == "Options" else heading)
 
 
-def _print_styled_parser_output(command: str, output: str) -> None:
-    """Style captured argparse help without reconstructing its option definitions."""
-    console = _console()
-    explicit = f"usage: main.py {command}"
-    replacement = f"usage: python3 app/cli.py {command}"
-    output = output.replace(explicit, replacement, 1) if explicit in output else output.replace(
-        "usage: main.py", replacement, 1
-    )
-    for line in output.rstrip().splitlines():
-        stripped = line.strip().lower()
-        if stripped in ("options:", "optional arguments:"):
-            console.print("Flags:", style="bold")
-            continue
-        if stripped == "positional arguments:":
-            console.print("Positional Arguments:", style="bold")
-            continue
-        if stripped.startswith("usage:"):
-            console.print(line, style="bold")
-            continue
-        text = Text(line)
-        text.highlight_regex(r"(?<!\w)--?[a-zA-Z][a-zA-Z0-9-]*", style="cyan")
-        console.print(text, soft_wrap=True)
+class CliContext(click.Context):
+    """Click context that renders help with FlagsHelpFormatter.
+
+    Click 8 builds the formatter from the context rather than the command, so this is the hook
+    that takes effect. Overriding make_formatter on a Command or Group has no effect, because
+    Command.get_help calls ctx.make_formatter().
+    """
+
+    formatter_class = FlagsHelpFormatter
 
 
-def _print_parser_help(command: str) -> None:
-    """Capture one existing parser's help and render it without running the command."""
-    completed = subprocess.run(
-        [sys.executable, str(MAIN_SCRIPT), command, "--help"],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip()
-        raise click.ClickException(f"Unable to render help for {command!r}: {detail}")
-    _print_styled_parser_output(command, completed.stdout)
+class CliGroup(click.Group):
+    """Click group whose contexts use CliContext, listing commands in tree order."""
+
+    context_class = CliContext
+
+    def list_commands(self, ctx: click.Context) -> list[str]:
+        """
+        List commands in the order they were registered rather than alphabetically.
+
+        The tree is ordered deliberately, with the most-used command first, and Click sorts
+        by default.
+
+        Args:
+            ctx: Click context, unused but required by the base signature
+
+        Returns:
+            Command names in registration order
+        """
+        return list(self.commands)
 
 
-def _print_command_help(command: str) -> None:
-    """Render help from the existing parser or simple command metadata."""
-    if command in PARSER_COMMANDS:
-        _print_parser_help(command)
-    else:
-        _print_simple_help(command)
+class CliCommand(click.Command):
+    """Click command whose contexts use CliContext."""
+
+    context_class = CliContext
 
 
-def _execute(command: str, arguments: tuple[str, ...]) -> None:
-    """Replace this process with the unchanged benchmark entry point."""
-    argv = [sys.executable, str(MAIN_SCRIPT), command, *arguments]
-    os.execv(sys.executable, argv)
+# =============================================================================
+# Root Group
+# =============================================================================
 
 
-@click.group(invoke_without_command=True, add_help_option=False)
-@click.option("-h", "--help", "show_help", is_flag=True, is_eager=True)
+@click.group(
+    cls=CliGroup,
+    context_settings={"help_option_names": ["-h", "--help"]},
+    invoke_without_command=True,
+    epilog=f'Use "{PROG_NAME} [command] --help" for more information about a command.',
+)
+# prog_name is left unset so --version reports whichever console script alias was invoked.
+@click.version_option(version=_version())
 @click.pass_context
-def cli(ctx: click.Context, show_help: bool) -> None:
-    """Run or inspect serving-sweep benchmark commands."""
-    if show_help or ctx.invoked_subcommand is None:
-        _print_root_help()
+def main(ctx: click.Context) -> None:
+    """
+    Benchmark and validate self-managed vLLM inference with reproducible protocols.
+
+    Most commands come in an in-cluster form and a direct form. The in-cluster form runs the
+    client as a Kubernetes Job beside the server and reaches it over cluster DNS, which is what
+    every runbook uses and what any time-to-first-token figure requires. The direct form runs
+    the client wherever you type it against an endpoint you supply, for vLLM on a bare EC2
+    instance or a Service you can already reach.
+
+    \f
+
+    Args:
+        ctx: Click context, used to detect whether a subcommand was given
+    """
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
 
 
-def _command_for(name: str) -> click.Command:
-    """Build one dynamic command that either shows help or execs main.py."""
+# =============================================================================
+# Command Builders
+# =============================================================================
+
+
+def build_command(path: str, leaf: Leaf) -> click.Command:
+    """
+    Build one runnable command that either shows help or execs the harness.
+
+    Unknown options pass through untouched, because the legacy argparse parser owns flag
+    validation. A help flag is intercepted here instead, so help renders without running.
+
+    Args:
+        path: The command name as typed, e.g. "capture-reference"
+        leaf: The tree entry this command exposes
+
+    Returns:
+        A Click command ready to attach to the root group or a group
+    """
 
     @click.command(
-        name=name,
+        name=leaf.name,
+        cls=CliCommand,
+        help=leaf.summary,
         add_help_option=False,
         context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
     )
     @click.argument("arguments", nargs=-1, type=click.UNPROCESSED)
     def command(arguments: tuple[str, ...]) -> None:
-        if any(argument in HELP_FLAGS for argument in arguments):
-            _print_command_help(name)
-            return
-        _execute(name, arguments)
+        """
+        Show this command's help, or exec its legacy command.
 
-    command.help = benchmark_main.COMMANDS[name]
+        Args:
+            arguments: Everything after the command path, forwarded verbatim
+        """
+        try:
+            if any(argument in HELP_FLAGS for argument in arguments):
+                print_leaf_help(path, leaf)
+                return
+            execute_leaf(leaf, arguments)
+        except click.ClickException:
+            raise
+        except Exception as error:
+            stderr_console.print(f"[red]Error:[/red] {error}")
+            sys.exit(1)
+
     return command
 
 
-for command_name in benchmark_main.COMMANDS:
-    cli.add_command(_command_for(command_name))
+# =============================================================================
+# Registration
+# =============================================================================
+
+for _name, _leaf in COMMAND_TREE.items():
+    main.add_command(build_command(_name, _leaf))
 
 
 if __name__ == "__main__":
-    cli(prog_name="serving-sweep")
+    # Ensure help/usage matches the installed console script name.
+    main(prog_name=PROG_NAME)
