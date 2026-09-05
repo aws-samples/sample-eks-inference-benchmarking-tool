@@ -1,22 +1,9 @@
 #!/usr/bin/env python3
-"""
-Command-line interface for the EKS Inference Benchmarking Tool.
-
-ORGANIZATION:
-    1. Help styling - a Flags heading and tree-ordered command listing
-    2. Root group - the top-level command
-    3. Command builder - construct one Click command per tree entry
-    4. Registration - attach every command to the root group
-
-ARCHITECTURE:
-    Click owns parsing, dispatch and help for the command tree. The vocabulary itself lives in
-    utils.COMMAND_TREE, and each command execs the unchanged `app/bench/src/main.py`, so the
-    argparse layer and the in-cluster invocation are untouched.
-
-    Per-command flags are not declared here yet: they are still owned by each legacy command's
-    argparse parser, and `--help` on a command delegates to it. Declaring them as Click options
-    is the next step and will remove that delegation.
-"""
+"""Command-line interface for the EKS Inference Benchmarking Tool, where Click owns parsing, dispatch
+and help while the vocabulary lives in utils.COMMAND_TREE and every command execs the unchanged
+app/bench/src/main.py, leaving the argparse layer and the in-cluster invocation untouched. Per-
+command flags are still owned by each legacy command's argparse parser, and --help on a command
+delegates to it."""
 
 import os
 import sys
@@ -25,8 +12,7 @@ from importlib.metadata import PackageNotFoundError, version
 import click
 from rich.console import Console
 
-# Allow running via `python3 app/cli.py ...` without installing the package.
-# When installed, the console script already has the correct import path.
+# Allows `python3 app/cli.py ...` without installing; the console script already has this path.
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)

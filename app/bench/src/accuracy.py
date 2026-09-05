@@ -1,17 +1,11 @@
 #!/usr/bin/env python3
-"""Correctness gate: proves a server is producing right answers before its speed is measured.
-
-Every result this harness writes measures throughput and latency, and until this gate existed
-nothing verified the server under test was configured the way the result claimed. That is not
-a theoretical gap: a truncated `vllm serve` argv once silently dropped --kv-cache-dtype fp8
-and both parsers, and the server came up healthy and reported clean throughput at the wrong
-precision. It has two tiers — `fingerprint` compares a small pinned prompt set against a
-stored reference in about 30 seconds and is cheap enough to run before every benchmark, while
-`score` measures GSM8K exact match against a reference with a tolerance. Both use their own
-request path at temperature 0 with a fixed seed, because the benchmark protocols deliberately
-run at 0.7 and sampling at 0.7 is not reproducible. Exit codes: 0 pass, 1 fail, 2 environment
-or usage error.
-"""
+"""Correctness gate that proves a server is producing right answers before its speed is measured,
+because a truncated vllm serve argv can drop a precision flag and still come up healthy reporting
+clean throughput. The fingerprint tier compares a small pinned prompt set against a stored
+reference in about 30 seconds and is cheap enough to run before every benchmark, while the score
+tier measures GSM8K exact match against a reference within a tolerance. Both use their own request
+path at temperature 0 with a fixed seed, because the benchmark protocols run at 0.7 and sampling at
+0.7 is not reproducible. Exit codes are 0 pass, 1 fail, 2 environment or usage error."""
 from __future__ import annotations
 
 import argparse
@@ -56,12 +50,9 @@ MAX_TRUNCATED_FRACTION = config.MAX_TRUNCATED_FRACTION
 
 NUMBER = re.compile(r"-?\$?\d[\d,]*\.?\d*")
 MONEY = re.compile(r"-?\$\s?\d[\d,]*\.?\d*")
-# Where a chat model restates its result. Anchoring here beats scanning the whole reply, which
-# is full of intermediate arithmetic.
+# Where a chat model restates its result, which beats scanning a reply full of intermediate arithmetic.
 ANCHOR = re.compile(r"(?i)final answer|answer\s*[:*]|answer\s+is")
-# The GSM8K gold marker is '#### 42' alone on a line. It must NOT match a markdown level-4
-# heading like '#### **Remaining time:**', which these models emit routinely — 3 of 200 Qwen3
-# replies did, and a naive '####' split silently returned a number from the heading.
+# The gold marker is a bare '#### 42', which must not match a markdown heading these models emit.
 GSM_MARK = re.compile(r"####\s*(-?\$?[\d][\d,]*\.?\d*)\s*$", re.M)
 BOLD = re.compile(r"\*\*(.+?)\*\*", re.S)
 
@@ -152,8 +143,7 @@ def extract_answer(text: str) -> str | None:
     boxes = boxed_spans(text)
     anchors = [m.end() for m in ANCHOR.finditer(text)]
 
-    # First boxed after the last anchor: when a model offers alternate units
-    # ('\boxed{180,000} meters or \boxed{180} kilometers') the first is the unit asked for.
+    # First boxed value after the last anchor, since alternate units put the asked-for one first.
     if anchors and boxes:
         after = [body for pos, body in boxes if pos >= anchors[-1]]
         if after and best_number(after[0]):
@@ -365,8 +355,7 @@ def compare_items(ref_items: list[dict], by_id: dict[str, dict],
             failures.append(f"{reference['id']}: missing from this run")
             continue
 
-        # Parser configuration check, run regardless of text reproducibility: losing
-        # --reasoning-parser is a config defect, not sampling noise.
+        # Parser configuration is checked regardless of reproducibility, being a defect not sampling noise.
         got_has_reasoning = got.get("reasoning_content") is not None
         if got_has_reasoning != reference["has_reasoning_content"]:
             failures.append(
@@ -481,9 +470,7 @@ def compare_score(ref: dict, accuracy: float, count: int, args) -> list[str]:
               f"{read_config} reference")
     print(f"  tolerance floor  : {floor:.4f} ({args.tolerance:.0%} of reference)")
 
-    # Problem count and thinking mode must match or the two scores are not comparable: a
-    # 60-problem score has much wider error bars than a 200-problem one, and a reasoning trace
-    # changes both answers and token counts.
+    # Problem count and thinking mode must match, or the two scores have different error bars entirely.
     reference_count = ref["score"].get("n")
     if reference_count is not None and reference_count != count:
         failures.append(f"problem count differs: reference scored {reference_count}, this run "
@@ -549,8 +536,7 @@ def reference_skeleton(args, max_tokens: int) -> dict:
         "served_model_id": args.model_id,
         "captured_utc": utc_stamp(),
         "harness_rev": git_revision(config.PROJECT_ROOT),
-        # Shared deterministic settings only: max_tokens differs per tier, so it lives inside
-        # each tier's own block rather than here.
+        # Shared deterministic settings only, since max_tokens differs per tier and lives in each tier.
         "generation": {**GEN, "thinking": args.thinking},
         "dataset": {"file": "app/bench/data/gsm8k_subset.jsonl", "sha256": sha256_file(config.EVAL_DATA)},
     }
@@ -757,9 +743,7 @@ def resolve_reference(args) -> tuple[dict | None, Path]:
     if args.write_reference:
         return None, write_path
 
-    # Where a run READS can differ from where it WRITES: an FP8 server is scored against the
-    # BF16 reference, because that is the comparison that means something. A standalone FP8
-    # score has nothing to be wrong relative to.
+    # A run can read a different reference than it writes, so an FP8 server scores against BF16.
     read_path = reference_path(args.model_tag, args.reference_config or args.config)
     ref = load_reference(read_path, args.mode)
     require_tier(ref, args, read_path)

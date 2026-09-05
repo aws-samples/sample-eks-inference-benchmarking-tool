@@ -1,20 +1,7 @@
-"""
-CLI utilities for the EKS Inference Benchmarking Tool entry point.
-
-ORGANIZATION:
-    1. Repository paths and legacy-command metadata - layout and argparse-layer facts
-    2. Command tree - Leaf and the flat COMMAND_TREE registry
-    3. Tree traversal - enumerate and validate leaves
-    4. Console rendering - rich console, tables, and the delegated help surfaces
-    5. Command execution - exec the unchanged benchmark entry point
-
-ARCHITECTURE:
-    cli.py holds only Click framework wiring; everything reusable lives here, so the entry
-    point stays focused on its framework and the command vocabulary stays in one table.
-
-    Nothing here changes behavior. Every leaf resolves to a legacy `main.py` command, so the
-    argparse layer, the harness modules and the in-cluster invocation are untouched.
-"""
+"""CLI vocabulary and rendering for the eks-bench entry point, holding the flat COMMAND_TREE registry,
+the delegated help surfaces and the exec helper so cli.py keeps only Click wiring. Every leaf
+resolves to a legacy main.py command, so the argparse layer, the harness modules and the in-cluster
+invocation are untouched."""
 from __future__ import annotations
 
 import os
@@ -31,8 +18,7 @@ from rich.text import Text
 # Repository Paths
 # =============================================================================
 
-# This file lives at app/utils.py, so the repository root is two levels up. Anchoring to
-# parents[1] rather than parent is load-bearing: every path below derives from it.
+# Anchored to parents[1] rather than parent, because every path below derives from it.
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # =============================================================================
@@ -47,8 +33,7 @@ if str(BENCH_SRC) not in sys.path:
 
 HELP_FLAGS = ("-h", "--help")
 
-# Legacy commands that own an argparse parser, so their help can be captured and restyled
-# rather than re-declared here.
+# Legacy commands owning an argparse parser, so their help is captured and restyled here.
 PARSER_COMMANDS = {
     "accuracy",
     "build-profiles",
@@ -69,8 +54,7 @@ HARNESS_FLAGS = (
 # The pip distribution name, used to resolve the installed version.
 DISTRIBUTION_NAME = "eks-inference-benchmarking-tool"
 
-# The short console script alias, used in documentation and in the usage lines this module
-# still renders. Both names install and behave identically; this is the one docs quote.
+# The short alias documentation quotes; both installed names behave identically.
 PROG_NAME = "eks-bench"
 
 import main as benchmark_main
@@ -114,15 +98,7 @@ COMMAND_TREE: dict[str, Leaf] = {
         "validate-manifests", "validate-manifests",
         "Prove a serving recipe passes the flags it is written to pass",
     ),
-    # The accuracy gate's three actions sit at the top level rather than under an `accuracy`
-    # group. A group name has to read as a countable thing an operator has several of, the way
-    # `gh pr` and `docker image` do, or the pair reads as two unrelated commands side by side.
-    # Accuracy is a quality, not a collection, so these are verb-noun compounds instead,
-    # matching validate-manifests and measure-local.
-    #
-    # capture-reference runs in-cluster, which is the path docs/accuracy/README.md prescribes
-    # and every runbook uses. It reaches `launch`, not `accuracy`, so an operator never has to
-    # know the in-cluster capture is a flag on the benchmark command.
+    # Verb-noun compounds rather than an `accuracy` group, and this one reaches launch, not accuracy.
     "capture-reference": Leaf(
         "capture-reference", "launch",
         "Capture an accuracy reference in-cluster, over cluster DNS. Every benchmark is gated "
@@ -144,8 +120,7 @@ COMMAND_TREE: dict[str, Leaf] = {
         "fetch-eval-data", "fetch-eval-data",
         "Pin the GSM8K subset the accuracy gate scores against",
     ),
-    # Prompt profiles pin the input text and output cap a run is measured at. Named
-    # "prompts" rather than "profiles" because profiling means Nsight in this repo.
+    # Named prompts rather than profiles, because profiling means Nsight in this repo.
     "build-prompts": Leaf(
         "build-prompts", "build-profiles",
         "Regenerate the pinned prompt profile JSON files, deterministically",
@@ -159,9 +134,7 @@ COMMAND_TREE: dict[str, Leaf] = {
         "List the available pinned prompt profiles",
         inject=("--list",),
     ),
-    # Running one load generator directly produces a single unlocked reading: no protocol lock,
-    # accuracy gate, reps, medians or provenance. The harness- prefix keeps that visible at the
-    # call site, because the output otherwise resembles a result.
+    # The harness- prefix marks a single unlocked reading, which otherwise resembles a result.
     "harness-throughput": Leaf(
         "harness-throughput", "throughput",
         "One closed-loop throughput reading, non-streaming. Unlocked, so not a result",
@@ -174,8 +147,7 @@ COMMAND_TREE: dict[str, Leaf] = {
         "harness-arrival-rate", "arrival_rate",
         "One open-loop capacity reading at a target arrival rate (MLPerf LoadGen). Unlocked",
     ),
-    # Regression checks. Each needs no GPU and no server; the wire checks are skipped with a
-    # notice when their optional extra is absent.
+    # Regression checks needing no GPU or server, whose wire checks skip when their extra is absent.
     "selftest-aiperf": Leaf(
         "selftest-aiperf", "verify-aiperf",
         "Regression checks for the AIPerf adapter, against a local mock",
@@ -217,8 +189,7 @@ def unknown_legacy_commands() -> list[str]:
     return sorted(referenced - set(benchmark_main.COMMANDS))
 
 
-# Fail at import if the tree has drifted from main.py, so a rename there surfaces here rather
-# than as a confusing runtime error from the exec'd process.
+# Fail at import if the tree drifts from main.py, rather than later from the exec'd process.
 _unknown = unknown_legacy_commands()
 if _unknown:
     raise SystemExit(f"cli.py references commands main.py does not define: {_unknown}")

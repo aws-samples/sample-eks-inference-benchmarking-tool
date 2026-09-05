@@ -1,9 +1,6 @@
-"""Configuration for the quantization tool.
-
-Every environment variable that quantize.py and fix_amax.py read, in one place. Nothing else
-under src/ calls os.getenv. Values are read once at import so a setting cannot change midway
-through a run.
-"""
+"""Every environment variable quantize.py and fix_amax.py read, in one place, so nothing else under
+src/ calls os.getenv. Values are read once at import so a setting cannot change midway through a
+run."""
 import os
 
 

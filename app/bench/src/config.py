@@ -1,17 +1,13 @@
-"""Every environment variable and measurement protocol the benchmark suite reads, in one place.
-
-Nothing else under src/ calls os.getenv, and the check is mechanical: grep for it. Values are
-read once at import so a setting cannot change midway through a run.
-"""
+"""Every environment variable and measurement protocol the benchmark suite reads, in one place, so
+nothing else under src/ calls os.getenv and the check stays mechanical. Values are read once at
+import so a setting cannot change midway through a run."""
 import os
 from pathlib import Path
 
 # Repository root, derived from this file's location (app/bench/src/config.py).
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-# The bench app's own root, which owns the data this harness reads. Resolved one level up rather
-# than from PROJECT_ROOT so the paths hold both in the repo (app/bench/src/config.py -> app/bench)
-# and inside the container image, where the app is copied to /app with no repo above it.
+# Resolved one level up rather than from PROJECT_ROOT so the paths hold in the repo and in the image.
 BENCH_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -53,9 +49,7 @@ def inherited_environment() -> dict[str, str]:
 #                             CANONICAL SWEEP                                  #
 # ---------------------------------------------------------------------------- #
 
-# The concurrency levels every closed-loop protocol must sweep. Enforced by
-# validate_protocols() at import, so a protocol cannot quietly drop a level and produce a
-# result that looks comparable to the others but is missing part of the curve.
+# Levels every closed-loop protocol must sweep; validate_protocols() enforces it so none can drop one.
 CANONICAL_SWEEP = [1, 8, 32, 128, 256, 512]
 CANONICAL_SWEEP_CSV = ",".join(str(level) for level in CANONICAL_SWEEP)
 
@@ -152,20 +146,13 @@ THROUGHPUT_WARMUP_REQUESTS = env_int("WARMUP_REQUESTS", 0)
 # Size every level to at least this many whole waves of `concurrency` requests.
 THROUGHPUT_MIN_WAVES = env_int("THROUGHPUT_MIN_WAVES", 2)
 
-# Fraction of a level's requests that must succeed for the rep to count toward a median. A rep
-# with any level below this is excluded, rather than contributing percentiles computed over the
-# survivors of a partial failure.
+# Success fraction a level needs for its rep to count, so a partial failure excludes the rep entirely.
 MIN_LEVEL_SUCCESS = env_float("MIN_LEVEL_SUCCESS", 0.95)
 
-# Share of a level's requests that may fail on TRANSPORT before the sweep is abandoned. Once
-# the client's connections are failing at this rate the apparatus is broken, and every
-# remaining level and rep produces unusable data — the 2026-08-08 latency run continued for two
-# further hours after its tunnel had already collapsed.
+# Transport-failure share that abandons the sweep, since a failing client makes every later rep unusable.
 TRANSPORT_ABORT_SHARE = env_float("TRANSPORT_ABORT_SHARE", 0.10)
 
-# Guarantee each level reaches its labelled in-flight depth. On by default: a level with fewer
-# requests than workers cannot fill, so the row would be labelled with a concurrency the run
-# never applied. Set to 0 only to reproduce a pre-2026-08 unfilled run exactly.
+# Guarantees a level reaches its labelled depth, so a row cannot claim a concurrency never applied.
 THROUGHPUT_FILL_LEVELS = env_flag("THROUGHPUT_FILL_LEVELS", True)
 
 
@@ -199,35 +186,13 @@ TTFT_SLA_MS = env_float("TTFT_SLA_MS", 500)
 # SLA threshold for time-per-output-token (ms).
 TPOT_SLA_MS = env_float("TPOT_SLA_MS", 50)
 
-# Minimum query count before LoadGen can stop.
-# LoadGen's Server-scenario early-stopping rule (loadgen 6.0.17 results.cc +
-# early_stopping.cc) certifies a p99 only when queries_issued >= h + t, where t is the
-# number of over-SLA samples and h is the smallest value with
-# BetaRegularized(0.99, h, 1+t) <= 0.01. That means 459 queries with ZERO over-target
-# samples, 662 with one, 1001 with three, 1307 with five, 2010 with ten. The former default
-# of 200 could not certify any level no matter how well the server behaved, so every
-# 2026-08-12 open-loop level came back UNDERSAMPLED and therefore LoadGen-INVALID.
-#
-# NO FLOOR CAN GUARANTEE CERTIFICATION, so do not read this number as one. Each additional
-# over-target sample adds roughly 130 to the requirement while 100 extra queries buy only one
-# more permitted sample, so the requirement always outruns the floor. What decides it is how
-# many samples land past the target, and that is a property of the tail, not of the median: on
-# 2026-08-14 a g7.24xlarge level whose TTFT p99 was 215 ms against a 500 ms target still failed
-# to certify at 1000 queries, because a handful of far-tail samples crossed 500 ms.
-#
-# 1500 covers a level with about five stragglers and will not cover one with ten. Raising it
-# lengthens every level, since a level runs until this count is reached, and at 1 QPS that is
-# one second per query. If a level you intend to quote comes back uncertified, raise this for
-# that run rather than assuming a bigger default would have been free.
+# LoadGen floor, not a certification guarantee: the far tail sets the requirement, so raise it per run.
 MIN_QUERY_COUNT = env_int("MIN_QUERY_COUNT", 1500)
 
-# Requests issued before LoadGen starts, absorbing one-time costs that would otherwise
-# land in the certified percentiles. See arrival_rate.warm_up.
+# Requests issued before LoadGen starts, keeping one-time costs out of the certified percentiles.
 ARRIVAL_WARMUP_REQUESTS = env_int("WARMUP_REQUESTS", 0)
 
-# Consecutive failures after which the open-loop SUT stops sending. Sized well above any
-# plausible transient (the worst honest burst observed at 1 QPS was 13 of 200) and far below
-# a level's query count, so it trips only when the server is genuinely gone.
+# Consecutive failures that stop the open-loop SUT, above any transient burst and below a query count.
 ARRIVAL_ABORT_AFTER_FAILURES = env_int("ABORT_AFTER_FAILURES", 50)
 
 # Minimum duration in seconds before LoadGen can stop.
@@ -247,8 +212,7 @@ CONCURRENCY = env_int("CONCURRENCY", 0)
 PROTOCOLS: dict[str, dict] = {
     "corpus": {
         "harness": "throughput",
-        # Pinned input by default. output_tokens matches the protocol's own MAX_TOKENS, so
-        # adopting it changes where the prompts come from, not the output shape.
+        # Pinned input by default; output_tokens matches MAX_TOKENS, so only the prompt source changes.
         "profile": "legacy_corpus",
         "env": {
             "MAX_TOKENS": "150",
@@ -264,10 +228,7 @@ PROTOCOLS: dict[str, dict] = {
     },
     "corpus_aiperf": {
         "harness": "aiperf",
-        # The cross-client calibration protocol: the corpus sweep, same pinned profile and
-        # canonical levels, driven by NVIDIA AIPerf instead of throughput.py. Exists so two
-        # independent clients can measure the same server and their agreement (or gap) is
-        # itself a recorded result. Requires: pip install -r app/bench/requirements-aiperf.txt.
+        # Cross-client calibration: the corpus sweep driven by NVIDIA AIPerf instead of throughput.py.
         "profile": "legacy_corpus",
         "env": {
             "MAX_TOKENS": "150",
@@ -315,8 +276,7 @@ PROTOCOLS: dict[str, dict] = {
         "levels": CANONICAL_SWEEP,
         "min_samples": 100,
         "waves": 2,
-        # No profile: this protocol requires a byte-identical shared prefix across prompts,
-        # which a pinned profile of distinct prompts cannot express.
+        # No profile, because a byte-identical shared prefix cannot come from a set of distinct prompts.
         "profile": None,
         "env": {
             "MAX_TOKENS": "256",
@@ -344,12 +304,7 @@ PROTOCOLS: dict[str, dict] = {
     },
     "server_qps": {
         "harness": "arrival_rate",
-        # Levels bracket the SLA boundary rather than spanning orders of magnitude. The
-        # 2026-08-12 run located the interactive limit between 2 and 8 QPS (p99 TTFT
-        # 386 ms at 2, 499 ms at 4, 10 s at 8), so 3, 5 and 6 are where a capacity answer
-        # is actually decided; 16 is kept as the one saturated level, which is what
-        # establishes the throughput ceiling (~13.9 QPS achieved). 32 is dropped: it
-        # measured the same ceiling with a 144 s p99, telling us nothing 16 did not.
+        # Levels bracket the SLA boundary, plus one saturated level to establish the throughput ceiling.
         "qps_levels": [1, 2, 3, 4, 5, 6, 8, 16],
         # Seconds to let the server drain between levels; see suite.sweep_qps_levels.
         "settle_s": 60,
@@ -361,8 +316,7 @@ PROTOCOLS: dict[str, dict] = {
             "BENCH_ENDPOINT": "chat",
             "TTFT_SLA_MS": "500",
             "TPOT_SLA_MS": "50",
-            # Covers a level with a few far-tail samples past the target. Not a guarantee: see
-            # MIN_QUERY_COUNT in this file for why no floor is one.
+            # Covers a few far-tail samples past the target; see MIN_QUERY_COUNT for why no floor guarantees this.
             "MIN_QUERY_COUNT": "1500",
             "MIN_DURATION_S": "120",
             # Absorbs first-request costs that flipped an SLA verdict on 2026-08-12.
@@ -372,13 +326,7 @@ PROTOCOLS: dict[str, dict] = {
     },
     "agentx": {
         "harness": "aiperf_trace",
-        # The SemiAnalysis AgentX agentic-coding scenario: 40 concurrent multi-turn
-        # sessions with think-time delays and KV-cache-faithful prefix structure, from
-        # the committed trace (see app/bench/data/traces/README.md for the pin and the
-        # 32k scaling rationale). The workload the aiohttp harness structurally cannot
-        # express; supersedes the shared-prefix latency probe for the coding-assistant
-        # question. Streaming metrics are aiperf's definitions — never comparable to
-        # latency.py columns (docs/reports/aiperf-calibration/latency-findings.md).
+        # AgentX agentic-coding trace: multi-turn sessions with think-time gaps and cache-faithful prefixes.
         "profile": None,
         "env": {
             "AIPERF_MODE": "trace",
@@ -391,9 +339,7 @@ PROTOCOLS: dict[str, dict] = {
     },
     "trace_replay": {
         "harness": "aiperf_trace",
-        # Replays a user-supplied mooncake-format trace with its real arrival timing.
-        # No committed trace: pass --trace <repo-relative-path>, with the file under
-        # app/bench/data/traces/ so the launcher payload carries it in-cluster.
+        # Replays a user-supplied mooncake trace, so --trace is required and the file must sit under traces/.
         "profile": None,
         "env": {
             "AIPERF_MODE": "trace",
@@ -410,26 +356,19 @@ HARNESS_PATHS = {
     "throughput": "app/bench/src/throughput.py",
     "latency": "app/bench/src/latency.py",
     "arrival_rate": "app/bench/src/arrival_rate.py",
-    # Second closed-loop client, behind the same seam. Never hosts the canonical sweep:
-    # corpus comparability and the fill-verification pedigree stay on throughput.py.
+    # Second closed-loop client; never hosts the canonical sweep, which stays on throughput.py.
     "aiperf": "app/bench/src/aiperf_harness.py",
-    # Same adapter in trace-replay mode (AIPERF_MODE=trace in the protocol env): one
-    # streaming fixed-schedule replay of a committed trace, reported as a single row.
-    # A distinct harness name because the suite's row regex, columns and level label
-    # are keyed by harness, and a replay's columns are not the sweep's.
+    # Same adapter replaying a trace as one row, named apart because the suite keys columns by harness.
     "aiperf_trace": "app/bench/src/aiperf_harness.py",
 }
 
-# Extra dependency sets a harness needs beyond the suite's own. The launcher installs the
-# named file inside the Job, so the pin recorded in the repo is the one that runs in-cluster.
+# Extra requirements a harness needs, installed by the launcher so the repo's pin runs in-cluster.
 HARNESS_EXTRA_REQUIREMENTS = {
     "aiperf": "app/bench/requirements-aiperf.txt",
     "aiperf_trace": "app/bench/requirements-aiperf.txt",
 }
 
-# Protocols that sweep an axis other than in-flight concurrency, and so are exempt from the
-# canonical sweep. Named explicitly rather than inferred, so adding an exemption is a
-# deliberate edit visible in review.
+# Protocols sweeping another axis, listed explicitly so an exemption is a visible deliberate edit.
 NON_CONCURRENCY_PROTOCOLS = {"latency_longctx", "server_qps", "agentx", "trace_replay"}
 
 
@@ -568,15 +507,7 @@ CHARS_PER_TOKEN = {"prose": 4.35, "code": 3.20}
 # How far a measured median may sit from the profile's stated target, for the reference tokenizer.
 PROFILE_TOLERANCE = 0.15
 
-# The tokenizer the generator's CHARS_PER_TOKEN ratios are calibrated against, and therefore the
-# only one whose deviation means the generator is wrong. Chosen on measurement, not preference:
-# across all eight profiles this tokenizer lands within 3.3% of every stated target, while Qwen
-# runs +2% to +12% and Gemma 4 up to +26% on the code profiles.
-#
-# The tolerance cannot be applied to every tokenizer, because the same pinned text differs by 27
-# percentage points between these families and no single nominal target can sit within 15% of all
-# of them. Deviation for a non-reference tokenizer is recorded in docs/prompt_tokens/ and reported
-# by each run's protocol lock as a measured value, which is where it actually matters.
+# Reference tokenizer the CHARS_PER_TOKEN ratios are calibrated against, chosen on measured deviation.
 PROFILE_REFERENCE_TOKENIZER = "nvidia/GLM-5.2-NVFP4"
 
 
@@ -584,15 +515,10 @@ PROFILE_REFERENCE_TOKENIZER = "nvidia/GLM-5.2-NVFP4"
 #                          MANIFEST VALIDATION                                 #
 # ---------------------------------------------------------------------------- #
 
-# Glob for the K8s manifests to validate. Every recipe, not a subset: all of them build their
-# vllm serve invocation as an inline shell script, so all of them carry the truncation risk.
+# Every recipe, not a subset: all build their vllm serve line in shell, so all carry truncation risk.
 MANIFEST_GLOB = "vllm-recipes/*/*.yaml"
 
-# Flags each manifest MUST pass through to vllm serve, keyed by path relative to vllm-recipes/.
-# Two models share a basename (fp8-g7e.4xlarge.yaml, fp8-p5en.48xlarge.yaml), so the model
-# directory is part of the key.
-# Every manifest MANIFEST_GLOB matches must appear here; an unlisted one fails rather than
-# being skipped, so renaming a recipe cannot silently disable its flag assertions.
+# Flags each manifest must reach vllm serve with, keyed by path since two models share a basename.
 REQUIRED_FLAGS = {
     "kimi-k3/mxfp4-p6-b300.48xlarge-baseline.yaml": [
         "--max-cudagraph-capture-size", "512", "--kv-cache-dtype", "fp8",

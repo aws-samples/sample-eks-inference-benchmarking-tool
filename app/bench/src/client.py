@@ -1,11 +1,8 @@
-"""Shared request, response-parsing, and reporting logic for the three benchmark harnesses.
-
-Everything here knows the shape of an OpenAI-compatible vLLM response; anything that does
-not belongs in stats.py. These functions existed as near-identical copies in each harness,
-which is how the reasoning-token fix landed in the streaming probe but not the open-loop
-one, and how the measured input size ended up recorded in three formats. Request payloads,
-server-sent-event parsing, and the TOKEN_SHAPE provenance lines are now defined once.
-"""
+"""Shared request, response-parsing and reporting logic for the benchmark harnesses, covering
+everything that knows the shape of an OpenAI-compatible vLLM response. These functions existed as
+near-identical copies in each harness, which is how a reasoning-token fix landed in one probe but
+not another and how the measured input size ended up recorded in three formats. Anything that does
+not need to know the response shape belongs in stats.py instead."""
 import asyncio
 import json
 
@@ -19,12 +16,7 @@ from stats import minmax_median
 #                             FAILURE CLASSIFICATION                           #
 # ---------------------------------------------------------------------------- #
 
-# A dropped connection and an HTTP 500 both raise, and both used to be counted as one
-# undifferentiated "Request failed". They mean opposite things: a transport failure is the
-# measurement apparatus breaking and invalidates the sample, while a server failure IS the
-# result — the server rejecting load is what a capacity test is looking for. A run whose
-# latency percentiles rest on the survivors of a collapsed tunnel is not a measurement, and
-# without this split there is no way to tell that from a server under genuine stress.
+# A dropped connection invalidates the sample where an HTTP 500 is the result, so they split here.
 TRANSPORT_ERRORS = (
     aiohttp.ClientConnectionError,      # covers ClientOSError, ServerDisconnectedError
     aiohttp.ClientPayloadError,         # truncated response body mid-stream
@@ -80,8 +72,7 @@ def build_request(prompt: str, max_tokens: int, stream: bool = False) -> tuple[s
         "temperature": config.BENCH_TEMPERATURE,
     }
     if stream:
-        # include_usage asks vLLM for exact token counts in a final usage-only chunk, which
-        # is more trustworthy than counting content chunks client-side.
+        # include_usage asks vLLM for exact counts, which beats counting content chunks client-side.
         body["stream"] = True
         body["stream_options"] = {"include_usage": True}
     base = config.VLLM_API_URL.rstrip("/")

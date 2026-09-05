@@ -1,42 +1,14 @@
 #!/usr/bin/env python3
-"""Prove a vLLM serve recipe passes the flags it is written to pass, before a deploy trusts it.
-
-Scope is `vllm-recipes/*/*.yaml` and nothing else. The examples under `k8s/examples/` are deliberately
-unrunnable placeholders and are never checked here. Pass one or more recipe names to narrow the run
-to what you are about to apply; with no argument every recipe is checked, which is what a pre-deploy
-gate wants.
-
-
-This is the check that was missing when a stray comment silently truncated a `vllm serve`
-command: the server came up healthy, served traffic, and reported clean throughput while running
-at the wrong precision with both parsers dropped. `bash -n` does not catch it, because the
-truncated command is still valid shell.
-
-Four checks run over every recipe:
-
-  * `bash -n` on the container's inline script, for outright syntax errors.
-  * A comment inside a backslash continuation, which is the static signature of the incident
-    above: the comment swallows its own line ending, so the command stops there and every flag
-    below is discarded. Detected by reading the script, so it also covers the multinode recipes
-    whose scripts deliberately refuse to run without EFA or a formed Ray cluster.
-  * The argv that actually reaches vLLM, by re-running the script with `vllm` and the hardware
-    probes stubbed out. Compared against the flags the invocation is written to pass.
-  * The served port against the Service that forwards to it. A Service aimed at a port vLLM is
-    not listening on produces a deployment that looks healthy and refuses every connection.
-
-  * Any variable the script reads that nothing defines. It would expand to empty, stripping a
-    flag's value while leaving the flag in argv, which no other check can see.
-
-Values for the stubbed run come from each manifest's own `env:` block, so a recipe is checked with
-its own numbers. Only the handful the platform injects at run time are hardcoded, in
-INJECTED_STUBS, and their values are arbitrary: the checks compare which flags reach vLLM, not what
-they carry.
-
-Recipes that pass flags as a YAML `args:` list skip the shell checks, having no shell to break.
-Any flags pinned in config.REQUIRED_FLAGS are additionally asserted, and a pinned entry whose
-filename no longer exists is itself a failure, so renaming a recipe cannot quietly disable its
-assertions. Exits non-zero if anything fails, so it can gate a deploy. Needs PyYAML.
-"""
+"""Prove a vLLM serve recipe passes the flags it is written to pass, before a deploy trusts it, scoped
+to the recipe manifests and never to the deliberately unrunnable examples. This is the check that
+was missing when a stray comment inside a backslash continuation silently truncated a vllm serve
+command and the server came up healthy serving traffic at the wrong precision with both parsers
+dropped, which bash -n cannot catch because the truncated command is still valid shell. Every
+recipe gets a shell syntax check, a scan for that comment signature, a comparison of the argv that
+actually reaches vLLM with the script re-run against stubbed binaries, a check that the Service
+forwards to the port vLLM binds, and a check for any variable the script reads that nothing
+defines. Values for the stubbed run come from each manifest's own env block, so a recipe is checked
+with its own numbers, and it exits non-zero if anything fails so it can gate a deploy."""
 from __future__ import annotations
 
 import argparse
@@ -51,15 +23,7 @@ import config
 
 REQUIRED_FLAGS = config.REQUIRED_FLAGS
 
-# Variables the platform injects at run time, so no manifest declares a value for them. Every
-# other variable is read from the manifest's own env block, so a recipe is validated with its own
-# numbers rather than against a second copy here that has to be kept in step.
-#
-# These values are deliberately arbitrary. The checks compare which flags reach vLLM, not what
-# they carry, so a stub only has to be non-empty: an empty expansion would collapse a flag and its
-# value into one token and change the argv being inspected. HOSTNAME and LEADER match each other
-# because a multinode script branches on that equality to decide it is the leader, and the leader
-# is the container that runs `vllm serve`.
+# Platform-injected variables, given arbitrary non-empty values since only which flags arrive matters.
 INJECTED_STUBS = {
     "HOSTNAME": "stub-leader-0",
     "LEADER": "stub-leader-0",
@@ -140,8 +104,7 @@ def serve_block(script: str) -> str:
     own pre-flight checking loops.
     """
     lines = script.splitlines()
-    # Two things that mention `vllm serve` but are not the invocation: a comment referring to it
-    # in prose, and a `--help=all` capability probe the recipes use to test a flag's existence.
+    # Two things mention vllm serve without being the invocation: prose and a --help=all probe.
     start = next((i for i, line in enumerate(lines)
                   if "vllm serve" in line
                   and not line.lstrip().startswith("#")
@@ -290,12 +253,9 @@ def validate(yaml, path: pathlib.Path) -> bool:
         truncations = continuation_comments(source)
         undefined = undefined_vars(container, source)
         executed = resolved_argv(container, source)
-        # Reaching vLLM means flags actually arrived. Mere output is not enough: the multinode
-        # recipes print EFA and NCCL diagnostics before deciding whether to proceed at all.
+        # Reaching vLLM means flags arrived, since multinode recipes print diagnostics before proceeding.
         reached = any(line.startswith("--") for line in executed.splitlines())
-        # Prefer what the stubbed run produced, since that is what vLLM would receive and it
-        # resolves argv assembled into a shell array. Recipes that stop at a precondition guard
-        # fall back to the invocation as written, which is all that can be known offline.
+        # Prefer what the stubbed run produced, falling back to the written invocation behind a guard.
         argv = executed if reached else serve_block(source)
         dropped = ([flag for flag in intended_flags(source) if flag not in executed]
                    if reached else [])
@@ -308,9 +268,7 @@ def validate(yaml, path: pathlib.Path) -> bool:
     expected = REQUIRED_FLAGS.get(recipe_id(path), [])
     missing = [flag for flag in expected if flag not in argv]
 
-    # The port is not asserted to be 8000: the BF16 baselines deliberately serve 8001 so they can
-    # run beside their FP8 counterpart. What matters is that a port is set and the manifest's own
-    # Service forwards to it.
+    # The port is not asserted to be 8000, only that one is set and the Service forwards to it.
     port = served_port(argv)
     targets = service_target_ports(yaml, path)
     port_mismatch = bool(port and targets and port not in targets)
@@ -412,10 +370,7 @@ def main() -> int:
              else f"all {len(manifests)} recipes in {MANIFEST_GLOB}")
     print(f"validating {scope}\n")
 
-    # A REQUIRED_FLAGS key that matches no file is a stale entry asserting nothing. Renaming a
-    # recipe without updating its key would otherwise disable its assertions silently, which is
-    # how the b300 entries came to be checked against filenames that no longer existed. Only
-    # meaningful over the full set: a filtered run is not evidence that a key is stale.
+    # A key matching no file asserts nothing, and only the full set can prove it stale.
     orphans = ([] if args.recipe
                else sorted(set(REQUIRED_FLAGS) - {recipe_id(path) for path in available}))
 

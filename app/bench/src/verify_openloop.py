@@ -1,47 +1,15 @@
-"""Regression checks for the open-loop (MLPerf LoadGen) harness, runnable without a GPU.
-
-Every check here encodes a defect that reached a real run, when the `server_qps` protocol 
-was first used to reach a conclusion and produced figures that could not be relied on. 
-
-  certification floor
-      LoadGen's Server scenario certifies a p99 only when queries_issued >= h + t, where
-      t is the number of over-SLA samples and h solves BetaRegularized(0.99, h, 1+t) <=
-      0.01 (loadgen 6.0.17 results.cc + early_stopping.cc). That is 459 queries with zero
-      violations. The protocol shipped with MIN_QUERY_COUNT=200, so every level came back
-      UNDERSAMPLED and LoadGen-INVALID no matter how well the server behaved. The check
-      asserts the configured floor clears the arithmetic, and the wire check proves the
-      threshold empirically.
-
-  warmup isolation
-      The harness had no warmup, so first-request costs landed in the certified
-      percentiles: p99 TTFT was 6.0 s in rep 1 at 1 QPS against 378 ms in reps 2 and 3,
-      which flipped that level's SLA verdict. Warmup now runs before LoadGen starts, and
-      its requests must NOT appear in any reported count.
-
-  failure accounting and the success floor
-      This is the one that mattered. Failed requests are completed to LoadGen (it has no
-      failed-query concept) and therefore enter its latency percentiles as instant
-      responses, which FLATTERS them. Measured here: with 84% of requests failing against
-      a killed server, LoadGen itself reported `sla=MET, loadgen_result=VALID`. The
-      pre-fix harness emitted no REQUEST_SUCCESS line and the runner's open-loop path
-      recorded no success data, so `degraded_levels()` saw an empty dict and a rep whose
-      server had been deleted mid-run was aggregated as "3/3 successful reps". The checks
-      below prove the line is emitted, that it splits transport from server failures, and
-      that the runner now excludes such a rep.
-
-  circuit breaker and liveness
-      A rep that loses its server must stop measuring nothing: the harness opens a
-      breaker after ARRIVAL_ABORT_AFTER_FAILURES consecutive failures, and the runner
-      probes liveness per rep AND per level (one 2026-08-12 rep ran seven consecutive
-      levels against a deleted deployment).
-
-Wire checks need mlcommons-loadgen (requirements-loadgen.txt) and are SKIPPED with a
-notice when it is absent, so a laptop without the C++ toolchain can still run the static
-checks. They talk to mock_server.py, never to a real server.
-
-Usage:
-    python3 main.py verify-openloop
-"""
+"""Regression checks for the open-loop MLPerf LoadGen harness, runnable without a GPU, each encoding a
+defect that reached a real run and produced figures that could not be relied on. LoadGen certifies
+a p99 only once the query count clears its early-stopping arithmetic, which is 459 queries with no
+violations, so a floor set below that returned UNDERSAMPLED no matter how well the server behaved.
+The harness had no warmup, so first-request costs landed in the certified percentiles and flipped a
+level's SLA verdict. Most importantly, failed requests are completed to LoadGen, which has no
+failed-query concept, so they enter its latency percentiles as instant responses and flatter them:
+against a killed server with most requests failing, LoadGen still reported the SLA met and the
+result valid, and with no success line emitted a dead rep was aggregated as successful. A circuit
+breaker now opens after consecutive failures and the runner probes liveness per rep and per level.
+Wire checks need mlcommons-loadgen and are skipped with a notice when it is absent, and they talk
+only to the local mock."""
 from __future__ import annotations
 
 import json
@@ -54,8 +22,7 @@ import urllib.request
 from math import comb
 from pathlib import Path
 
-# Deterministic, laptop-sized. Set before importing config, which freezes its environment
-# at import time.
+# Deterministic and laptop-sized, set before importing config, which freezes its environment.
 CHECK_ENV = {
     "PROMPT_PROFILE": "coding_completion",
     "MAX_TOKENS": "64",
@@ -177,8 +144,7 @@ def static_checks() -> None:
     check("QSL pool exceeds the query floor (no sample repeats)",
           config.QSL_SIZE > floor, f"QSL_SIZE={config.QSL_SIZE} floor={floor}")
 
-    # The runner must record success data for the open-loop path, which is what makes the
-    # exclusion machinery apply at all.
+    # The runner must record open-loop success data, which is what makes the exclusion machinery apply.
     import inspect
 
     import suite
@@ -263,8 +229,7 @@ def wire_checks() -> None:
         ok_fraction = float(dead["success"].get("ok_fraction", 1.0))
         check("a vanished server drives ok_fraction below the floor",
               ok_fraction < 0.95, f"ok_fraction={ok_fraction}")
-        # The point of the whole exercise: LoadGen can report a PASS on a dead server,
-        # because failures are completed to it as instant responses.
+        # The point of the exercise: LoadGen can pass a dead server, whose failures complete as instant responses.
         loadgen_said = dead["qps_row"].get("sla")
         check("REQUEST_SUCCESS contradicts LoadGen when LoadGen is wrong",
               ok_fraction < 0.95,

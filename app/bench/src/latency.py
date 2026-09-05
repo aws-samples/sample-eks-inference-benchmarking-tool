@@ -1,13 +1,10 @@
-"""Closed-loop streaming latency harness: TTFT, TPOT and ITL at a representative in-flight depth.
-
-TTFT is request start to first content chunk, so it reflects prefill and interactivity; ITL
-is the gap between successive chunks, so it reflects decode smoothness and tails; TPOT is
-steady-state decode cost as (end_to_end - ttft) / (tokens - 1). Streaming is required to see
-any of them, which means the client parses per token and can itself become the bottleneck —
-run this from a well-provisioned host and check the runner's client-CPU column before
-trusting a high-concurrency row. Requests go out in waves of exactly `concurrency` so no
-request waits in a client-side queue and has that wait charged to its TTFT.
-"""
+"""Closed-loop streaming latency harness reporting TTFT, TPOT and ITL at a representative in-flight
+depth, where TTFT is request start to first content chunk and reflects prefill, ITL is the gap
+between successive chunks and reflects decode smoothness and tails, and TPOT is steady-state decode
+cost. Streaming is required to observe any of them, which means the client parses per token and can
+itself become the bottleneck, so run this from a well-provisioned host and check the runner's
+client-CPU column before trusting a high-concurrency row. Requests go out in waves of exactly
+concurrency so no request waits in a client-side queue and has that wait charged to its TTFT."""
 import asyncio
 import time
 
@@ -55,8 +52,7 @@ async def stream_once(session, prompt: str) -> dict | None:
         return {"failure": kind}
 
     if first_token_at is None:
-        # Completed without ever emitting a token: the server answered, so this counts as a
-        # server-side failure rather than a broken connection.
+        # Answered but emitted no token, so this counts server-side rather than as a broken connection.
         return {"failure": client.SERVER}
     return derive_metrics(start, first_token_at, end_to_end, piece_times,
                           reported_output or counted_pieces, reported_input)
@@ -116,8 +112,7 @@ def summarize_level(results: list, num_requests: int, concurrency: int) -> dict:
     time_to_first = [r["ttft"] for r in usable]
     per_output_token = [r["tpot"] for r in usable if r["tpot"] is not None]
     inter_token = [gap for r in usable for gap in r["itls"]]
-    # TTFT is dominated by prefill once prompts are realistic, so a TTFT figure without its
-    # input length is not interpretable.
+    # TTFT is dominated by prefill, so a TTFT figure without its input length is not interpretable.
     input_tokens = [r["prompt_tokens"] or 0 for r in usable]
 
     return {
@@ -194,9 +189,7 @@ async def run_sweep(num_requests: int, levels: list[int]) -> list[dict]:
         row["quantization"] = config.QUANTIZATION
         print_level(row)
         rows.append(row)
-        # Same abort as the throughput sweep: once the client's connections are failing, the
-        # remaining levels measure the broken connection. This sweep is the expensive one —
-        # on 2026-08-08 it ran for two hours after its tunnel had already collapsed.
+        # Same abort as the throughput sweep, since later levels would only measure the broken connection.
         total = row.get("total") or 0
         share = (row.get("transport_failures", 0) / total) if total else 0.0
         if share > config.TRANSPORT_ABORT_SHARE:

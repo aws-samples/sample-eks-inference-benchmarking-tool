@@ -1,20 +1,12 @@
 #!/usr/bin/env python3
-"""Generate the pinned prompt-profile JSON files that every benchmark run draws its input from.
-
-The prompts are stored as literal text rather than as a target length plus a per-model padding
-knob, which is what an earlier design did: that made every model serve DIFFERENT text, so
-cross-model results were comparable only in aggregate and reproducing a run meant reproducing a
-random generator. With the text pinned, a throughput or latency difference between two models is
-a property of the models rather than of their prompt streams. Token counts still differ slightly
-per tokenizer for identical text, which is expected and recorded per model by
-verify_profiles.py rather than fed back into generation. Content is composed from fixed
-building blocks under a fixed seed, so re-running reproduces the files byte for byte and nothing
-depends on uuid4 or the wall clock. The JSON is the artifact; run this only to add a profile or
-change a shape.
-
-    python3 app/bench/src/build_profiles.py           # write all profiles
-    python3 app/bench/src/build_profiles.py --check    # verify they reproduce
-"""
+"""Generate the pinned prompt-profile JSON files that every benchmark run draws its input from,
+storing prompts as literal text rather than a target length plus a per-model padding knob. Pinning
+the text means a throughput or latency difference between two models is a property of the models
+rather than of their prompt streams, where the earlier design served every model different text.
+Token counts still differ slightly per tokenizer for identical text, which is expected and recorded
+per model by verify_profiles.py rather than fed back into generation. Content is composed from
+fixed building blocks under a fixed seed, so re-running reproduces the files byte for byte; the
+JSON is the artifact, so run this only to add a profile or change a shape."""
 from __future__ import annotations
 
 import argparse
@@ -323,15 +315,7 @@ FILE_HEADERS = [
 #                             PER-PROMPT MUTATION                              #
 # ---------------------------------------------------------------------------- #
 
-# Cycling a shared pool of units made prompts overlap heavily: measured
-# on the first version, two coding_repo_context prompts shared 63,084 leading characters, and
-# coding_assistant prompts had a 0.90 pairwise word overlap. With prefix caching enabled
-# server-side that is a near-total cache hit, so a throughput number measured on those
-# prompts would be a caching result rather than a serving result.
-# Mutation gives every prompt its own identifiers, constants and ordering, so reused
-# structural material is never textually identical. A unique leading line per prompt matters
-# most: prefix caching matches on leading tokens, so differing at position zero defeats it
-# regardless of what follows.
+# Cycling a shared pool made prompts overlap heavily, which prefix caching turns into a cache result.
 
 _IDENTS = [
     "merge_windows", "RetryBudget", "Compact", "useDebounced", "shard_for", "ledger_entry",
@@ -348,8 +332,7 @@ def _mutate(text: str, salt: str, rng: random.Random) -> str:
     for ident in _IDENTS:
         if ident in out:
             out = re.sub(rf"\b{re.escape(ident)}\b", f"{ident}_{salt}", out)
-    # Jitter standalone integers >= 2 so constants differ between prompts. Skips 0/1 and
-    # anything attached to an identifier, which would change meaning rather than spelling.
+    # Jitter standalone integers so constants differ, skipping 0, 1 and anything bound to an identifier.
     def _jit(m):
         """Return the matched integer, nudged upward unless it is 0 or 1."""
         v = int(m.group(0))
@@ -430,15 +413,13 @@ def make_chat(rng: random.Random, target_tokens: int, n: int,
     out = []
     for i in range(n):
         salt = f"{rng.randrange(16**6):06x}"
-        # Per-prompt rng so each prompt draws its own unit order rather than continuing a
-        # shared sequence; without this, neighbouring prompts open with the same paragraph.
+        # Per-prompt rng, without which neighbouring prompts open with the same paragraph.
         prng = random.Random(f"chat::{i}::{salt}")
         units = list(PROSE_UNITS)
         prng.shuffle(units)
         lead = _lead("chat", i, salt)
         q = QUESTIONS[(i + 6) % len(QUESTIONS)]
-        # Reserve exactly what the wrapper costs. A fixed guess is fine on a 16k prompt and
-        # ruinous on a 128-token one, where 240 characters is 43% of the whole budget.
+        # Reserve exactly what the wrapper costs, since a fixed guess is ruinous on a short prompt.
         budget = (int(target_tokens * (cpt or CHARS_PER_TOKEN["prose"]))
                   - len(lead) - len(q) - 4)
         body = _fill_to(prng, int(budget * 1.6), units, "\n\n")
@@ -503,17 +484,14 @@ LEGACY_FIXED = [
     "How does a transformer neural network work?",
 ]
 
-# Pool size falls as prompts grow, to keep any single profile small enough that the
-# in-cluster launcher can ship it inside a ConfigMap (1 MiB limit) alongside the harness.
+# Pool size falls as prompts grow, keeping each profile shippable inside a 1 MiB ConfigMap.
 SPECS = [
     dict(name="chat_short", input_tokens=128, output_tokens=512, n=32, kind="chat",
          use_case="Single-turn question with no conversation history.",
          rationale="Floor case for interactive chat. Prefill is negligible, so this "
                    "isolates decode cost with a plausible prompt rather than a 41-token one."),
     dict(name="chat_typical", input_tokens=512, output_tokens=1024, n=32, kind="chat",
-         # Measured 4.55 chars/token at this size, against the 4.35 default. The
-         # per-paragraph mutation tags are token-dense and their share of the text shifts
-         # with prompt length, so this profile needs its own ratio.
+         # Mutation tags are token-dense and shift with length, so this profile needs its own ratio.
          chars_per_token=4.84,
          use_case="Conversational turn carrying a short history and a system prompt.",
          rationale="Representative of a general assistant. Output budget matches the "
@@ -574,8 +552,7 @@ def build(spec: dict) -> dict:
     elif kind == "legacy":
         prompts = list(LEGACY_FIXED)
     elif kind == "legacy41":
-        # Reproduces the historical `unique` shape at a fixed, inspectable set of strings
-        # rather than a live uuid4, so the published shape is reproducible.
+        # Reproduces the historical unique shape from fixed inspectable strings rather than a live uuid4.
         stems = [
             "Explain in detail how {t} works, covering the underlying mechanics.",
             "Compare and contrast the main approaches to {t} and justify a recommendation.",
@@ -592,11 +569,7 @@ def build(spec: dict) -> dict:
     else:
         raise ValueError(kind)
 
-    # A small, DECLARED fraction of prompts is an exact repeat of an earlier one. Purpose:
-    # if prefix caching is enabled server-side, these are the only prompts that can produce
-    # a cache hit, so comparing their behavior against the rest isolates the caching effect.
-    # Keeping the fraction small and labelled means an uncached throughput number is not
-    # quietly inflated by repetition, which is what the first version of these files did.
+    # A small declared fraction repeats an earlier prompt, isolating cache effect without inflating it.
     dup_idx: list[int] = []
     if spec["kind"] not in ("legacy", "legacy41") and len(prompts) >= 8:
         n_dup = max(1, round(len(prompts) * DUPLICATE_FRACTION))
@@ -626,12 +599,9 @@ def build(spec: dict) -> dict:
             "are the only prompts able to hit the cache, which is how to measure the caching "
             "effect without contaminating the uncached figure."
         ),
-        # MODEL-AGNOSTIC: the literal strings sent to every model under test. Byte-identical
-        # input across models is what makes a cross-model comparison meaningful.
+        # Model-agnostic literal strings, since byte-identical input is what makes a comparison meaningful.
         "prompts": prompts,
-        # NO model-keyed data here, by design. These files are pinned inputs and must stay
-        # usable for any model, present or future. Per-model token counts live in
-        # docs/prompt_tokens/<model>.json, written by app/bench/src/verify_profiles.py.
+        # No model-keyed data here, so per-model counts live under docs/prompt_tokens/ instead.
     }
 
 

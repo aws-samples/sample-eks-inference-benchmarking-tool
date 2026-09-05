@@ -1,18 +1,11 @@
 #!/usr/bin/env python3
-"""Fetch and pin the GSM8K subset the accuracy gate scores against.
-
-The gate needs a fixed, versioned problem set: if the problems can drift, a score is not
-comparable across runs and the gate is worthless. This downloads the official GSM8K test
-split, verifies it byte-for-byte against a pinned digest, takes a deterministic seeded subset,
-and writes app/bench/data/gsm8k_subset.jsonl, which is committed so the gate needs no network access at
-run time. Re-running must reproduce an identical file; if it does not, either upstream changed
-(the digest check catches that) or the subset constants were edited, which invalidates every
-accuracy reference already captured. Source is openai/grade-school-math, MIT licensed — see
-app/bench/data/ATTRIBUTION.md.
-
-    python3 app/bench/src/fetch_eval_data.py            # write the subset
-    python3 app/bench/src/fetch_eval_data.py --verify   # check it reproduces, write nothing
-"""
+"""Fetch and pin the GSM8K subset the accuracy gate scores against, because a problem set that can
+drift makes a score incomparable across runs and the gate worthless. This downloads the official
+test split, verifies it byte for byte against a pinned digest, takes a deterministic seeded subset,
+and writes the committed JSONL so the gate needs no network access at run time. Re-running must
+reproduce an identical file; if it does not, either upstream changed, which the digest check
+catches, or the subset constants were edited, which invalidates every accuracy reference already
+captured. The source is openai/grade-school-math under the MIT license."""
 from __future__ import annotations
 
 import argparse

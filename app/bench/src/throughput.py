@@ -1,12 +1,10 @@
-"""Closed-loop throughput harness: how much work does the server do at a fixed in-flight depth.
-
-Holds exactly `concurrency` requests in flight for the whole measurement window and reports
-tokens/sec, req/sec and end-to-end p50/p99 per level. Non-streaming on purpose, so the
-client does one response parse per request and can never become the bottleneck the way a
-per-token SSE parser can. Use latency.py for token-level timing and
-arrival_rate.py for "can the server hold an SLA at X arrivals/sec"; the three answer
-different questions and their numbers are not interchangeable.
-"""
+"""Closed-loop throughput harness measuring how much work the server does at a fixed in-flight depth,
+holding exactly concurrency requests in flight for the whole window and reporting tokens per
+second, requests per second and end-to-end p50 and p99 per level. It is non-streaming on purpose,
+so the client does one response parse per request and can never become the bottleneck the way a
+per-token SSE parser can. Use latency.py for token-level timing and arrival_rate.py for SLA
+behaviour at a given arrival rate, since the three answer different questions and their numbers are
+not interchangeable."""
 import asyncio
 import time
 
@@ -119,8 +117,7 @@ async def measure_window(session, prompts, num_requests: int, concurrency: int):
 
     async def worker():
         """Hold one request in flight at a time until both floors are satisfied."""
-        # Stopping on BOTH floors means a fast server does more requests rather than
-        # reporting a three-second sample.
+        # Stopping on both floors means a fast server does more requests than report a three-second sample.
         while not (issued["n"] >= num_requests and time.perf_counter() >= deadline):
             issued["n"] += 1
             inflight["now"] += 1
@@ -147,14 +144,11 @@ def summarize_level(results: list, elapsed: float, concurrency: int, peak: int) 
         return {"concurrency": concurrency, "error": "all requests failed",
                 "successful": 0, "total": len(results), **failures}
 
-    # Output tokens drive the headline tokens/sec figure; input tokens are recorded
-    # alongside because that figure is unreadable without knowing what produced it.
+    # Input tokens are recorded alongside output, since the headline figure is unreadable without them.
     output_tokens = sum(client.usage_counts(b)[0] or 0 for b in bodies)
     input_tokens = [client.usage_counts(b)[1] or 0 for b in bodies]
 
-    # Time-averaged in-flight depth: total busy request-seconds over wall seconds. This is
-    # the load the server actually saw, and it is what the concurrency column claims to be.
-    # Reporting it is what makes an under-filled level visible instead of mislabelled.
+    # Time-averaged in-flight depth, which is what makes an underfilled level visible not mislabelled.
     achieved = sum(latencies) / elapsed if elapsed > 0 else 0.0
 
     return {
@@ -385,8 +379,7 @@ async def run_sweep(num_requests: int, levels: list[int]) -> list[dict]:
         "Prompts": describe_workload(),
     })
 
-    # Levels that cannot fill are knowable before any request is sent, so say so up front
-    # rather than leaving it to be inferred from the numbers afterwards.
+    # Levels that cannot fill are knowable before any request, so say so rather than let it be inferred.
     unfillable = [c for c in levels if unfillable_level(requests_for_level(num_requests, c), c)]
     if unfillable:
         print(f"  WARNING: levels {unfillable} cannot fill — request count is below the level "

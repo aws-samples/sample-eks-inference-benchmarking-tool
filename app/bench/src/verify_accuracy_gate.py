@@ -1,43 +1,13 @@
-"""Regression checks for the correctness gate's aggregate comparisons, runnable without a GPU.
-
-Every check here encodes a defect that reached a real run when the gate aborted a
-GLM-5.2 NVFP4 sweep on a p6-b200 capacity block.
-
-  truncation counted, not rated
-      `compare_aggregates` compared the number of responses hitting the token ceiling against
-      the reference with a flat allowance of `reference + max(1, n // 10)`, which is +2 on a
-      20-problem fingerprint, and applied it whether or not the server was bit-reproducible. On
-      a non-reproducible server the text of 18 of 20 responses changes between identical passes
-      at temperature 0, so completion_tokens change too, so whether a response lands exactly on
-      the ceiling is a coin flip. The count is a random variable with a standard deviation near
-      1.6 at a 15% truncation rate, and a +2 allowance sits inside its noise. The reference
-      recorded 2/20, a re-run of the same pod minutes later got 5/20, and the gate called it a
-      behaviour change. Every reference in the repo is non-reproducible, so every model was
-      exposed; qwen3-235b worst at about one clean run in eight.
-
-      The fix compares the RATE with a percentage-point allowance when reproducible is false,
-      mirroring how mean completion_tokens drift was already handled two lines below, and keeps
-      the strict absolute count for reproducible servers where it is meaningful.
-
-  the failure it must still catch
-      A hybrid-thinking model left in its default mode spends its whole budget on the reasoning
-      trace and truncates about 90% of responses. That is the defect the check exists for, it
-      was observed on this same model on 2026-08-20, and it must still fail. The checks below
-      pin both edges: noise passes, 90% truncation fails.
-
-  what the binomial numbers are worth
-      The false-trip figures printed below assume each response truncates independently at the
-      reference rate. Live sampling on gemma4-31b-fp8 (g7.24xlarge, 2026-08-20, eight runs of
-      the fingerprint set) gave counts [5, 5, 4, 4, 4, 3, 3, 4], a standard deviation of 0.76
-      against the model's 1.79, because truncation is mostly decided by the question rather
-      than by sampling. Treat them as an upper bound on risk. They are asserted only as
-      strictly-better-and-small, never quoted as the measured failure rate.
-
-These run against synthetic item lists and the committed references. No server, no GPU.
-
-Usage:
-    python3 main.py verify-accuracy-gate
-"""
+"""Regression checks for the correctness gate's aggregate comparisons, runnable without a GPU or a
+server against synthetic item lists and the committed references. The gate once compared the
+absolute count of responses hitting the token ceiling with a flat allowance, which sits inside the
+noise on a server that is not bit-reproducible, where response text and therefore completion tokens
+change between identical passes at temperature 0; it now compares the rate with a percentage-point
+allowance when reproducible is false and keeps the strict count where it is meaningful. The checks
+pin both edges, so ordinary noise passes while a hybrid-thinking model left in its default mode,
+spending its budget on the reasoning trace and truncating almost every response, still fails.
+Binomial false-trip figures assume independent truncation and are asserted only as strictly better
+and small, never quoted as a measured failure rate."""
 from __future__ import annotations
 
 import glob
