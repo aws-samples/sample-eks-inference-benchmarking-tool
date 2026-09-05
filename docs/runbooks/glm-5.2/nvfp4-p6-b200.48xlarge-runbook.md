@@ -75,13 +75,13 @@ GLM-5.2-NVFP4 at NVFP4 occupies 432.9 GiB of the 1,341.1 GiB on 8 B200 cards, 27
 7. Prove this recipe passes the flags it claims.
 
    ```bash
-   python3 app/bench/src/main.py validate-manifests glm-5.2/nvfp4-p6-b200.48xlarge.yaml
+   eks-bench validate-manifests glm-5.2/nvfp4-p6-b200.48xlarge.yaml
    ```
 
 8. Generate the accuracy gate (.JSON). `--thinking off` is required, not optional: see Settings.
 
    ```bash
-   python3 app/bench/src/main.py launch --capture-accuracy-reference \
+   eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service glm-52-b200-nvfp4 \
        --mode fingerprint \
        --model-tag glm-5.2 --config nvfp4 \
@@ -93,7 +93,7 @@ GLM-5.2-NVFP4 at NVFP4 occupies 432.9 GiB of the 1,341.1 GiB on 8 B200 cards, 27
 9. Benchmark in-cluster with the reasoning protocol, which is the right one for this model: it budgets 1024 output tokens, counts reasoning tokens in the total, and warms the server before measuring.
 
    ```bash
-   python3 app/bench/src/main.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service glm-52-b200-nvfp4 \
        --protocol reasoning --profile legacy_reasoning \
        --instance p6-b200.48xlarge --model-tag glm-5.2 \

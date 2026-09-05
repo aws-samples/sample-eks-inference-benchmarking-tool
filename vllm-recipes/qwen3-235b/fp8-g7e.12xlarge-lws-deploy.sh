@@ -55,5 +55,5 @@ kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \
 
 # Validate the serving manifest.
 echo "==> Validating the Qwen3 serving manifest"
-python3 app/cli.py validate-manifests \
+eks-bench validate-manifests \
   qwen3-235b/fp8-g7e.12xlarge-lws.yaml

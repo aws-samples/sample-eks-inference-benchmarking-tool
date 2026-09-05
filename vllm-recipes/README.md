@@ -2,7 +2,7 @@
 
 One manifest per row. Each serves exactly one model on one instance type at one precision, and pairs with the runbook that runs it.
 
-Every supported ordinary serving recipe is validated by its sibling deploy helper before measurement. Run `python3 app/cli.py validate-manifests <model>/<recipe>.yaml` directly when you only need to prove that one recipe—including a specialized study recipe—passes the flags it is written to pass.
+Every supported ordinary serving recipe is validated by its sibling deploy helper before measurement. Run `eks-bench validate-manifests <model>/<recipe>.yaml` directly when you only need to prove that one recipe—including a specialized study recipe—passes the flags it is written to pass.
 
 An unset `Parallelism` cell means the recipe passes no `--tensor-parallel-size`, so vLLM defaults to one GPU.
 

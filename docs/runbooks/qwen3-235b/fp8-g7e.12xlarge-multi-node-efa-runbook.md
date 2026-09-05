@@ -144,7 +144,7 @@ Run the commands from the repository root. This capacity/EFA study also requires
 13. Run the benchmark.
 
     ```bash
-    python3 app/bench/src/main.py launch \
+    eks-bench measure \
         --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service qwen3-235b-lws \
         --protocol corpus --profile legacy_corpus \
         --instance g7e.12xlarge --model-tag qwen3-235b \

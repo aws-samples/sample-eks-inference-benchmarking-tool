@@ -252,7 +252,7 @@ run_arm() {
   local warmup_dir="/tmp/g7e12-switch-warmup/$MODEL_TAG/$CONFIG"
   mkdir -p "$arm_artifacts" "$warmup_dir"
 
-  .venv/bin/python app/cli.py validate-manifests "$RECIPE"
+  .venv/bin/eks-bench validate-manifests "$RECIPE"
   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f "$recipe_path"
   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" rollout status \
     "deployment/$DEPLOYMENT" --timeout=3600s

@@ -77,13 +77,13 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 7. Prove this recipe passes the flags it claims.
 
    ```bash
-   python3 app/bench/src/main.py validate-manifests kimi-k3/mxfp4-u-p6e-gb200x72.yaml
+   eks-bench validate-manifests kimi-k3/mxfp4-u-p6e-gb200x72.yaml
    ```
 
 8. Generate the accuracy gate (.JSON) required for the next step.
 
    ```bash
-   python3 app/bench/src/main.py launch --capture-accuracy-reference \
+   eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service kimi-k3-gb200 \
        --mode fingerprint \
        --model-tag kimi-k3 --config mxfp4 \
@@ -95,7 +95,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 9. Benchmark in-cluster. If needed, repeat per protocol, changing --protocol and --profile.
 
    ```bash
-   python3 app/bench/src/main.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service kimi-k3-gb200 \
        --protocol corpus --profile legacy_corpus \
        --instance u-p6e-gb200x72 --model-tag kimi-k3 \

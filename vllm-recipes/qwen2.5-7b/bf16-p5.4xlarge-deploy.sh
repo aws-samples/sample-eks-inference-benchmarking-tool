@@ -29,4 +29,4 @@ kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" logs \
   | grep -E "GPU KV cache size|Maximum concurrency|model weights took"
 
 echo "==> Validating the Qwen2.5 serving manifest"
-python3 app/cli.py validate-manifests qwen2.5-7b/bf16-p5.4xlarge.yaml
+eks-bench validate-manifests qwen2.5-7b/bf16-p5.4xlarge.yaml
