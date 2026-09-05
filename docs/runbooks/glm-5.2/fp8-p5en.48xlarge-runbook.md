@@ -62,7 +62,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 5. Generate the accuracy gate (.JSON) required for the next step.
 
    ```bash
-   python3 app/cli.py launch --capture-accuracy-reference \
+   eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service glm-52-p5en \
        --mode fingerprint \
        --model-tag glm-5.2 --config fp8 \
@@ -74,7 +74,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 6. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
 
    ```bash
-   python3 app/cli.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service glm-52-p5en \
        --protocol corpus --profile legacy_corpus \
        --instance p5en.48xlarge --model-tag glm-5.2 \
@@ -89,7 +89,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 7. Benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
 
    ```bash
-   python3 app/cli.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service glm-52-p5en \
        --protocol corpus --profile legacy_corpus \
        --instance p5en.48xlarge --model-tag glm-5.2 \

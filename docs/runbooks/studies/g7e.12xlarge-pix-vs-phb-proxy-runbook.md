@@ -265,13 +265,13 @@ run_arm() {
     sh -c "curl -s localhost:8000/metrics | grep 'vllm:cache_config_info'" \
     | tee "$arm_artifacts/cache-config.txt"
 
-  isolated_launch .venv/bin/python app/cli.py launch --capture-accuracy-reference \
+  isolated_launch .venv/bin/eks-bench capture-reference \
     --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service "$SERVICE" \
     --mode fingerprint --model-tag "$MODEL_TAG" --config "$CONFIG" \
     --model-id "$MODEL_ID" --out-dir docs/results "${THINKING_ARGS[@]}" \
     | tee "$arm_artifacts/accuracy-runner.log"
 
-  isolated_launch .venv/bin/python app/cli.py launch \
+  isolated_launch .venv/bin/eks-bench measure \
     --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service "$SERVICE" \
     --protocol corpus --profile legacy_corpus --instance g7e.12xlarge \
     --model-tag "$MODEL_TAG" --config "$CONFIG" --quant fp8 \
@@ -280,7 +280,7 @@ run_arm() {
     --out-dir "$warmup_dir" "${THINKING_ARGS[@]}" \
     | tee "$arm_artifacts/warmup-runner.log"
 
-  .venv/bin/python app/cli.py launch \
+  .venv/bin/eks-bench measure \
     --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service "$SERVICE" \
     --protocol corpus --profile legacy_corpus --instance g7e.12xlarge \
     --model-tag "$MODEL_TAG" --config "$CONFIG" --quant fp8 \
@@ -288,7 +288,7 @@ run_arm() {
     --reps 5 --out-dir docs/results "${THINKING_ARGS[@]}" --dry-run \
     > "$arm_artifacts/measured-dry-run.txt"
 
-  isolated_launch .venv/bin/python app/cli.py launch \
+  isolated_launch .venv/bin/eks-bench measure \
     --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service "$SERVICE" \
     --protocol corpus --profile legacy_corpus --instance g7e.12xlarge \
     --model-tag "$MODEL_TAG" --config "$CONFIG" --quant fp8 \

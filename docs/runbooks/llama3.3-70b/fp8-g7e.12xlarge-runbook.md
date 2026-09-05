@@ -49,7 +49,7 @@ KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, w
 4. Generate the accuracy gate (.JSON) required for the next step.
 
    ```bash
-   python3 app/cli.py launch --capture-accuracy-reference \
+   eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service llama33-70b-vllm-g7e-fp8 \
        --mode fingerprint \
        --model-tag llama3.3-70b --config fp8 \
@@ -60,7 +60,7 @@ KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, w
 5. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
 
    ```bash
-   python3 app/cli.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service llama33-70b-vllm-g7e-fp8 \
        --protocol corpus --profile legacy_corpus \
        --instance g7e.12xlarge --model-tag llama3.3-70b \
@@ -74,7 +74,7 @@ KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, w
 6. Benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
 
    ```bash
-   python3 app/cli.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service llama33-70b-vllm-g7e-fp8 \
        --protocol corpus --profile legacy_corpus \
        --instance g7e.12xlarge --model-tag llama3.3-70b \

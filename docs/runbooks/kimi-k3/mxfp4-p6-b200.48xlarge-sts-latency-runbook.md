@@ -85,7 +85,7 @@ This recipe requires a custom vLLM image containing a matched `aws-ofi-nccl` plu
 6. Generate the accuracy gate (.JSON) required for the next step.
 
    ```bash
-   python3 app/cli.py launch --capture-accuracy-reference \
+   eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service kimi-k3-b200-lat-api \
        --mode fingerprint \
        --model-tag kimi-k3 --config sts-latency \
@@ -97,7 +97,7 @@ This recipe requires a custom vLLM image containing a matched `aws-ofi-nccl` plu
 7. Dry-run the exact in-cluster benchmark through the rank-0 API Service.
 
    ```bash
-   python3 app/cli.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service kimi-k3-b200-lat-api \
        --protocol corpus --profile legacy_corpus \
        --instance p6-b200.48xlarge --model-tag kimi-k3 \
@@ -112,7 +112,7 @@ This recipe requires a custom vLLM image containing a matched `aws-ofi-nccl` plu
 8. Run the identical benchmark without `--dry-run`.
 
    ```bash
-   python3 app/cli.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service kimi-k3-b200-lat-api \
        --protocol corpus --profile legacy_corpus \
        --instance p6-b200.48xlarge --model-tag kimi-k3 \
