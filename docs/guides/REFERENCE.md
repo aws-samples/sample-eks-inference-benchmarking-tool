@@ -1,10 +1,11 @@
 # Reference
 
-Complete specification of the measurement tool: the commands, their flags, the environment variables a run sets, and the benchmark protocols. See the [README](../../README.md) for the recipes and runbooks. The standard local setup is `./scripts/install-benchmark-client.sh`; then use `eks-bench <command> [flags]`. `app/utils.py` bootstraps the virtual environment, and the operator CLI execs `app/bench/src/main.py`, which dispatches the implementation commands. Individual requirements filenames below identify implementation dependencies; installing them directly is a minimal-environment path.
+Complete specification of the measurement tool: the commands, their flags, the environment variables a run sets, and the benchmark protocols. See the [README](../../README.md) for the recipes and runbooks. Install the CLI with `pip install -e .`, then use `eks-bench <command> [flags]`. The operator CLI execs `app/bench/src/main.py`, which dispatches the implementation commands. Optional harnesses install as extras (`.[tokenizer]`, `.[loadgen]`, `.[aiperf]`); the individual requirements filenames below name the same dependencies for a minimal environment.
 
 - [CLI commands](#cli-commands)
-- [`launch` flags](#launch-flags)
-- [`suite` flags](#suite-flags)
+- [Optional extras](#optional-extras)
+- [`measure` flags](#measure-flags)
+- [`measure-local` flags](#measure-local-flags)
 - [Environment knobs](#environment-knobs)
 - [Protocols](#protocols)
 - [What may be compared with what](#what-may-be-compared-with-what)
@@ -15,27 +16,28 @@ Complete specification of the measurement tool: the commands, their flags, the e
 
 ## CLI commands
 
-| Command | Purpose | Implementation dependency |
+| Command | Purpose | Needs locally |
 | ------- | ------- | ---------- |
-| `throughput` | Closed-loop throughput sweep, non-streaming. tokens/sec, req/sec, p50/p99. | n/a |
-| `latency` | Closed-loop latency sweep, streaming. TTFT / TPOT / ITL. | n/a |
-| `arrival_rate` | Open-loop capacity, Poisson arrivals via MLPerf LoadGen. Not comparable to the sweeps. | `requirements-loadgen.txt` |
-| `suite` | Protocol-locked runner: reps, medians, accuracy gate, provenance. The normal entry point. | n/a |
-| `accuracy` | Run the correctness gate directly: check a live server against a captured reference, or capture one with `--write-reference`. `--mode fingerprint` compares outputs, `--mode score` compares GSM8K accuracy within `--tolerance`. `suite` calls this before every measurement, so run it by hand only to capture a reference or to diagnose a gate failure. | n/a |
+| `measure` | Protocol-locked runner **in-cluster** over cluster DNS: reps, medians, accuracy gate, provenance. Required for any TTFT figure, and the normal entry point. | n/a |
+| `measure-local` | The same protocol-locked runner against a directly reachable endpoint. Refuses to report TTFT through a loopback tunnel. | n/a |
+| `harness-throughput` | Closed-loop throughput sweep, non-streaming. tokens/sec, req/sec, p50/p99. One unlocked reading, not a result. | n/a |
+| `harness-latency` | Closed-loop latency sweep, streaming. TTFT / TPOT / ITL. One unlocked reading, not a result. | n/a |
+| `harness-arrival-rate` | Open-loop capacity, Poisson arrivals via MLPerf LoadGen. Not comparable to the sweeps. | `.[loadgen]` |
+| `check-accuracy` | Run the correctness gate directly against a live server. `--mode fingerprint` compares outputs, `--mode score` compares GSM8K accuracy within `--tolerance`. `measure` calls this before every measurement, so run it by hand only to diagnose a gate failure. Capture a reference with `capture-reference`. | n/a |
+| `capture-reference` | Capture a reference **in-cluster** over cluster DNS, which is the path every runbook uses. `capture-reference-local` does the same against a directly reachable endpoint. | n/a |
 | `fetch-eval-data` | Download and pin the GSM8K subset the accuracy gate scores against. | n/a |
-| `build-profiles` | Regenerate `app/bench/data/prompt_profiles/`. Deterministic; `--check` verifies reproducibility. | n/a |
-| `verify-profiles` | Measure the pinned prompts against a real tokenizer, raw and wire. | `requirements-tokenizer.txt` |
-| `verify-aiperf` | Regression checks for the AIPerf adapter: profile conversion, output-cap propagation, request scaling, stdout contract, success floor on a deliberately broken run. Runs against a local mock, no GPU. | `requirements-aiperf.txt` (wire checks skipped without it) |
-| `verify-openloop` | Regression checks for the LoadGen harness: percentile-certification floor, warmup isolation, failure attribution, circuit breaker, dead-server exclusion. Runs against a local mock, no GPU. | `requirements-loadgen.txt` (wire checks skipped without it) |
-| `verify-accuracy-gate` | Regression checks for fingerprint aggregation and truncation tolerance using synthetic item lists and local references. Runs locally, no server or GPU. | n/a |
-| `validate-manifests [recipe…]` | Prove a recipe in [`vllm-recipes/`](../../vllm-recipes/) passes the flags it is written to pass, that its Service points at the port vLLM binds, and that no variable its script reads is left undefined. Checks every recipe when given no argument, which is the pre-deploy gate; name one to check only what you are about to apply. Nothing under `k8s/examples/` is in scope. | `app/requirements-cli.txt` |
-| `launch` | Run `suite`, or capture an accuracy reference, **in-cluster** over cluster DNS. Required for any TTFT figure. | n/a |
+| `build-prompts` | Regenerate `app/bench/data/prompt_profiles/`. Deterministic; `--check` verifies reproducibility. | n/a |
+| `verify-prompts` | Measure the pinned prompts against a real tokenizer, raw and wire. `list-prompts` lists them. | `.[tokenizer]` |
+| `selftest-aiperf` | Regression checks for the AIPerf adapter: profile conversion, output-cap propagation, request scaling, stdout contract, success floor on a deliberately broken run. Runs against a local mock, no GPU. | `.[aiperf]` for the wire checks; static checks run without it |
+| `selftest-openloop` | Regression checks for the LoadGen harness: percentile-certification floor, warmup isolation, failure attribution, circuit breaker, dead-server exclusion. Runs against a local mock, no GPU. | `.[loadgen]` for the wire checks; static checks run without it |
+| `selftest-accuracy-gate` | Regression checks for fingerprint aggregation and truncation tolerance using synthetic item lists and local references. Runs locally, no server or GPU. | n/a |
+| `validate-manifests [recipe…]` | Prove a recipe in [`vllm-recipes/`](../../vllm-recipes/) passes the flags it is written to pass, that its Service points at the port vLLM binds, and that no variable its script reads is left undefined. Checks every recipe when given no argument, which is the pre-deploy gate; name one to check only what you are about to apply. Nothing under `k8s/examples/` is in scope. | n/a |
 
-**Why throughput and latency are separate clients.** Streaming is the only way to observe TTFT and TPOT, but per-token SSE parsing on one asyncio loop can itself become the bottleneck at high concurrency, which would affect the throughput figure at peak. Keeping the throughput harness non-streaming avoids that, and the latency pass is scoped to the concurrency range where first-token latency is meaningful. `arrival_rate` answers a third question, whether an SLA holds at a given arrival rate, and its figures are not comparable with the closed-loop sweeps.
+**Why throughput and latency are separate clients.** Streaming is the only way to observe TTFT and TPOT, but per-token SSE parsing on one asyncio loop can itself become the bottleneck at high concurrency, which would affect the throughput figure at peak. Keeping the throughput harness non-streaming avoids that, and the latency pass is scoped to the concurrency range where first-token latency is meaningful. `harness-arrival-rate` answers a third question, whether an SLA holds at a given arrival rate, and its figures are not comparable with the closed-loop sweeps.
 
-## `launch` flags
+## `measure` flags
 
-Everything `launch` does not recognise is forwarded verbatim to `suite`, so protocol, profile and gate flags need no duplicate definition.
+These are the flags that place the run in the cluster. Everything `measure` does not recognize is forwarded verbatim to the runner, so the protocol, profile and gate flags in the next section need no duplicate definition here. `capture-reference` takes the same cluster flags.
 
 | Flag | Default | Meaning |
 | ---- | ------- | ------- |
@@ -48,7 +50,9 @@ Everything `launch` does not recognise is forwarded verbatim to `suite`, so prot
 | `--keep-job` | off | Leave the Job and code ConfigMap in place for debugging. |
 | `--dry-run` | off | Pack and render, create nothing. Needs no cluster access. |
 
-## `suite` flags
+## `measure-local` flags
+
+`measure` accepts every flag below as well, forwarding it to the in-cluster runner.
 
 | Flag | Default | Meaning |
 | ---- | ------- | ------- |

@@ -34,10 +34,8 @@ The retained manifests are cleaned, functionally equivalent versions of the exec
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python3 -m pip install --no-cache-dir \
-  -r app/bench/requirements.txt \
-  -r app/bench/requirements-tokenizer.txt \
-  -r app/requirements-cli.txt
+python3 -m pip install --upgrade pip setuptools wheel
+pip install -e '.[tokenizer]'
 
 export AWS_REGION=<your-cluster-region>
 export EKS_CLUSTER_NAME=<your-cluster-name>

@@ -36,12 +36,24 @@ Each capability names the tool it is built on. This repo does not reimplement wh
 
 ### 1. Install the local benchmark client
 
-The installer creates `.venv` and installs the benchmark, tokenizer, AIPerf, and CLI dependencies. Run it once to prepare or refresh the environment. After that, `python3 app/cli.py` reuses `.venv`; if `.venv` is missing, the CLI bootstraps it with the same installer and re-executes automatically, so no activation command is required.
-
 ```bash
-./scripts/install-benchmark-client.sh
-python3 app/cli.py --help
+# 1. Clone this repository
+git clone https://github.com/aws-samples/sample-eks-inference-benchmarking-tool.git
+cd sample-eks-inference-benchmarking-tool
+
+# 2. Set up a virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 3. Install the CLI
+python3 -m pip install --upgrade pip setuptools wheel
+pip install -e '.[tokenizer]'
+
+# 4. Verify the installation
+eks-bench --help
 ```
+
+This puts `eks-bench` on your PATH, along with the longer alias `eks-inference-benchmarking-tool` (both behave identically).
 
 ### 2. Follow the selected runbook
 
@@ -99,7 +111,7 @@ Follow the [Profile GPUs with Nsight Systems runbook](./docs/runbooks/studies/g7
 
 Use the [Reference](./docs/guides/REFERENCE.md) guide to learn about the measurement CLI: the `measure` and `measure-local` commands, their flags, the environment variables a run sets, the benchmark protocols, and the rules for which results may be compared with which. It includes [Which benchmark to run](./docs/guides/REFERENCE.md#which-benchmark-to-run), which covers what each protocol measures, what tables it returns and what it does not report.
 
-Run `./scripts/install-benchmark-client.sh` once to prepare or refresh `.venv`, then use `python3 app/cli.py <command> [flags]`. The CLI reuses that environment and bootstraps it with the installer if it is missing, then re-executes there before importing third-party dependencies; Click and Rich do not remain on the measurement path after dispatch.
+Run `eks-bench --help` for the command list, and `eks-bench <command> --help` for a command's flags. Click and Rich stay in the operator CLI and do not remain on the measurement path after dispatch: each command execs `app/bench/src/main.py`, which depends only on the standard library and aiohttp.
 
 ## Troubleshooting
 

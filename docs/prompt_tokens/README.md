@@ -30,7 +30,7 @@ It needs the tokenizer extras, which the benchmark client does not carry. Withou
 
 ```
 input sizes: NOT recorded for Qwen/Qwen2.5-7B-Instruct and cannot be measured here —
-pip install -r app/bench/requirements-tokenizer.txt to enable.
+pip install -e '.[tokenizer]' to enable.
 ```
 
 For `measure`, the measurement happens on your machine before the payload is packed, because the in-cluster Job runs a stock Python image with aiohttp only and no route to Hugging Face.
@@ -38,7 +38,7 @@ For `measure`, the measurement happens on your machine before the payload is pac
 To record a tokenizer ahead of time, or to see the full raw-versus-wire table with the tolerance check, run it directly. This needs no GPU, no server, and no cluster:
 
 ```bash
-pip install -r app/bench/requirements-tokenizer.txt
+pip install -e '.[tokenizer]'
 eks-bench verify-prompts --model Qwen/Qwen2.5-7B-Instruct
 ```
 

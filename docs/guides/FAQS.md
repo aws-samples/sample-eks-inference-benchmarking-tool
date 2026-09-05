@@ -1,6 +1,6 @@
 # FAQs
 
-Common questions about scope, methodology, and how this repo relates to other benchmarking tools. See the [README](../../README.md) for the recipes and runbooks. The standard local setup is `./scripts/install-benchmark-client.sh`; installing individual requirements files directly is a minimal-environment path.
+Common questions about scope, methodology, and how this repo relates to other benchmarking tools. See the [README](../../README.md) for the recipes and runbooks. Install the CLI with `pip install -e '.[tokenizer]'`, then use `eks-bench <command> [flags]`. See [Optional extras](./REFERENCE.md#optional-extras) for when the other two extras are needed.
 
 ### Does it benchmark training or fine-tuning?
 
@@ -36,7 +36,7 @@ Two further differences in output shape. MLPerf's Server scenario produces one n
 
 ### Is there anything from MLPerf adopted here?
 
-Yes, LoadGen. `eks-bench harness-arrival-rate` runs MLPerf's load generator directly (Apache 2.0, no reference implementations needed). The standard client setup is `./scripts/install-benchmark-client.sh`; because LoadGen is not in that default environment, a local direct `arrival_rate` or `verify-openloop` invocation additionally needs `app/bench/requirements-loadgen.txt`. Installing requirements files individually is the minimal setup path.
+Yes, LoadGen. `eks-bench harness-arrival-rate` runs MLPerf's load generator directly. LoadGen is not in the core install, so running it directly with `harness-arrival-rate`, or exercising `selftest-openloop`'s wire checks, needs `pip install -e '.[loadgen]'`. An in-cluster `measure --protocol server_qps` needs nothing extra locally, because the Job installs LoadGen on every run.
 
 LoadGen is an addition rather than a replacement, because the two load models answer different questions and their figures are not comparable:
 

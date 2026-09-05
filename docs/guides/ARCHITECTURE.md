@@ -120,7 +120,8 @@ serving-sweep/
 │       ├── Dockerfile                 # vLLM DLC + Nsight Systems CLI, multi-stage
 │       └── profile.sh                 # Launch-wraps `vllm serve` under nsys
 ├── scripts/
-│   ├── install-benchmark-client.sh    # Standard local .venv and benchmark-client setup.
+│   ├── install-benchmark-client.sh    # One-shot .venv with every extra; `pip install -e .`
+│                                      #   is the supported path.
 │   ├── install-prerequisites.sh       # Configure EKS namespace, plugin, secret, and node check.
 │   ├── push-image.sh                  # Build and push the quantizer image to ECR
 │   ├── patch-efa-plugin.sh            # Fixes the EFA device plugin's stale allow-list
