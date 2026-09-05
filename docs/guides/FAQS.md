@@ -36,7 +36,7 @@ Two further differences in output shape. MLPerf's Server scenario produces one n
 
 ### Is there anything from MLPerf adopted here?
 
-Yes, LoadGen. `python3 app/cli.py arrival_rate` runs MLPerf's load generator directly (Apache 2.0, no reference implementations needed). The standard client setup is `./scripts/install-benchmark-client.sh`; because LoadGen is not in that default environment, a local direct `arrival_rate` or `verify-openloop` invocation additionally needs `app/bench/requirements-loadgen.txt`. Installing requirements files individually is the minimal setup path.
+Yes, LoadGen. `eks-bench harness-arrival-rate` runs MLPerf's load generator directly (Apache 2.0, no reference implementations needed). The standard client setup is `./scripts/install-benchmark-client.sh`; because LoadGen is not in that default environment, a local direct `arrival_rate` or `verify-openloop` invocation additionally needs `app/bench/requirements-loadgen.txt`. Installing requirements files individually is the minimal setup path.
 
 LoadGen is an addition rather than a replacement, because the two load models answer different questions and their figures are not comparable:
 

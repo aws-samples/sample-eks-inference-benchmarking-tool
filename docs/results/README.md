@@ -20,9 +20,9 @@ For example, `glm-5.2-nvfp4-p6-b300.48xlarge-corpus-legacy_corpus.txt` is a `cor
 
 ## What writes them
 
-`main.py suite`, or `main.py launch`, which runs the suite in-cluster and brings the files back. `--out-dir` is required on both rather than defaulted, so results cannot be written to an unintended directory.
+`measure-local`, or `measure`, which runs the suite in-cluster and brings the files back. `--out-dir` is required on both rather than defaulted, so results cannot be written to an unintended directory.
 
-A bare harness invocation — `main.py throughput`, `latency`, or `arrival_rate` — prints to stdout. Do not redirect that output into this directory. It produces a file that resembles a suite result but carries no protocol lock, no accuracy gate, no reps or medians, and no provenance, and the two are difficult to distinguish once both sit here under a conforming name.
+A bare harness invocation — `harness-throughput`, `harness-latency`, or `harness-arrival-rate` — prints to stdout. Do not redirect that output into this directory. It produces a file that resembles a suite result but carries no protocol lock, no accuracy gate, no reps or medians, and no provenance, and the two are difficult to distinguish once both sit here under a conforming name.
 
 ## Format
 
@@ -63,6 +63,6 @@ Not everything measured is a suite run, and the following do not follow the form
 
 - **NCCL microbenchmarks** from [`experiments/`](../../experiments/) report `busbw` in GB/s, measuring the interconnect with no model and no vLLM stack. Their numbers are not comparable to tokens/sec.
 - **Nsight Systems breakdowns** show where step time goes — the split across GEMM, the NCCL collective, attention, and sampling — rather than how much throughput was achieved. See the README's Profiling section.
-- **Bare harness output.** `main.py throughput`, `latency`, and `arrival_rate` print to stdout. Reading them there is fine; capturing them into this directory is not, for the reason above.
+- **Bare harness output.** `harness-throughput`, `harness-latency`, and `harness-arrival-rate` print to stdout. Reading them there is fine; capturing them into this directory is not, for the reason above.
 
 The written reports that interpret these results are gitignored as well; [`docs/reports/README.md`](../reports/README.md) documents that format. The recipes that produced them are tracked, in [`vllm-recipes/`](../../vllm-recipes/).

@@ -52,7 +52,7 @@ eks-bench measure-local --help
 eks-bench validate-manifests <model>/<recipe>.yaml
 ```
 
-`python3 app/cli.py launch ... --protocol <name>` is the normal in-cluster path for latency claims; `suite` is useful when the endpoint and provenance path are already available. The CLI dispatches to implementation harnesses such as `throughput.py`, `latency.py`, `arrival_rate.py`, and `aiperf_harness.py`. Those names are referenced below to explain metric semantics; the CLI is the supported entry point.
+`eks-bench measure ... --protocol <name>` is the normal in-cluster path for latency claims; `measure-local` is useful when the endpoint and provenance path are already available. The CLI dispatches to implementation harnesses such as `throughput.py`, `latency.py`, `arrival_rate.py`, and `aiperf_harness.py`. Those names are referenced below to explain metric semantics; the CLI is the supported entry point.
 
 ## Prompt length and aggregate prefill pressure
 

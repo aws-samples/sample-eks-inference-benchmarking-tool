@@ -1,6 +1,6 @@
 # Reference
 
-Complete specification of the measurement tool: the commands, their flags, the environment variables a run sets, and the benchmark protocols. See the [README](../../README.md) for the recipes and runbooks. The standard local setup is `./scripts/install-benchmark-client.sh`; then use `python3 app/cli.py <command> [flags]`. `app/utils.py` bootstraps the virtual environment, and the operator CLI execs `app/bench/src/main.py`, which dispatches the implementation commands. Individual requirements filenames below identify implementation dependencies; installing them directly is a minimal-environment path.
+Complete specification of the measurement tool: the commands, their flags, the environment variables a run sets, and the benchmark protocols. See the [README](../../README.md) for the recipes and runbooks. The standard local setup is `./scripts/install-benchmark-client.sh`; then use `eks-bench <command> [flags]`. `app/utils.py` bootstraps the virtual environment, and the operator CLI execs `app/bench/src/main.py`, which dispatches the implementation commands. Individual requirements filenames below identify implementation dependencies; installing them directly is a minimal-environment path.
 
 - [CLI commands](#cli-commands)
 - [`launch` flags](#launch-flags)
@@ -44,7 +44,7 @@ Everything `launch` does not recognise is forwarded verbatim to `suite`, so prot
 | `--service` | required | vLLM Service name. The endpoint is derived as `http://<service>.<namespace>.svc.cluster.local:<port>/v1`. |
 | `--port` | `8000` | Service port. |
 | `--out-dir` | required | Local directory for results extracted from the Job's stdout, normally `docs/results`. Same convention as `measure-local`; still required in reference-capture mode even though the reference is restored under `docs/accuracy/`. |
-| `--capture-accuracy-reference` | off | Run `accuracy --write-reference` in the in-cluster Job instead of `suite`, forwarding accuracy options such as `--mode`, `--model-tag`, `--config`, and `--model-id`. The launcher extracts the JSON into `docs/accuracy/`; capture remains a separate run from benchmark checking. |
+| `--capture-accuracy-reference` | off | Capture a reference in the in-cluster Job instead of running a benchmark, forwarding accuracy options such as `--mode`, `--model-tag`, `--config`, and `--model-id`. `capture-reference` sets this for you and is the documented spelling. The launcher extracts the JSON into `docs/accuracy/`; capture remains a separate run from benchmark checking. |
 | `--keep-job` | off | Leave the Job and code ConfigMap in place for debugging. |
 | `--dry-run` | off | Pack and render, create nothing. Needs no cluster access. |
 
@@ -103,7 +103,7 @@ Everything `launch` does not recognise is forwarded verbatim to `suite`, so prot
 | `BENCH_TEMPERATURE` | `0.7` | Sampling temperature used by benchmark harnesses; the accuracy gate remains deterministic. |
 | `MIN_LEVEL_SUCCESS` | `0.95` | Minimum successful-request fraction required for a level's repetition to contribute to medians. |
 | `TRANSPORT_ABORT_SHARE` | `0.10` | Transport-failure share that abandons the remaining sweep instead of measuring a broken client path. |
-| `SERVER_TARGET_QPS` | `1.0` | Target arrival rate for a bare `arrival_rate` harness invocation; `server_qps` sets each configured level. |
+| `SERVER_TARGET_QPS` | `1.0` | Target arrival rate for a bare `harness-arrival-rate` invocation; `server_qps` sets each configured level. |
 | `TTFT_SLA_MS` | `500` | TTFT target used by open-loop reporting unless overridden by protocol or `--ttft-target`. |
 | `TPOT_SLA_MS` | `50` | TPOT target used by open-loop reporting unless overridden by protocol or `--tpot-target`. |
 | `LOADGEN_OUTDIR` | `loadgen_out` | Scratch directory for MLPerf LoadGen logs; the suite places these outside `docs/results`. |

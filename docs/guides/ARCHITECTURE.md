@@ -18,11 +18,10 @@ What this repo is, how its pieces fit together, and the integrity mechanisms beh
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                     OPERATOR (laptop, CPU only)                     │
-│ python3 app/cli.py is the operator CLI for the measurement path.    │
-│ app/utils.py bootstraps .venv; app/cli.py execs                     │
-│ app/bench/src/main.py, which dispatches validation, accuracy,       │
-│ launch, and suite commands.                                         │
-│ launch packs the harness into a ConfigMap, renders suite-job.yaml,  │
+│ eks-bench is the operator CLI for the measurement path. app/cli.py  │
+│ holds the Click command tree and execs app/bench/src/main.py, which │
+│ dispatches the validation, accuracy, measure and harness commands.  │
+│ measure packs the harness into a ConfigMap, renders suite-job.yaml, │
 │ streams Job logs, and writes results under docs/.                   │
 └─────────────────────────────────────────────────────────────────────┘
            │ kubectl apply -f                │ eks-bench measure
@@ -71,8 +70,8 @@ serving-sweep/
 │                                      #   Apply the Job for your model first, once per
 │                                      #   filesystem. See its README.
 ├── app/
-│   ├── cli.py                         # Supported operator CLI; styled help, then execs dispatcher.
-│   ├── utils.py                       # Bootstraps .venv and resolves app/bench/src/main.py.
+│   ├── cli.py                         # Click command tree; styled help, then execs dispatcher.
+│   ├── utils.py                       # Command tree data, help rendering, and exec helper.
 │   ├── requirements-cli.txt           # CLI implementation dependency; installer consumes it.
 │   ├── quantize/                      # GPU quantization tool (nvidia-modelopt)
 │   │   ├── Dockerfile                 # Quantizer image (sm_89+)
