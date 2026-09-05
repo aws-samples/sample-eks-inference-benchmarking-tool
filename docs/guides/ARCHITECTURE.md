@@ -25,7 +25,7 @@ What this repo is, how its pieces fit together, and the integrity mechanisms beh
 │ launch packs the harness into a ConfigMap, renders suite-job.yaml,  │
 │ streams Job logs, and writes results under docs/.                   │
 └─────────────────────────────────────────────────────────────────────┘
-           │ kubectl apply -f                │ python3 app/cli.py launch
+           │ kubectl apply -f                │ eks-bench measure
            │ vllm-recipes/<model>/<r>.yaml   │ (the bench Job below)
            ▼                                 ▼
  ┌───────────────────────────────┐   ┌───────────────────────────────┐
@@ -56,7 +56,7 @@ What this repo is, how its pieces fit together, and the integrity mechanisms beh
  └─────────────────────┘ └─────────────────────┘ └─────────────────────┘
 ```
 
-An ordinary `python3 app/cli.py launch` dispatches `suite` in the Job. `python3 app/cli.py launch --capture-accuracy-reference ...` instead dispatches `accuracy --write-reference`; capture and benchmark checking remain separate runs.
+An ordinary `eks-bench measure` dispatches `suite` in the Job. `eks-bench capture-reference ...` instead dispatches `accuracy --write-reference`; capture and benchmark checking remain separate runs.
 
 ## Project structure
 
@@ -83,7 +83,7 @@ serving-sweep/
 │   │       └── fix_amax.py            # Repair pass: rename _amax → weight_scale for vLLM
 │   ├── bench/                         # Benchmark client (async HTTP, CPU-only)
 │   │   ├── Dockerfile                 # Benchmark image
-│   │   ├── suite-job.yaml             # Job template `launch` renders to run in-cluster
+│   │   ├── suite-job.yaml             # Job template `measure` renders to run in-cluster
 │   │   ├── requirements.txt           # Core harness implementation dependency (aiohttp)
 │   │   ├── requirements-aiperf.txt    # AIPerf adapter implementation dependency
 │   │   ├── requirements-loadgen.txt   # Open-loop implementation dependency
@@ -101,7 +101,7 @@ serving-sweep/
 │   │   │   ├── aiperf_profiles.py     # Pinned profiles -> AIPerf custom-dataset JSONL
 │   │   │   ├── accuracy.py            # Correctness gate: fingerprint + GSM8K score
 │   │   │   ├── suite.py               # Protocol-locked runner: reps, medians, protocol lock
-│   │   │   ├── launcher.py            # `launch`: suite or reference capture over cluster DNS
+│   │   │   ├── launcher.py            # `measure`: suite or reference capture over cluster DNS
 │   │   │   ├── build_profiles.py      # Generate app/bench/data/prompt_profiles/ (deterministic)
 │   │   │   ├── verify_profiles.py     # Measure profiles against a real tokenizer
 │   │   │   ├── fetch_eval_data.py     # Pin the GSM8K subset the accuracy gate scores on

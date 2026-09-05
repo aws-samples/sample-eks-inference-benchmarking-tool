@@ -6,7 +6,7 @@ The runbooks listed in this section are for the [moonshotai/Kimi-K3](https://hug
 
 Use any one of the following runbook recipes to get started. For additional flags and configurations, see [Which benchmark to run](../../guides/REFERENCE.md#which-benchmark-to-run).
 
-Several recipes share an instance type and differ only in how they split the model, so the `--config` column is what distinguishes them and what you pass to `suite`.
+Several recipes share an instance type and differ only in how they split the model, so the `--config` column is what distinguishes them and what you pass to `measure`.
 
 | Instance | Precision | `--config` | Node | GPUs | TP | PP | Runbook |
 | -------- | --------- | ---------- | ---- | ---- | -- | -- | ------- |

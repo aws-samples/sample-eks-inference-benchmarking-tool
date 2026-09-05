@@ -45,7 +45,7 @@ python3 app/cli.py --help
 
 ### 2. Follow the selected runbook
 
-Choose a serving runbook from [vLLM recipes](#vllm-recipes). The runbook sets its recipe-specific environment, installs the shared cluster prerequisites, preserves any recipe-specific checks and weight staging, then calls the recipe-local deploy helper. Keep the visible `python3 app/cli.py` accuracy, dry-run, and benchmark commands in order; each real benchmark is paired with an otherwise identical `--dry-run` command.
+Choose a serving runbook from [vLLM recipes](#vllm-recipes). The runbook sets its recipe-specific environment, installs the shared cluster prerequisites, preserves any recipe-specific checks and weight staging, then calls the recipe-local deploy helper. Keep the visible `eks-bench` accuracy, dry-run, and benchmark commands in order; each real benchmark is paired with an otherwise identical `--dry-run` command.
 
 ---
 
@@ -97,7 +97,7 @@ Follow the [Profile GPUs with Nsight Systems runbook](./docs/runbooks/studies/g7
 
 ## Reference
 
-Use the [Reference](./docs/guides/REFERENCE.md) guide to learn about the measurement CLI: the `launch` and `suite` commands, their flags, the environment variables a run sets, the benchmark protocols, and the rules for which results may be compared with which. It includes [Which benchmark to run](./docs/guides/REFERENCE.md#which-benchmark-to-run), which covers what each protocol measures, what tables it returns and what it does not report.
+Use the [Reference](./docs/guides/REFERENCE.md) guide to learn about the measurement CLI: the `measure` and `measure-local` commands, their flags, the environment variables a run sets, the benchmark protocols, and the rules for which results may be compared with which. It includes [Which benchmark to run](./docs/guides/REFERENCE.md#which-benchmark-to-run), which covers what each protocol measures, what tables it returns and what it does not report.
 
 Run `./scripts/install-benchmark-client.sh` once to prepare or refresh `.venv`, then use `python3 app/cli.py <command> [flags]`. The CLI reuses that environment and bootstraps it with the installer if it is missing, then re-executes there before importing third-party dependencies; Click and Rich do not remain on the measurement path after dispatch.
 

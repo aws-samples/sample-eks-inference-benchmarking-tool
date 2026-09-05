@@ -2,7 +2,7 @@
 
 This directory holds only this README in a fresh clone. `docs/accuracy/*.json` is gitignored. A reference is the output of your server on your hardware, and it is only meaningful as ground truth for a server you have verified yourself, so inheriting a reference from another environment would gate your runs against a configuration you have not inspected.
 
-The gate fails closed, so read this before your first benchmark. With no reference for the `(model_tag, config)` you are running, `suite` aborts before measuring anything:
+The gate fails closed, so read this before your first benchmark. With no reference for the `(model_tag, config)` you are running, `measure` aborts before measuring anything:
 
 ```
 FAIL: no accuracy reference at docs/accuracy/<model-tag>-<config>.json
@@ -35,7 +35,7 @@ Throughput and latency numbers do not indicate whether a server is serving the c
 A 200-problem GSM8K subset, pinned by digest and committed at `app/bench/data/gsm8k_subset.jsonl`, so no network access is needed at benchmark time. Regenerate or verify it with:
 
 ```bash
-python3 app/bench/src/main.py fetch-eval-data --verify
+eks-bench fetch-eval-data --verify
 ```
 
 ## Capturing a reference
@@ -44,7 +44,7 @@ Run against a known-good server. Both tiers write to the same file and preserve 
 
 ```bash
 # tier 1: fingerprint (fast, gates every benchmark run)
-python3 app/bench/src/main.py launch --capture-accuracy-reference \
+eks-bench capture-reference \
     --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service <service> \
     --mode fingerprint \
     --model-tag qwen7b --config fp8 \
@@ -52,7 +52,7 @@ python3 app/bench/src/main.py launch --capture-accuracy-reference \
     --out-dir docs/results
 
 # tier 2: scored accuracy (slower, run once per model+config)
-python3 app/bench/src/main.py launch --capture-accuracy-reference \
+eks-bench capture-reference \
     --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service <service> \
     --mode score \
     --model-tag qwen7b --config fp8 \
@@ -68,13 +68,13 @@ A standalone FP8 score has no baseline to be measured against. Score the BF16 bu
 
 ```bash
 # 1. Capture against the BF16 server.
-python3 app/bench/src/main.py launch --capture-accuracy-reference \
+eks-bench capture-reference \
     --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service <bf16-service> \
     --mode score --model-tag qwen7b --config bf16 \
     --model-id <served-model-name> --out-dir docs/results
 
 # 2. Check the FP8 server against the BF16 result.
-python3 app/bench/src/main.py launch \
+eks-bench measure \
     --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service <fp8-service> \
     --mode score --model-tag qwen7b --config fp8 --reference-config bf16 \
     --model-id <served-model-name> --out-dir docs/results
@@ -146,7 +146,7 @@ exceeds the token budget, so the response never reaches its final answer and the
 truncation rather than correctness. Pass `--thinking off` for those models:
 
 ```bash
-python3 app/bench/src/main.py launch --capture-accuracy-reference \
+eks-bench capture-reference \
     --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service <service> \
     --mode score --thinking off \
     --model-tag qwen3-235b --config fp8 \

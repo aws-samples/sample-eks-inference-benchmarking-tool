@@ -43,7 +43,7 @@ Everything `launch` does not recognise is forwarded verbatim to `suite`, so prot
 | `--namespace` | none (required) | Namespace holding the vLLM Service and the runner Job. No default, because it forms part of the cluster-DNS endpoint and a default could resolve to an unrelated Service. |
 | `--service` | required | vLLM Service name. The endpoint is derived as `http://<service>.<namespace>.svc.cluster.local:<port>/v1`. |
 | `--port` | `8000` | Service port. |
-| `--out-dir` | required | Local directory for results extracted from the Job's stdout, normally `docs/results`. Same convention as `suite`; still required in reference-capture mode even though the reference is restored under `docs/accuracy/`. |
+| `--out-dir` | required | Local directory for results extracted from the Job's stdout, normally `docs/results`. Same convention as `measure-local`; still required in reference-capture mode even though the reference is restored under `docs/accuracy/`. |
 | `--capture-accuracy-reference` | off | Run `accuracy --write-reference` in the in-cluster Job instead of `suite`, forwarding accuracy options such as `--mode`, `--model-tag`, `--config`, and `--model-id`. The launcher extracts the JSON into `docs/accuracy/`; capture remains a separate run from benchmark checking. |
 | `--keep-job` | off | Leave the Job and code ConfigMap in place for debugging. |
 | `--dry-run` | off | Pack and render, create nothing. Needs no cluster access. |
@@ -67,18 +67,18 @@ Everything `launch` does not recognise is forwarded verbatim to `suite`, so prot
 | `--no-latency` | off | Skip the companion streaming-latency pass after a throughput sweep. Roughly halves GPU time, and reports no TTFT/TPOT/ITL. |
 | `--allow-loopback-latency` | off | Permit a streaming pass against a loopback endpoint. Refused by default, because a tunnel adds 150-200 ms to every TTFT sample. Recorded in the lock, so the result is identifiable as unsuitable for a latency claim. |
 | `--skip-accuracy` | off | Skip the correctness gate. Recorded in the lock, so the run stays identifiable as unverified. |
-| `--ttft-target` | protocol default | Override the TTFT target in milliseconds for `server_qps`. Forwarded through `launch`; changes the capacity question and result filename when it differs from the shipped value. |
-| `--tpot-target` | protocol default | Override the TPOT target in milliseconds for `server_qps`. Forwarded through `launch`; changes the capacity question and result filename when it differs from the shipped value. |
+| `--ttft-target` | protocol default | Override the TTFT target in milliseconds for `server_qps`. Forwarded through `measure`; changes the capacity question and result filename when it differs from the shipped value. |
+| `--tpot-target` | protocol default | Override the TPOT target in milliseconds for `server_qps`. Forwarded through `measure`; changes the capacity question and result filename when it differs from the shipped value. |
 | `--out-dir` | required | Results directory, normally `docs/results`, which is flat: the filename carries model, quantisation and instance, so there are no subdirectories. Required rather than defaulted, so results cannot be written to an unintended directory. |
 | `--pod` | auto-discovered | Pod to capture provenance from. Found automatically: the Running pod with a `vllm` container in `--namespace`. Pass this only to disambiguate when several match. |
 | `--no-provenance` | off | Skip provenance capture. The result then carries no evidence of NCCL transport, KV sizing or GPU topology. |
-| `--k8s-context` | current kubectl context | Context used for pod discovery and provenance capture only. `launch` does not need it: it captures provenance itself, reusing `--context`. |
+| `--k8s-context` | current kubectl context | Context used for pod discovery and provenance capture only. `measure` does not need it: it captures provenance itself, reusing `--context`. |
 | `--namespace` | none (required) | Namespace used for pod discovery and provenance capture only. Required unless `--no-provenance` is given, and checked before the sweep starts rather than after it. |
 | `--dry-run` | off | Print the protocol lock and output paths, run nothing. Needs no server. Useful as a first step to review the conditions before spending GPU time. |
 
 ## Environment knobs
 
-`suite` sets these from the protocol so a run cannot be half-configured; set them by hand only for a bare harness invocation. Full list with defaults: `app/bench/src/config.py`.
+`measure` sets these from the protocol so a run cannot be half-configured; set them by hand only for a bare harness invocation. Full list with defaults: `app/bench/src/config.py`.
 
 | Variable | Default | Meaning |
 | -------- | ------- | ------- |
@@ -98,7 +98,7 @@ Everything `launch` does not recognise is forwarded verbatim to `suite`, so prot
 | `PROMPT_PROFILE` | unset | Pinned profile name. Takes precedence over the generated modes. |
 | `PROMPT_MODE` | `unique` | Generated-prompt fallback: `unique`, `legacy`, `shared_prefix`. |
 | `PROMPT_TOKENS` | `0` | Target input length for generated prompts; `0` means short natural prompts. |
-| `PROMPT_SEED` | `1337` | Seed for generated prompts. `suite` varies it per rep. |
+| `PROMPT_SEED` | `1337` | Seed for generated prompts. `measure` varies it per rep. |
 | `BENCH_ENDPOINT` | `chat` | `chat` or `completions`. |
 | `BENCH_TEMPERATURE` | `0.7` | Sampling temperature used by benchmark harnesses; the accuracy gate remains deterministic. |
 | `MIN_LEVEL_SUCCESS` | `0.95` | Minimum successful-request fraction required for a level's repetition to contribute to medians. |
@@ -142,7 +142,7 @@ Each of these rules reflects a case where two figures are not directly comparabl
 `server_qps` is the one protocol whose pass/fail verdict comes from outside this repo, and LoadGen's verdict alone is not sufficient:
 
 - **A percentile has to be certifiable.** LoadGen certifies a p99 only when the query count clears `h + t`: 459 queries with no SLA violations, 662 with one. Below that it reports `UNDERSAMPLED`, which is a sample-size statement rather than an SLA violation. `MIN_QUERY_COUNT` defaults above the floor for this reason.
-- **LoadGen can report a pass on a server that returned no successful responses.** Failed requests are completed to LoadGen, which has no failed-query concept, so they enter its latency record as instant responses and improve its percentiles. Measured against a killed server with 84% of requests failing, LoadGen reported `sla=MET, loadgen_result=VALID`. The `REQUEST_SUCCESS` line every harness emits catches this: a level below 95% success excludes its rep, and the aggregate names which and why. `python3 app/cli.py verify-openloop` re-creates that scenario on every run of the checks.
+- **LoadGen can report a pass on a server that returned no successful responses.** Failed requests are completed to LoadGen, which has no failed-query concept, so they enter its latency record as instant responses and improve its percentiles. Measured against a killed server with 84% of requests failing, LoadGen reported `sla=MET, loadgen_result=VALID`. The `REQUEST_SUCCESS` line every harness emits catches this: a level below 95% success excludes its rep, and the aggregate names which and why. `eks-bench selftest-openloop` re-creates that scenario on every run of the checks.
 
 ---
 

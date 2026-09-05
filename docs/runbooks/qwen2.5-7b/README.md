@@ -6,7 +6,7 @@ The runbooks listed in this section are for the [Qwen/Qwen2.5-7B-Instruct](https
 
 Use any one of the following runbook recipes to get started. For additional flags and configurations, see [Which benchmark to run](../../guides/REFERENCE.md#which-benchmark-to-run).
 
-Two recipes share `g7e.12xlarge` at FP8, so the `--config` column is what distinguishes them and what you pass to `suite`.
+Two recipes share `g7e.12xlarge` at FP8, so the `--config` column is what distinguishes them and what you pass to `measure`.
 
 | Instance | Precision | `--config` | Node | GPUs | TP | Runbook |
 | -------- | --------- | ---------- | ---- | ---- | -- | ------- |

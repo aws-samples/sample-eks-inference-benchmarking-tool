@@ -156,10 +156,10 @@ isolated_launch() {
 These two JSON files are required by the six result protocol locks and must remain under `docs/prompt_tokens/`.
 
 ```bash
-.venv/bin/python app/cli.py verify-profiles \
+.venv/bin/eks-bench verify-prompts \
   --model nvidia/Llama-3.3-70B-Instruct-FP8 \
   --profile legacy_corpus
-.venv/bin/python app/cli.py verify-profiles \
+.venv/bin/eks-bench verify-prompts \
   --model Qwen/Qwen3-30B-A3B-FP8 \
   --profile legacy_corpus
 

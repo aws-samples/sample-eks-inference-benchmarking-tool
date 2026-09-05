@@ -204,4 +204,4 @@ This is a separate flow from the single-node pipelines. It needs reserved capaci
 
 If Quickstart step 10 reports 0 GPUs, rebuild the open kernel module with [`k8s/examples/job-node-driver-fix.yaml`](../../../k8s/examples/job-node-driver-fix.yaml), or recreate the node group with `--ami-type AL2023_x86_64_NVIDIA`, which is the cleaner fix.
 
-`launch` runs the harness inside the cluster over cluster DNS. Do not substitute a `kubectl port-forward` and a bare `main.py throughput`. That combination measures the tunnel rather than the server, and writes a file with no protocol lock, no accuracy gate and no medians. See [`docs/results/README.md`](../../results/README.md).
+`measure` runs the harness inside the cluster over cluster DNS. Do not substitute a `kubectl port-forward` and a bare `main.py throughput`. That combination measures the tunnel rather than the server, and writes a file with no protocol lock, no accuracy gate and no medians. See [`docs/results/README.md`](../../results/README.md).
