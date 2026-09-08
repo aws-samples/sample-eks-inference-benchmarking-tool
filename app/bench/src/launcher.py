@@ -233,6 +233,7 @@ def extract_results(log: str, out_dir: Path) -> list[Path]:
     A name beginning `docs/accuracy/` is an accuracy reference and belongs in the repo, next to
     the others the gate reads. Everything else is a result and goes to --out-dir.
     """
+    import suite
     written = []
     for match in RESULT_BLOCK.finditer(log):
         name = match.group(1).strip()
@@ -241,6 +242,10 @@ def extract_results(log: str, out_dir: Path) -> list[Path]:
         else:
             destination = out_dir / name
         destination.parent.mkdir(parents=True, exist_ok=True)
+        # The suite's own never-overwrite guard runs against the Job's empty /work/out, where a
+        # collision cannot happen, so the in-cluster path needs it applied here instead.
+        if not name.startswith("docs/accuracy/"):
+            suite.preserve_existing(destination)
         destination.write_text(match.group(2).lstrip("\n"), encoding="utf-8")
         print(f"  wrote {destination}")
         written.append(destination)

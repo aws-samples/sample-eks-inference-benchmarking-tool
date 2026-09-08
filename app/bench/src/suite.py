@@ -1447,6 +1447,28 @@ def client_cpu_table(harness: str, label: str,
     return lines, warnings
 
 
+def preserve_existing(path: Path) -> Path | None:
+    """
+    Rename a result file already at this path so a new run cannot overwrite it.
+
+    A result file is evidence, so it is moved aside rather than replaced: two runs can share a
+    stem and still be different measurements. Shared with the launcher, which writes the same
+    files on the in-cluster path, because one copy of this rule cannot drift from another.
+
+    Args:
+        path: The result file about to be written
+
+    Returns:
+        Where the previous file was moved, or None when there was nothing to preserve
+    """
+    if not path.exists():
+        return None
+    superseded = path.with_name(f"{path.stem}.superseded-{utc_stamp('%Y%m%dT%H%M%SZ')}{path.suffix}")
+    path.rename(superseded)
+    print(f"previous result moved aside -> {superseded}")
+    return superseded
+
+
 def build_aggregate(args, protocol: dict, lock: list[str], reps: list[dict[int, dict]],
                     shapes: dict[int, dict], client_cpu: dict[int, list[float]],
                     fills: dict[int, dict] | None = None,
@@ -1785,11 +1807,7 @@ def main() -> int:
     lines += provenance_lines(args)
 
     results_path = out_dir / f"{stem}.txt"
-    # A result file is evidence, so an older file with the same stem is moved aside, never overwritten.
-    if results_path.exists():
-        superseded = out_dir / f"{stem}.superseded-{utc_stamp('%Y%m%dT%H%M%SZ')}.txt"
-        results_path.rename(superseded)
-        print(f"\nprevious result moved aside -> {superseded}")
+    preserve_existing(results_path)
     results_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"\nresults -> {results_path}")
     for warning in warnings:
