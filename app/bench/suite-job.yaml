@@ -51,6 +51,9 @@ spec:
               fi
 
               echo "=== starting run ==="
+              # Marks the start so only references this run wrote are returned; the payload ships
+              # every committed reference and tar restores their original mtimes.
+              touch /tmp/run-start
               set +e
               python3 -u app/bench/src/main.py ${RUN_COMMAND} ${SUITE_ARGS}
               rc=$?
@@ -59,7 +62,7 @@ spec:
               # Results return through stdout markers, so nothing depends on the pod existing afterwards.
               echo
               for f in $(find /work/out -maxdepth 2 -name '*.txt' 2>/dev/null | sort) \
-                       $(find /work/repo/docs/accuracy -maxdepth 1 -name '*.json' 2>/dev/null | sort); do
+                       $(find /work/repo/docs/accuracy -maxdepth 1 -name '*.json' -newer /tmp/run-start 2>/dev/null | sort); do
                 case "$f" in
                   /work/out/*) name="${f#/work/out/}" ;;
                   *)           name="docs/accuracy/$(basename "$f")" ;;
