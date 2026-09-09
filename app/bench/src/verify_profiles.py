@@ -75,7 +75,7 @@ def load_tokenizer(model: str):
         from transformers import AutoTokenizer
     except ImportError:
         sys.exit("this tool needs a tokenizer, which the benchmark client does not:\n"
-                 "  pip install -r app/bench/requirements-tokenizer.txt\n"
+                 "  pip install -e '.[tokenizer]'\n"
                  "Tokenizer only — it does not pull torch.")
     print(f"loading tokenizer: {model}")
     return AutoTokenizer.from_pretrained(model, trust_remote_code=True)
@@ -192,7 +192,7 @@ def ensure_counts(model: str) -> str:
         from transformers import AutoTokenizer            # noqa: F401
     except ImportError:
         return (f"input sizes: NOT recorded for {model} and cannot be measured here — "
-                f"pip install -r app/bench/requirements-tokenizer.txt to enable. The run "
+                f"pip install -e '.[tokenizer]' to enable. The run "
                 f"continues and reports a nominal input size.")
     try:
         tokenizer = load_tokenizer(model)

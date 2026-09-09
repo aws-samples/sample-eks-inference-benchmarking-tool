@@ -220,8 +220,9 @@ def refuse_loopback_latency(args, protocol: dict, want_latency: bool) -> None:
     run produced a full latency table through a port-forward and every cell carried a variance
     flag for this reason.
 
-    Throughput-only runs are unaffected — tokens/sec and TPOT do not materially change through
-    a tunnel — so this fires only when the run will report TTFT.
+    Every loopback run is refused, not only the ones reporting TTFT, because the tunnel drops
+    connections under sustained load whatever is being measured. Whether the run reports TTFT
+    only decides if the message also explains the added first-token cost.
     """
     if not any(host in args.endpoint for host in config.LOOPBACK_HOSTS):
         return
@@ -244,7 +245,7 @@ def refuse_loopback_latency(args, protocol: dict, want_latency: bool) -> None:
         + (f"\nIt also adds ~150-200 ms of connection setup to every TTFT sample, which is the\n"
            f"harness's own tunnel reported as the server's latency.\n" if reports_ttft else "")
         + f"\nRun in-cluster instead, which reaches the Service over cluster DNS:\n"
-        f"  python3 app/bench/src/main.py launch --context <ctx> --namespace <ns> \\\n"
+        f"  eks-bench measure --context <ctx> --namespace <ns> \\\n"
         f"      --service <svc> --protocol {args.protocol} --instance {args.instance} "
         f"--config {args.config} ...\n\n"
         f"To measure anyway, accepting that a dropped connection invalidates a rep:\n"
@@ -329,8 +330,8 @@ def recorded_wire_size(tokenizer: str | None, profile_name: str | None) -> str:
     if not profile_name:
         return "n/a (no profile: generated prompts, input size implicit)"
 
-    install = ("pip install -r app/bench/requirements-tokenizer.txt && "
-               "python3 app/bench/src/main.py verify-profiles --model <hf-repo-or-path>")
+    install = ("pip install -e '.[tokenizer]' && "
+               "eks-bench verify-prompts --model <hf-repo-or-path>")
     if not tokenizer:
         available = sorted(p.stem.replace("__", "/")
                            for p in config.TOKEN_COUNT_DIR.glob("*.json"))
@@ -1677,7 +1678,7 @@ def print_transport_remedy(args, rep_number: int, total_reps: int) -> None:
         forwarded.append(f"--tokenizer {args.tokenizer}")
     if args.out_dir:
         forwarded.append(f"--out-dir {args.out_dir}")
-    print("    python3 app/bench/src/main.py launch \\")
+    print("    eks-bench measure \\")
     print(f"        --context {args.k8s_context} --namespace {args.namespace} "
           f"--service <SERVICE> \\")
     for index, chunk in enumerate(_chunk(forwarded, 3)):

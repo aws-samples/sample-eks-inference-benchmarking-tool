@@ -211,7 +211,7 @@ def trace_main() -> int:
     trace_type = os.environ.get("TRACE_TYPE", "mooncake_trace")
     if shutil.which(AIPERF_BIN) is None:
         sys.exit(f"aiperf binary not found ({AIPERF_BIN!r}). "
-                 f"pip install -r app/bench/requirements-aiperf.txt, or set AIPERF_BIN.")
+                 f"pip install -e '.[aiperf]', or set AIPERF_BIN.")
     scratch = Path(tempfile.mkdtemp(prefix="aiperf-trace-"))
     print(f"aiperf trace replay: trace={trace_env} type={trace_type} "
           f"seed={config.PROMPT_SEED} tokenizer={AIPERF_TOKENIZER} (counting: server)")
@@ -242,7 +242,7 @@ def main() -> int:
                  "not supported, so both clients always measure the same pinned workload.")
     if shutil.which(AIPERF_BIN) is None:
         sys.exit(f"aiperf binary not found ({AIPERF_BIN!r}). "
-                 f"pip install -r app/bench/requirements-aiperf.txt, or set AIPERF_BIN.")
+                 f"pip install -e '.[aiperf]', or set AIPERF_BIN.")
     levels = [int(x) for x in os.environ["CONCURRENCY_SWEEP"].split(",") if x.strip()]
     output_cap = config.THROUGHPUT_MAX_TOKENS
     scratch = Path(tempfile.mkdtemp(prefix="aiperf-"))

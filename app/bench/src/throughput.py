@@ -281,10 +281,10 @@ def print_success_warning(rows: list[dict]) -> None:
         print()
         print("  WHAT TO DO")
         print("    Run the client inside the cluster, beside the server, so there is no tunnel:")
-        print("      python3 app/bench/src/main.py launch --context <ctx> --namespace <ns> \\")
+        print("      eks-bench measure --context <ctx> --namespace <ns> \\")
         print("          --service <service> --protocol <protocol> --instance <instance> ...")
-        print("    `launch` derives the endpoint from the Service over cluster DNS and brings")
-        print("    the result files back. See README > Reference > `launch` flags.")
+        print("    `measure` derives the endpoint from the Service over cluster DNS and brings")
+        print("    the result files back. See docs/guides/REFERENCE.md > `measure` flags.")
     if server_hit and not transport_hit:
         print("  The server returned errors rather than the connection failing, so this is a")
         print("  property of the server under test at this level. Check its logs for the cause")

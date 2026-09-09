@@ -259,7 +259,7 @@ def main() -> int:
         wire_checks()
     else:
         print("wire checks: SKIPPED — mlcommons-loadgen not installed.\n"
-              "  pip install -r app/bench/requirements-loadgen.txt (needs a C++ toolchain)")
+              "  pip install -e '.[loadgen]' (needs a C++ toolchain)")
 
     print(f"\n{_passed} passed, {_failed} failed")
     return 1 if _failed else 0

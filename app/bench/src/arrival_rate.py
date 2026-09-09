@@ -25,7 +25,7 @@ try:
     import mlperf_loadgen as lg
 except ImportError:
     sys.exit("mlperf_loadgen not installed.\n"
-             "  pip install -r app/bench/requirements-loadgen.txt\n"
+             "  pip install -e '.[loadgen]'\n"
              "It builds from source (no wheels published); a C++ toolchain is required.")
 
 TITLE = "MLPerf LoadGen — OPEN LOOP (Server scenario, Poisson arrivals)"

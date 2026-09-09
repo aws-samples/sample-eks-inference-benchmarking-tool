@@ -270,7 +270,7 @@ def main() -> int:
     aiperf_bin = os.environ.get("AIPERF_BIN", "aiperf")
     if shutil.which(aiperf_bin) is None:
         print(f"wire checks: SKIPPED — aiperf binary not found ({aiperf_bin!r}).\n"
-              f"  pip install -r app/bench/requirements-aiperf.txt (needs python "
+              f"  pip install -e '.[aiperf]' (needs python "
               f">=3.11,<3.14), or point AIPERF_BIN at an installed copy.")
     else:
         wire_checks()
