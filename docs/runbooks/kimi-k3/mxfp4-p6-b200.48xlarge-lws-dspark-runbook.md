@@ -94,13 +94,13 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 7. Prove this recipe passes the flags it claims.
 
    ```bash
-   python3 app/bench/src/main.py validate-manifests kimi-k3/mxfp4-p6-b200.48xlarge-lws-dspark.yaml
+   eks-bench validate-manifests kimi-k3/mxfp4-p6-b200.48xlarge-lws-dspark.yaml
    ```
 
 8. Generate the accuracy gate (.JSON) required for the next step.
 
    ```bash
-   python3 app/bench/src/main.py launch --capture-accuracy-reference \
+   eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service kimi-k3-b200-latency-lws \
        --mode fingerprint \
        --model-tag kimi-k3 --config lws-dspark \
@@ -112,7 +112,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 9. Benchmark in-cluster. If needed, repeat per protocol, changing --protocol and --profile.
 
    ```bash
-   python3 app/bench/src/main.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service kimi-k3-b200-latency-lws \
        --protocol corpus --profile legacy_corpus \
        --instance p6-b200.48xlarge --model-tag kimi-k3 \

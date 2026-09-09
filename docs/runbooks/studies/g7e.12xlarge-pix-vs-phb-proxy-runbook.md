@@ -34,10 +34,8 @@ The retained manifests are cleaned, functionally equivalent versions of the exec
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python3 -m pip install --no-cache-dir \
-  -r app/bench/requirements.txt \
-  -r app/bench/requirements-tokenizer.txt \
-  -r app/requirements-cli.txt
+python3 -m pip install --upgrade pip setuptools wheel
+pip install -e '.[tokenizer]'
 
 export AWS_REGION=<your-cluster-region>
 export EKS_CLUSTER_NAME=<your-cluster-name>
@@ -156,10 +154,10 @@ isolated_launch() {
 These two JSON files are required by the six result protocol locks and must remain under `docs/prompt_tokens/`.
 
 ```bash
-.venv/bin/python app/cli.py verify-profiles \
+.venv/bin/eks-bench verify-prompts \
   --model nvidia/Llama-3.3-70B-Instruct-FP8 \
   --profile legacy_corpus
-.venv/bin/python app/cli.py verify-profiles \
+.venv/bin/eks-bench verify-prompts \
   --model Qwen/Qwen3-30B-A3B-FP8 \
   --profile legacy_corpus
 
@@ -252,7 +250,7 @@ run_arm() {
   local warmup_dir="/tmp/g7e12-switch-warmup/$MODEL_TAG/$CONFIG"
   mkdir -p "$arm_artifacts" "$warmup_dir"
 
-  .venv/bin/python app/cli.py validate-manifests "$RECIPE"
+  .venv/bin/eks-bench validate-manifests "$RECIPE"
   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f "$recipe_path"
   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" rollout status \
     "deployment/$DEPLOYMENT" --timeout=3600s
@@ -265,13 +263,13 @@ run_arm() {
     sh -c "curl -s localhost:8000/metrics | grep 'vllm:cache_config_info'" \
     | tee "$arm_artifacts/cache-config.txt"
 
-  isolated_launch .venv/bin/python app/cli.py launch --capture-accuracy-reference \
+  isolated_launch .venv/bin/eks-bench capture-reference \
     --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service "$SERVICE" \
     --mode fingerprint --model-tag "$MODEL_TAG" --config "$CONFIG" \
     --model-id "$MODEL_ID" --out-dir docs/results "${THINKING_ARGS[@]}" \
     | tee "$arm_artifacts/accuracy-runner.log"
 
-  isolated_launch .venv/bin/python app/cli.py launch \
+  isolated_launch .venv/bin/eks-bench measure \
     --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service "$SERVICE" \
     --protocol corpus --profile legacy_corpus --instance g7e.12xlarge \
     --model-tag "$MODEL_TAG" --config "$CONFIG" --quant fp8 \
@@ -280,7 +278,7 @@ run_arm() {
     --out-dir "$warmup_dir" "${THINKING_ARGS[@]}" \
     | tee "$arm_artifacts/warmup-runner.log"
 
-  .venv/bin/python app/cli.py launch \
+  .venv/bin/eks-bench measure \
     --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service "$SERVICE" \
     --protocol corpus --profile legacy_corpus --instance g7e.12xlarge \
     --model-tag "$MODEL_TAG" --config "$CONFIG" --quant fp8 \
@@ -288,7 +286,7 @@ run_arm() {
     --reps 5 --out-dir docs/results "${THINKING_ARGS[@]}" --dry-run \
     > "$arm_artifacts/measured-dry-run.txt"
 
-  isolated_launch .venv/bin/python app/cli.py launch \
+  isolated_launch .venv/bin/eks-bench measure \
     --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service "$SERVICE" \
     --protocol corpus --profile legacy_corpus --instance g7e.12xlarge \
     --model-tag "$MODEL_TAG" --config "$CONFIG" --quant fp8 \

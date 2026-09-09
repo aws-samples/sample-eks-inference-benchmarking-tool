@@ -31,5 +31,5 @@ kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \
 
 # Validate the serving manifest.
 echo "==> Validating the GLM-5.2 serving manifest"
-python3 app/cli.py validate-manifests \
+eks-bench validate-manifests \
   glm-5.2/fp8-p5en.48xlarge.yaml

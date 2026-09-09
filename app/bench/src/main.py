@@ -1,47 +1,15 @@
 #!/usr/bin/env python3
-"""Benchmark client entry point.
-
-Run one of the three harnesses against a vLLM endpoint, or invoke the protocol-locked
-suite runner for repeatable, multi-rep measurements.
-
-Usage:
-    # Single harness, optionally on a pinned prompt profile:
-    python main.py throughput --profile chat_typical
-    python main.py latency --profile coding_assistant
-    python main.py arrival_rate
-
-    # Protocol-locked suite (reps, medians, accuracy gate):
-    python main.py suite --protocol corpus --profile chat_typical \
-        --instance g7e.12xlarge --config fp8 --reps 3
-
-    # One-off tools:
-    python main.py fetch-eval-data [--verify]
-    python main.py build-profiles [--check]
-    python main.py verify-profiles --model <repo-or-path>
-    python main.py validate-manifests
-
-Harness flags (throughput / latency / arrival_rate):
-    --profile NAME  Serve a pinned profile from app/bench/data/prompt_profiles/. Overrides
-                    PROMPT_PROFILE and, like the suite runner, takes the profile's
-                    own output_tokens as MAX_TOKENS so both ends of the prompt
-                    shape come from one committed artifact.
-    --list-profiles Show the available profile names and exit.
-
-Environment:
-    VLLM_API_URL    Endpoint to benchmark (default: http://vllm-server:8000/v1)
-    MODEL_ID        Served model name as reported by /v1/models
-    INSTANCE_TYPE   Hardware tag recorded in results
-    QUANTIZATION    Precision tag recorded in results
-
-    Full variable list: config.py
-"""
+"""Benchmark client entry point that runs one of the load-generating harnesses against a vLLM
+endpoint, invokes the protocol-locked suite runner for repeatable multi-rep measurements, or
+dispatches the one-off tools. It depends only on the standard library and aiohttp so it can run in
+a stock Python image in-cluster, and each command's flags are owned by its own argparse parser. The
+full environment variable contract lives in config.py."""
 import argparse
 import json
 import os
 import sys
 
-# Commands that run a harness in-process and therefore accept the profile flag. The suite
-# runner is excluded: it has its own --profile and spawns harnesses as subprocesses.
+# Commands running a harness in-process, excluding the suite, which owns its own --profile.
 HARNESS_COMMANDS = ("throughput", "latency", "arrival_rate")
 
 COMMANDS = {
@@ -89,8 +57,7 @@ def apply_profile(name: str) -> None:
 
     os.environ["PROMPT_PROFILE"] = name
     os.environ["MAX_TOKENS"] = str(doc["output_tokens"])
-    # A profile supersedes the generated-prompt knobs entirely; leaving them set would imply
-    # they still influenced the run.
+    # A profile supersedes the generated-prompt knobs, so leaving them set would imply they applied.
     os.environ.pop("PROMPT_MODE", None)
     os.environ.pop("PROMPT_TOKENS", None)
     importlib.reload(config)

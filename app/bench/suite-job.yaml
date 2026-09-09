@@ -1,21 +1,12 @@
-#
-# The Kubernetes Job template `main.py launch` renders to run a benchmark, or capture an
-# accuracy reference, from inside the cluster. The launcher packs the harness into a
-# ConfigMap as a single base64 gzipped tarball, which needs no image build or registry push
-# and keeps this manifest independent of which files the harness happens to need, then
-# substitutes the double-underscored placeholders below and applies the result. The pod installs
-# dependencies, unpacks the code, runs the harness against the server over cluster DNS, and
-# returns each result file through stdout markers that the launcher extracts to local disk.
-# Running in-cluster keeps the tunnel out of the measurement path: a `kubectl port-forward`
-# added roughly 185 ms of setup to every TTFT sample (276 ms first byte on a fresh
-# connection against 90 ms warm) and dropped connections mid-run. The pod requests no GPU,
-# because the client should not compete with the server it is measuring, and it uses the
-# full `python:3.12` image rather than `-slim` because mlcommons-loadgen builds from source.
-# Every harness flag travels in one `SUITE_ARGS` string, so adding a flag needs no change
-# here; it is expanded unquoted, so the launcher rejects any argument containing whitespace.
-# A harness's extra dependencies are installed from a requirements file inside the payload,
-# so the version pinned in the repo is the one that runs.
-#
+# The Kubernetes Job template that `main.py launch` uses to run benchmarks in-cluster. The launcher
+# packs the harness into a ConfigMap, substitutes the placeholders below, and applies the result;
+# the pod installs dependencies, runs the suite against the server over cluster DNS, and returns
+# results through stdout markers. It exists because measuring through a port-forward added roughly
+# 185 ms of tunnel setup to every TTFT sample and dropped connections mid-run, and it requests no
+# GPU so the client never competes with the server it measures. A harness's extra dependencies are
+# pip-installed from a requirements file inside the payload, so the repo's pin is what runs in-
+# cluster, and every suite flag travels in one SUITE_ARGS string so adding a flag needs no change
+# here.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -23,19 +14,21 @@ metadata:
   namespace: __NAMESPACE__
   labels: { app: bench-suite }
 spec:
-  backoffLimit: 0
+  backoffLimit: 0          # a failed benchmark must not silently re-run and re-measure
   ttlSecondsAfterFinished: 86400
   template:
     metadata:
       labels: { app: bench-suite }
     spec:
       restartPolicy: Never
+      # CPU-only on purpose, since the harness is a client and must not compete with the server it measures.
       tolerations:
         - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
         - { key: workload, operator: Exists, effect: NoSchedule }
         - { key: capacity-reservation, operator: Exists, effect: NoSchedule }
       containers:
         - name: runner
+          # Full python image, not -slim: mlcommons-loadgen needs a C++ toolchain.
           image: python:3.12
           command: ["bash", "-c"]
           args:
@@ -44,26 +37,32 @@ spec:
               echo "=== installing harness dependencies ==="
               pip install -q --no-cache-dir aiohttp==3.11.18 mlcommons-loadgen==6.0.17
 
+              # One base64 gzipped tarball, because ConfigMap keys cannot contain '/' and a tarball preserves the tree.
               echo "=== unpacking harness ==="
               mkdir -p /work/repo
               base64 -d /app/code.tar.gz.b64 | tar xzf - -C /work/repo
               cd /work/repo
               echo "  unpacked: $(find . -type f | wc -l) files"
 
+              # The requirements file rides inside the payload, so the repo's pin is what gets installed here.
               if [ -n "${EXTRA_REQUIREMENTS}" ]; then
                 echo "=== installing harness extras: ${EXTRA_REQUIREMENTS} ==="
                 pip install -q --no-cache-dir -r "${EXTRA_REQUIREMENTS}"
               fi
 
               echo "=== starting run ==="
+              # Marks the start so only references this run wrote are returned; the payload ships
+              # every committed reference and tar restores their original mtimes.
+              touch /tmp/run-start
               set +e
               python3 -u app/bench/src/main.py ${RUN_COMMAND} ${SUITE_ARGS}
               rc=$?
               set -e
 
+              # Results return through stdout markers, so nothing depends on the pod existing afterwards.
               echo
               for f in $(find /work/out -maxdepth 2 -name '*.txt' 2>/dev/null | sort) \
-                       $(find /work/repo/docs/accuracy -maxdepth 1 -name '*.json' 2>/dev/null | sort); do
+                       $(find /work/repo/docs/accuracy -maxdepth 1 -name '*.json' -newer /tmp/run-start 2>/dev/null | sort); do
                 case "$f" in
                   /work/out/*) name="${f#/work/out/}" ;;
                   *)           name="docs/accuracy/$(basename "$f")" ;;
@@ -75,13 +74,16 @@ spec:
               echo "=== runner exit code: $rc ==="
               exit $rc
           env:
+            # Which subcommand runs: suite to measure, accuracy to capture a reference, both on one template.
             - { name: RUN_COMMAND, value: "__RUN_COMMAND__" }
             - { name: SUITE_ARGS, value: "__SUITE_ARGS__" }
+            # Path of an extra requirements file, set by the launcher so this never hardcodes another tool's pins.
             - { name: EXTRA_REQUIREMENTS, value: "__EXTRA_REQUIREMENTS__" }
+            # A pod has no .git, so without this the protocol lock cannot tie a result to a commit.
             - { name: HARNESS_GIT_REV, value: "__HARNESS_GIT_REV__" }
             - { name: PYTHONUNBUFFERED, value: "1" }
           resources:
-            # Sized for aiperf, the heaviest client: 16 workers plus 5 service processes reached client_cpu 0.96 of an 8-CPU limit in a calibration run.
+            # Sized for the heaviest client, whose multiprocess architecture can otherwise saturate its own CPU.
             requests: { cpu: "8", memory: 8Gi }
             limits:   { cpu: "16", memory: 16Gi }
           volumeMounts:

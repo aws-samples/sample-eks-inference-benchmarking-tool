@@ -91,7 +91,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 6. Generate the accuracy gate (.JSON) required for the next step.
 
    ```bash
-   python3 app/cli.py launch --capture-accuracy-reference \
+   eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service qwen3-235b-lws \
        --mode fingerprint \
        --model-tag qwen3-235b --config lws \
@@ -103,7 +103,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 7. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
 
    ```bash
-   python3 app/cli.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service qwen3-235b-lws \
        --protocol corpus --profile legacy_corpus \
        --instance g7e.12xlarge --model-tag qwen3-235b \
@@ -118,7 +118,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 8. Benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
 
    ```bash
-   python3 app/cli.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service qwen3-235b-lws \
        --protocol corpus --profile legacy_corpus \
        --instance g7e.12xlarge --model-tag qwen3-235b \
@@ -147,7 +147,7 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/qwe
 
 - **`until ray start --address=${LWS_LEADER_ADDRESS}:6379 --block; do`** Join the leader's Ray cluster and block (LWS injects LWS_LEADER_ADDRESS)
 
-- **`apiVersion: v1`** API service -> leader pod only. `python3 app/cli.py launch` reaches it over cluster DNS; do not port-forward it for a measurement.
+- **`apiVersion: v1`** API service -> leader pod only. `eks-bench measure` reaches it over cluster DNS; do not port-forward it for a measurement.
 - **`size: 2`** 1 leader + 1 worker = 2 pods = 2 nodes
 - **`role: g7e-efa`** from the EFA node group labels
 - **`add: ["IPC_LOCK"]`** required by EFA/libfabric

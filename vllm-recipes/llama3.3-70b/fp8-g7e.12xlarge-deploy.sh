@@ -31,5 +31,5 @@ kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \
 
 # Validate the serving manifest.
 echo "==> Validating the Llama serving manifest"
-python3 app/cli.py validate-manifests \
+eks-bench validate-manifests \
   llama3.3-70b/fp8-g7e.12xlarge.yaml

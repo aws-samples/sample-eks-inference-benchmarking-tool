@@ -1,6 +1,6 @@
 # FAQs
 
-Common questions about scope, methodology, and how this repo relates to other benchmarking tools. See the [README](../../README.md) for the recipes and runbooks. The standard local setup is `./scripts/install-benchmark-client.sh`; installing individual requirements files directly is a minimal-environment path.
+Common questions about scope, methodology, and how this repo relates to other benchmarking tools. See the [README](../../README.md) for the recipes and runbooks. Install the CLI with `pip install -e '.[tokenizer]'`, then use `eks-bench <command> [flags]`. See [Optional extras](./REFERENCE.md#optional-extras) for when the other two extras are needed.
 
 ### Does it benchmark training or fine-tuning?
 
@@ -36,7 +36,7 @@ Two further differences in output shape. MLPerf's Server scenario produces one n
 
 ### Is there anything from MLPerf adopted here?
 
-Yes, LoadGen. `python3 app/cli.py arrival_rate` runs MLPerf's load generator directly (Apache 2.0, no reference implementations needed). The standard client setup is `./scripts/install-benchmark-client.sh`; because LoadGen is not in that default environment, a local direct `arrival_rate` or `verify-openloop` invocation additionally needs `app/bench/requirements-loadgen.txt`. Installing requirements files individually is the minimal setup path.
+Yes, LoadGen. `eks-bench harness-arrival-rate` runs MLPerf's load generator directly. LoadGen is not in the core install, so running it directly with `harness-arrival-rate`, or exercising `selftest-openloop`'s wire checks, needs `pip install -e '.[loadgen]'`. An in-cluster `measure --protocol server_qps` needs nothing extra locally, because the Job installs LoadGen on every run.
 
 LoadGen is an addition rather than a replacement, because the two load models answer different questions and their figures are not comparable:
 
@@ -45,7 +45,7 @@ LoadGen is an addition rather than a replacement, because the two load models an
 | Closed loop, fixed concurrency (the sweeps) | with N concurrent users, what does each one see? | sizing |
 | Open loop, Poisson at target QPS (LoadGen) | at X requests/sec arriving, is the SLA held? | capacity and SLA verification |
 
-LoadGen also provides direct issue-rate accounting: it knows the schedule it intended, so it can report when it fell behind. A closed-loop harness has no intended schedule, so client saturation is inferred from client CPU utilization, which `suite` flags above 0.85. One limitation remains on the closed-loop side: percentiles are nearest-rank with no interpolation, which is imprecise at low sample counts, and the per-level request floor mitigates rather than resolves this.
+LoadGen also provides direct issue-rate accounting: it knows the schedule it intended, so it can report when it fell behind. A closed-loop harness has no intended schedule, so client saturation is inferred from client CPU utilization, which `measure` flags above 0.85. One limitation remains on the closed-loop side: percentiles are nearest-rank with no interpolation, which is imprecise at low sample counts, and the per-level request floor mitigates rather than resolves this.
 
 Two things are kept regardless: the concurrency sweep, which is the sizing tool and has no LoadGen equivalent; and the protocol lock, because LoadGen records its own scenario settings but not the server config, instance type, or harness revision that produced a result.
 
@@ -79,4 +79,4 @@ The cache-hit case is measured separately, as its own workload, by the `latency_
 
 Because a median can rest on far fewer completed requests than the protocol specifies, and a bare tok/s column does not show it. In one sweep, the three reps at concurrency 1 disagreed widely, and two of them had lost nearly all their requests to client-side connection failures, so the 3-rep median largely reflected a broken client. That cell now reports the one clean rep, marked `†` as a single-rep figure.
 
-The runner now enforces this. `suite` emits a `REQUEST SUCCESS per level, per rep` table and excludes any rep with a level below `MIN_LEVEL_SUCCESS` (95%) from the medians. Failures are split into transport (the client's connection broke, so the sample is invalid) and server (the server rejected the request, which is a result). With no usable rep it does not aggregate. The `ok%` column, the `*` degraded-success marker, and the `†` single-rep marker make this visible in the results file itself; results predating the enforcement carry hand-applied markers.
+The runner now enforces this. `measure` emits a `REQUEST SUCCESS per level, per rep` table and excludes any rep with a level below `MIN_LEVEL_SUCCESS` (95%) from the medians. Failures are split into transport (the client's connection broke, so the sample is invalid) and server (the server rejected the request, which is a result). With no usable rep it does not aggregate. The `ok%` column, the `*` degraded-success marker, and the `†` single-rep marker make this visible in the results file itself; results predating the enforcement carry hand-applied markers.

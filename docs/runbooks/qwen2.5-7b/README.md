@@ -6,18 +6,16 @@ The runbooks listed in this section are for the [Qwen/Qwen2.5-7B-Instruct](https
 
 Use any one of the following runbook recipes to get started. For additional flags and configurations, see [Which benchmark to run](../../guides/REFERENCE.md#which-benchmark-to-run).
 
-Two recipes share `g7e.12xlarge` at FP8, so the `--config` column is what distinguishes them and what you pass to `suite`.
+Two recipes share `g7e.12xlarge` at FP8, so the `--config` column is what distinguishes them and what you pass to `measure`.
 
 | Instance | Precision | `--config` | Node | GPUs | TP | Runbook |
 | -------- | --------- | ---------- | ---- | ---- | -- | ------- |
 | `g6e.4xlarge` | BF16 | `bf16` | Single node inference | 1 | unset | [Runbook](./bf16-g6e.4xlarge-runbook.md) |
 | `g7e.12xlarge` | BF16 | `bf16` | Single node inference | 1 | unset | [Runbook](./bf16-g7e.12xlarge-runbook.md) |
-| `p5.4xlarge` | BF16 | `bf16` | Single node inference | 1 | unset | [Runbook](./bf16-p5.4xlarge-runbook.md) |
 | `p5en.48xlarge` | BF16 | `bf16` | Single node inference | 1 | unset | [Runbook](./bf16-p5en.48xlarge-runbook.md) |
 | `g6e.4xlarge` | FP8 | `fp8` | Single node inference | 1 | unset | [Runbook](./fp8-g6e.4xlarge-runbook.md) |
 | `g7e.12xlarge` | FP8 | `fp8` | Single node inference | 1 | 1 | [Runbook](./fp8-g7e.12xlarge-runbook.md) |
 | `g7e.12xlarge` | FP8 | `kvscales` | Single node inference | 1 | unset | [Runbook](./fp8-g7e.12xlarge-kvscales-runbook.md) |
-| `p5.4xlarge` | FP8 | `fp8` | Single node inference | 1 | unset | [Runbook](./fp8-p5.4xlarge-runbook.md) |
 | `p5en.48xlarge` | FP8 | `fp8` | Single node inference | 1 | unset | [Runbook](./fp8-p5en.48xlarge-runbook.md) |
 
 The `kvscales` recipe adds `--calculate-kv-scales`, which has the server compute KV cache scaling factors at load time rather than reading them from the checkpoint, and pins the Torch thread counts to 1. The plain `g7e.12xlarge` FP8 recipe is the only FP8 recipe here that does not set that flag, so the pair isolates its effect on one instance type.

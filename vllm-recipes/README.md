@@ -2,7 +2,7 @@
 
 One manifest per row. Each serves exactly one model on one instance type at one precision, and pairs with the runbook that runs it.
 
-Every supported ordinary serving recipe is validated by its sibling deploy helper before measurement. Run `python3 app/cli.py validate-manifests <model>/<recipe>.yaml` directly when you only need to prove that one recipe—including a specialized study recipe—passes the flags it is written to pass.
+Every supported ordinary serving recipe is validated by its sibling deploy helper before measurement. Run `eks-bench validate-manifests <model>/<recipe>.yaml` directly when you only need to prove that one recipe—including a specialized study recipe—passes the flags it is written to pass.
 
 An unset `Parallelism` cell means the recipe passes no `--tensor-parallel-size`, so vLLM defaults to one GPU.
 
@@ -10,12 +10,10 @@ An unset `Parallelism` cell means the recipe passes no `--tensor-parallel-size`,
 |---|---|---|---|---|---|---|---|---|
 | **[Qwen2.5-7B](qwen2.5-7b/bf16-g6e.4xlarge.yaml)** | BF16 | `g6e.4xlarge` | 1x L40S | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/bf16-g6e.4xlarge-runbook.md) | 16-bit KV cache; weights from the shared claim |
 | **[Qwen2.5-7B](qwen2.5-7b/bf16-g7e.12xlarge.yaml)** | BF16 | `g7e.12xlarge` | 1x RTX PRO 6000 | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/bf16-g7e.12xlarge-runbook.md) | 16-bit KV cache; weights from the shared claim |
-| **[Qwen2.5-7B](qwen2.5-7b/bf16-p5.4xlarge.yaml)** | BF16 | `p5.4xlarge` | 1x H100 | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/bf16-p5.4xlarge-runbook.md) | 16-bit KV cache; weights from the shared claim |
 | **[Qwen2.5-7B](qwen2.5-7b/bf16-p5en.48xlarge.yaml)** | BF16 | `p5en.48xlarge` | 1x H200 | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/bf16-p5en.48xlarge-runbook.md) | 16-bit KV cache; weights from the shared claim |
 | **[Qwen2.5-7B](qwen2.5-7b/fp8-g6e.4xlarge.yaml)** | FP8 | `g6e.4xlarge` | 1x L40S | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/fp8-g6e.4xlarge-runbook.md) | FP8 KV cache; quantize first; derives KV scales at load |
 | **[Qwen2.5-7B](qwen2.5-7b/fp8-g7e.12xlarge-kvscales.yaml)** | FP8 | `g7e.12xlarge` | 1x RTX PRO 6000 | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/fp8-g7e.12xlarge-kvscales-runbook.md) | FP8 KV cache; quantize first; derives KV scales at load |
 | **[Qwen2.5-7B](qwen2.5-7b/fp8-g7e.12xlarge.yaml)** | FP8 | `g7e.12xlarge` | 1x RTX PRO 6000 | TP1 | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/fp8-g7e.12xlarge-runbook.md) | FP8 KV cache; quantize first |
-| **[Qwen2.5-7B](qwen2.5-7b/fp8-p5.4xlarge.yaml)** | FP8 | `p5.4xlarge` | 1x H100 | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/fp8-p5.4xlarge-runbook.md) | FP8 KV cache; quantize first; derives KV scales at load |
 | **[Qwen2.5-7B](qwen2.5-7b/fp8-p5en.48xlarge.yaml)** | FP8 | `p5en.48xlarge` | 1x H200 | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/fp8-p5en.48xlarge-runbook.md) | FP8 KV cache; quantize first; derives KV scales at load |
 | **[Qwen2.5-32B](qwen2.5-32b/fp8-g7e.4xlarge.yaml)** | FP8 | `g7e.4xlarge` | 1x RTX PRO 6000 | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-32b/fp8-g7e.4xlarge-runbook.md) | FP8 KV cache; quantize first; keeps `--enforce-eager`; derives KV scales at load |
 | **[Gemma 4 31B](gemma4-31b/bf16-g6e.12xlarge.yaml)** | BF16 | `g6e.12xlarge` | 4x L40S | TP4 | Deployment | AWS DLC | [Runbook](../docs/runbooks/gemma4-31b/bf16-g6e.12xlarge-runbook.md) | 16-bit KV cache; weights from the shared claim |

@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
-"""Quantize a HuggingFace checkpoint with nvidia-modelopt and write it for vLLM to serve.
-
-Loads the source model in BF16, applies a modelopt quantization config chosen by
-QUANTIZATION_FORMAT, runs a calibration forward pass so static activation scales are real
-rather than absent, and exports a checkpoint. The export path matters more than it looks:
-the correct one casts weights to float8_e4m3fn and emits a hf_quant_config.json, while the
-legacy path leaves weights in BF16 while labelling the checkpoint as serialized FP8, which
-makes vLLM read BF16 bytes as FP8 and emit garbage. The legacy path is retained only so an
-older flow stays reproducible; see config.MODELOPT_REAL_EXPORT. Every setting comes from
-config.py. Run inside the quantizer image, which needs a GPU.
-"""
+"""Quantize a HuggingFace checkpoint with nvidia-modelopt and write it for vLLM to serve, loading the
+source model in BF16, applying a config chosen by QUANTIZATION_FORMAT, running a calibration
+forward pass so static activation scales are real rather than absent, and exporting a checkpoint.
+The export path matters more than it looks: the correct one casts weights to float8_e4m3fn and
+emits a quantization config, while the legacy path leaves weights in BF16 while labelling the
+checkpoint as serialized FP8, which makes vLLM read BF16 bytes as FP8 and emit garbage. The legacy
+path is retained only so an older flow stays reproducible. Every setting comes from config.py, and
+this runs inside the quantizer image, which needs a GPU."""
 import glob
 import json
 import os
@@ -21,8 +18,7 @@ import modelopt.torch.quantization as mtq
 
 import config
 
-# FP8 E4M3 maximum representable magnitude. modelopt stores an absolute-max activation value
-# per tensor, and vLLM expects a scale, so the conversion is amax / this.
+# FP8 E4M3 maximum magnitude, since modelopt stores an amax where vLLM expects amax over this.
 FP8_E4M3_MAX = 448.0
 
 # Quantization config per requested format.
@@ -32,8 +28,7 @@ QUANT_CONFIGS = {
     "awq": "INT4_AWQ_CFG",
 }
 
-# Representative calibration prompts. A small, diverse text sample is sufficient for
-# max-calibration of per-tensor activation scales for a throughput benchmark.
+# Representative calibration prompts, a diverse sample being sufficient for per-tensor max calibration.
 CALIB_PROMPTS = [
     "Explain quantum computing in simple terms.",
     "Write a Python function to reverse a linked list.",

@@ -50,12 +50,12 @@ They exist so the published figures' real shape stays visible instead of being s
 ## Tooling
 
 ```
-app/bench/src/main.py build-profiles            # regenerate (deterministic)
-app/bench/src/main.py build-profiles --check    # verify committed files match a fresh build
-app/bench/src/main.py verify-profiles --list
-app/bench/src/main.py verify-profiles --model <hf-repo-or-local-path>
+eks-bench build-prompts            # regenerate (deterministic)
+eks-bench build-prompts --check    # verify committed files match a fresh build
+eks-bench list-prompts
+eks-bench verify-prompts --model <hf-repo-or-local-path>
 ```
 
-`verify_prompt_profiles.py` measures the pinned text with a model's tokenizer, writes `docs/prompt_tokens/<model>.json`, and exits non-zero if a profile's nominal size is off by more than 15%. It downloads tokenizer files only, not weights. Gated models need `HF_TOKEN`.
+`verify-prompts` measures the pinned text with a model's tokenizer, writes `docs/prompt_tokens/<model>.json`, and exits non-zero if a profile's nominal size is off by more than 15%. It downloads tokenizer files only, not weights. Gated models need `HF_TOKEN`.
 
 15% is deliberately loose. Cross-tokenizer variance on identical text is inherent, so this check exists to catch a profile whose label is grossly wrong, not to force tokenizers to agree.

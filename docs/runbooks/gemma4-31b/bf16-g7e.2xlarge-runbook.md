@@ -64,7 +64,7 @@ No FSx PVC in this runbook. The recipe downloads its own weights into an `emptyD
 5. Generate the accuracy gate (.JSON) required for the next step.
 
    ```bash
-   python3 app/cli.py launch --capture-accuracy-reference \
+   eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service gemma4-31b-vllm-g7e-2xl-bf16 \
        --mode fingerprint \
        --model-tag gemma4-31b --config bf16 \
@@ -75,7 +75,7 @@ No FSx PVC in this runbook. The recipe downloads its own weights into an `emptyD
 6. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
 
    ```bash
-   python3 app/cli.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service gemma4-31b-vllm-g7e-2xl-bf16 \
        --protocol corpus --profile legacy_corpus \
        --instance g7e.2xlarge --model-tag gemma4-31b \
@@ -89,7 +89,7 @@ No FSx PVC in this runbook. The recipe downloads its own weights into an `emptyD
 7. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
 
    ```bash
-   python3 app/cli.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service gemma4-31b-vllm-g7e-2xl-bf16 \
        --protocol corpus --profile legacy_corpus \
        --instance g7e.2xlarge --model-tag gemma4-31b \

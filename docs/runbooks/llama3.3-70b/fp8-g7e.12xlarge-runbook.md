@@ -34,22 +34,32 @@ KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, w
    export INSTANCE_TYPE=g7e.12xlarge
    ```
 
-2. Configure the EKS context and namespace, install the NVIDIA Kubernetes device plugin, and create the `hf-token` secret.
+2. Install the benchmark CLI from your clone. This puts `eks-bench` on your PATH.
+
+   ```bash
+   pip install -e '.[tokenizer]'
+   eks-bench --help
+   ```
+
+   The `tokenizer` extra is needed because steps 6 and 7 pass `--tokenizer`, and that
+   measurement runs on your machine before the Job is packed.
+
+3. Configure the EKS context and namespace, install the NVIDIA Kubernetes device plugin, and create the `hf-token` secret.
 
    ```bash
    ./scripts/install-prerequisites.sh
    ```
 
-3. Deploy and validate the model server. The model checkpoint downloads into pod-local (`emptyDir`) storage and is downloaded again after pod replacement.
+4. Deploy and validate the model server. The model checkpoint downloads into pod-local (`emptyDir`) storage and is downloaded again after pod replacement.
 
    ```bash
    ./vllm-recipes/llama3.3-70b/fp8-g7e.12xlarge-deploy.sh
    ```
 
-4. Generate the accuracy gate (.JSON) required for the next step.
+5. Generate the accuracy gate (.JSON) required for the next step.
 
    ```bash
-   python3 app/cli.py launch --capture-accuracy-reference \
+   eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service llama33-70b-vllm-g7e-fp8 \
        --mode fingerprint \
        --model-tag llama3.3-70b --config fp8 \
@@ -57,10 +67,10 @@ KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, w
        --out-dir docs/results
    ```
 
-5. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
+6. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
 
    ```bash
-   python3 app/cli.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service llama33-70b-vllm-g7e-fp8 \
        --protocol corpus --profile legacy_corpus \
        --instance g7e.12xlarge --model-tag llama3.3-70b \
@@ -71,10 +81,10 @@ KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, w
        --dry-run
    ```
 
-6. Benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
+7. Benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. Run `eks-bench --help` to list the other commands.
 
    ```bash
-   python3 app/cli.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service llama33-70b-vllm-g7e-fp8 \
        --protocol corpus --profile legacy_corpus \
        --instance g7e.12xlarge --model-tag llama3.3-70b \

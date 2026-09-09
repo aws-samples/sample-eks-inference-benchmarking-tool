@@ -1,15 +1,11 @@
-"""Prompt supply for all three harnesses: pinned profiles first, generated prompts as fallback.
-
-A profile named in PROMPT_PROFILE serves the committed text in app/bench/data/prompt_profiles/ and is
-preferred for anything published, for three reasons: "what did you send?" is answered by
-opening a file, every model receives byte-identical input so a difference between two models
-is a property of the models, and the input size stops being implicit — leaving it implicit is
-how a 41-token input came to be published as though it were 1,024. Without a profile, prompts
-are generated: "unique" gives every request a distinct leading nonce so prefix caching cannot
-make prefill free and overstate tokens/sec, "shared_prefix" deliberately measures cache
-benefit, and "legacy" reproduces the original five fixed prompts for continuity with the
-earlier published corpus only.
-"""
+"""Prompt supply for the harnesses, preferring a pinned profile and falling back to generated prompts.
+A profile named in PROMPT_PROFILE serves committed text and is preferred for anything published,
+because what was sent is answered by opening a file, every model receives byte-identical input so a
+difference between two models belongs to the models, and the input size stops being implicit, which
+is how a 41-token input once came to be published as though it were 1,024. Without a profile,
+unique gives every request a distinct leading nonce so prefix caching cannot make prefill free and
+overstate tokens per second, shared_prefix deliberately measures cache benefit, and legacy
+reproduces the original five fixed prompts for continuity with the earlier published corpus only."""
 import json
 import random
 import uuid
@@ -25,9 +21,7 @@ LEGACY_PROMPTS = [
     "How does a transformer neural network work?",
 ]
 
-# Stems that ask for open-ended generation, so output length is governed by max_tokens rather
-# than by the model stopping early. Short factual questions produce 20-token answers and make
-# tokens/sec look terrible for reasons unrelated to the hardware.
+# Stems asking for open-ended generation, so max_tokens governs length rather than an early stop.
 TASK_STEMS = [
     "Explain in detail how {topic} works, covering the underlying mechanics.",
     "Write a thorough technical overview of {topic}, including tradeoffs.",
@@ -45,8 +39,7 @@ TOPICS = [
     "copy-on-write filesystems", "branch prediction", "erasure coding",
 ]
 
-# Padding vocabulary, deliberately domain-flavoured so the text is plausible prose rather than
-# random characters: tokenizers behave differently on gibberish, which would skew prefill cost.
+# Domain-flavoured padding, since tokenizers behave differently on gibberish and skew prefill.
 FILLER_VOCAB = (
     "system latency throughput request buffer kernel scheduler memory bandwidth cache "
     "partition replica commit offset segment compaction index shard cluster node worker "

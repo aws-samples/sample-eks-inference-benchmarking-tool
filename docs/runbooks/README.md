@@ -31,12 +31,10 @@ Runbooks are grouped by model under `docs/runbooks/<model>/`; each directory's `
 | Qwen2.5-32B-Instruct | g7e.4xlarge — FP8 | [`fp8-g7e.4xlarge-runbook.md`](./qwen2.5-32b/fp8-g7e.4xlarge-runbook.md) | locally quantized FP8 on FSx | none |
 | Qwen2.5-7B-Instruct | g6e.4xlarge — BF16 | [`bf16-g6e.4xlarge-runbook.md`](./qwen2.5-7b/bf16-g6e.4xlarge-runbook.md) | published BF16 staged to FSx | none |
 | Qwen2.5-7B-Instruct | g7e.12xlarge — BF16 | [`bf16-g7e.12xlarge-runbook.md`](./qwen2.5-7b/bf16-g7e.12xlarge-runbook.md) | published BF16 staged to FSx | none |
-| Qwen2.5-7B-Instruct | p5.4xlarge — BF16 | [`bf16-p5.4xlarge-runbook.md`](./qwen2.5-7b/bf16-p5.4xlarge-runbook.md) | published BF16 staged to FSx | none |
 | Qwen2.5-7B-Instruct | p5en.48xlarge — BF16 | [`bf16-p5en.48xlarge-runbook.md`](./qwen2.5-7b/bf16-p5en.48xlarge-runbook.md) | published BF16 staged to FSx | none |
 | Qwen2.5-7B-Instruct | g6e.4xlarge — FP8 | [`fp8-g6e.4xlarge-runbook.md`](./qwen2.5-7b/fp8-g6e.4xlarge-runbook.md) | published or locally quantized FP8 pre-staged on FSx | none |
 | Qwen2.5-7B-Instruct | g7e.12xlarge — FP8 | [`fp8-g7e.12xlarge-runbook.md`](./qwen2.5-7b/fp8-g7e.12xlarge-runbook.md) | published FP8 staged to FSx; local output also accepted | none |
 | Qwen2.5-7B-Instruct | g7e.12xlarge — FP8, kvscales | [`fp8-g7e.12xlarge-kvscales-runbook.md`](./qwen2.5-7b/fp8-g7e.12xlarge-kvscales-runbook.md) | published FP8 staged to FSx; local output also accepted | none |
-| Qwen2.5-7B-Instruct | p5.4xlarge — FP8 | [`fp8-p5.4xlarge-runbook.md`](./qwen2.5-7b/fp8-p5.4xlarge-runbook.md) | published or locally quantized FP8 pre-staged on FSx | none |
 | Qwen2.5-7B-Instruct | p5en.48xlarge — FP8 | [`fp8-p5en.48xlarge-runbook.md`](./qwen2.5-7b/fp8-p5en.48xlarge-runbook.md) | published FP8 staged to FSx; local output also accepted | none |
 | Qwen3-235B-A22B | g7e.12xlarge — FP8, lws | [`fp8-g7e.12xlarge-lws-runbook.md`](./qwen3-235b/fp8-g7e.12xlarge-lws-runbook.md) | published FP8 staged to FSx | LWS, EFA |
 | Qwen3-235B-A22B | 2x g7e.12xlarge — FP8, multi-node EFA | [`fp8-g7e.12xlarge-multi-node-efa-runbook.md`](./qwen3-235b/fp8-g7e.12xlarge-multi-node-efa-runbook.md) | published FP8 staged to FSx | LWS, EFA, capacity reservation |

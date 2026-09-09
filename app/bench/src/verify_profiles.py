@@ -1,20 +1,13 @@
 #!/usr/bin/env python3
-"""Measure the pinned prompt profiles against one model's tokenizer and record the counts.
-
-The profiles carry literal prompt text, so there is nothing to calibrate: every model gets
-byte-identical input. This records what a given tokenizer makes of that text, which differs by
-a few percent between models and is worth knowing when reading two models' results side by
-side. It also enforces each profile's claim — if the measured median drifts from
-target_input_tokens beyond the tolerance, the profile is misdescribing what it serves and a run
-should not be published under that label. Counts are written per model under
-docs/prompt_tokens/, deliberately outside data/, because the profiles must stay usable for any
-model and nothing in them may key on a model name. Needs transformers and jinja2; downloads
-tokenizer files only, never weights.
-
-    python3 app/bench/src/verify_profiles.py --model nvidia/GLM-5.2-NVFP4
-    python3 app/bench/src/verify_profiles.py --model /models/kimi-k3 --profile coding_assistant
-    python3 app/bench/src/verify_profiles.py --list
-"""
+"""Measure the pinned prompt profiles against one model's tokenizer and record the counts, since the
+profiles carry literal text and every model gets byte-identical input, leaving nothing to
+calibrate. What differs is what a given tokenizer makes of that text, by a few percent between
+models, which is worth knowing when reading two models' results side by side. It also enforces each
+profile's claim: if the measured median drifts from target_input_tokens beyond the tolerance, the
+profile is misdescribing what it serves and a run should not be published under that label. Counts
+are written per model outside the data directory, because the profiles must stay usable for any
+model and nothing in them may key on a model name. It downloads tokenizer files only, never
+weights."""
 from __future__ import annotations
 
 import argparse
@@ -82,7 +75,7 @@ def load_tokenizer(model: str):
         from transformers import AutoTokenizer
     except ImportError:
         sys.exit("this tool needs a tokenizer, which the benchmark client does not:\n"
-                 "  pip install -r app/bench/requirements-tokenizer.txt\n"
+                 "  pip install -e '.[tokenizer]'\n"
                  "Tokenizer only — it does not pull torch.")
     print(f"loading tokenizer: {model}")
     return AutoTokenizer.from_pretrained(model, trust_remote_code=True)
@@ -199,7 +192,7 @@ def ensure_counts(model: str) -> str:
         from transformers import AutoTokenizer            # noqa: F401
     except ImportError:
         return (f"input sizes: NOT recorded for {model} and cannot be measured here — "
-                f"pip install -r app/bench/requirements-tokenizer.txt to enable. The run "
+                f"pip install -e '.[tokenizer]' to enable. The run "
                 f"continues and reports a nominal input size.")
     try:
         tokenizer = load_tokenizer(model)

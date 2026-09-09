@@ -1,11 +1,7 @@
-"""General-purpose utilities with no knowledge of vLLM, HTTP, or benchmarking.
-
-The split against client.py is by dependency direction, not by size: anything here could
-be lifted into an unrelated project unchanged, whereas client.py knows what an
-OpenAI-compatible response looks like. Statistics live here because three harnesses used to
-compute percentiles three slightly different ways, which made p99 figures from different
-files quietly incomparable.
-"""
+"""General-purpose utilities with no knowledge of vLLM, HTTP or benchmarking, split from client.py by
+dependency direction rather than size: anything here could be lifted into an unrelated project
+unchanged. Statistics live here because three harnesses once computed percentiles three slightly
+different ways, which made p99 figures from different files quietly incomparable."""
 import hashlib
 import subprocess
 from datetime import datetime, timezone

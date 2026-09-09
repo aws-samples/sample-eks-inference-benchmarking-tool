@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-"""Rewrite modelopt _amax tensors in an existing checkpoint as the scale tensors vLLM loads.
-
-A repair tool for checkpoints produced before quantize.py handled this itself. modelopt saves
-`...weight_quantizer._amax` while vLLM expects `...weight_scale`, holding amax / 448.0. Two
-rules matter and both were learned from vLLM's AutoWeightsLoader source: the `model.` prefix
-must be kept, because the loader routes by top-level module name, and only the `_amax` suffix
-is renamed. It also restores the prefix on shards where an earlier version stripped it. The
-pass is idempotent, so shards that are already correct are skipped, and it needs only PVC
-access rather than a GPU. Set MODEL_PATH to the checkpoint directory.
-"""
+"""Rewrite modelopt _amax tensors in an existing checkpoint as the scale tensors vLLM loads, repairing
+checkpoints produced before quantize.py handled this itself. modelopt saves a weight quantizer
+_amax where vLLM expects a weight scale holding amax divided by 448, and two rules both learned
+from vLLM's weight loader matter: the model prefix must be kept, because the loader routes by top-
+level module name, and only the _amax suffix is renamed. It also restores the prefix on shards
+where an earlier version stripped it. The pass is idempotent, so correct shards are skipped, and it
+needs only volume access rather than a GPU."""
 import glob
 import os
 import sys

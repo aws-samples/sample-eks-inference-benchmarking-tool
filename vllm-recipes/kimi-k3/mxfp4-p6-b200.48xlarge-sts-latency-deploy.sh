@@ -33,5 +33,5 @@ kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \
 echo "==> Validating the Kimi K3 serving manifest"
 (
   cd "$REPO_ROOT"
-  python3 app/cli.py validate-manifests kimi-k3/mxfp4-p6-b200.48xlarge-sts-latency.yaml
+  eks-bench validate-manifests kimi-k3/mxfp4-p6-b200.48xlarge-sts-latency.yaml
 )

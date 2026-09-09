@@ -1,23 +1,11 @@
 #!/usr/bin/env python3
-"""Protocol-locked benchmark runner: picks one named protocol, runs reps, aggregates medians.
-
-The Kimi K3 b200 run produced unusable output because five measurement variables were changed
-by hand mid-session. Nothing was wrong with any single change; the problem was that the
-protocol was never written down, so the results were comparable neither to the existing corpus
-nor to each other. This makes that structurally impossible: protocols are data in
-config.PROTOCOLS and chosen by name, so you cannot set half of one; every output file carries
-a PROTOCOL LOCK header recording the environment, harness revision and endpoint, so a file
-cannot be silently mis-attributed; and reps are first class, with the aggregate reporting the
-median plus spread and flagging any cell whose run-to-run variance is too high to trust. Run
-with --dry-run first, always.
-
-    python3 app/bench/src/suite.py --protocol corpus    --instance p6-b300.48xlarge --config baseline --reps 3
-    python3 app/bench/src/suite.py --protocol reasoning --instance p6-b300.48xlarge --config baseline --reps 3
-    python3 app/bench/src/suite.py --protocol latency   --instance p6-b300.48xlarge --config dspark   --reps 3
-
-Add --profile <name> to serve a pinned prompt profile, strongly preferred for anything
-published. Add --pod <name> to capture server-side provenance into a sidecar file.
-"""
+"""Protocol-locked benchmark runner that picks one named protocol, runs reps and aggregates medians,
+so a measurement cannot be assembled by hand mid-session and later turn out comparable to nothing.
+Protocols are data in config.PROTOCOLS and chosen by name, so half of one cannot be set; every
+output file carries a PROTOCOL LOCK header recording the environment, harness revision and
+endpoint, so a file cannot be silently mis-attributed; and reps are first class, with the aggregate
+reporting the median plus spread and flagging any cell whose run-to-run variance is too high to
+trust. Run with --dry-run first."""
 from __future__ import annotations
 
 import argparse
@@ -40,11 +28,10 @@ from stats import git_revision, shell_output, shell_result, spread_fraction, utc
 # Client CPU fraction above which a level may be measuring the harness, not the server.
 CLIENT_CPU_SUSPECT = config.CLIENT_CPU_SUSPECT
 
-# Fraction of the median that a cell's peak-to-peak spread may reach before it is flagged.
+# Fraction of the median that a cell's peak-to-peak spread may reach before we distrust it.
 MAX_SPREAD = config.MAX_SPREAD
 
-# Sizing for the companion latency pass, matching the standalone `latency` protocol so its
-# figures are produced the same way wherever they appear.
+# Sizing for the companion latency pass, matched to the standalone protocol so figures agree.
 LATENCY_MIN_SAMPLES = 100
 LATENCY_WAVES = 2
 
@@ -53,30 +40,20 @@ LATENCY_WAVES = 2
 #                             OUTPUT PARSING                                   #
 # ---------------------------------------------------------------------------- #
 
-# Summary-table row parsers, matched to each harness's output format. These are matched
-# against published result files, so changing a harness's table format silently stops every
-# one of them from parsing.
+# Row parsers keyed to each harness's table, so a format change stops every one of them parsing.
 ROW_THROUGHPUT = re.compile(r"^\s*(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)s\s+([\d.]+)s\s*$")
 ROW_LATENCY = re.compile(
     r"^\s*(\d+)\s+([\d.]+)s\s+([\d.]+)s\s+([\d.]+)ms\s+([\d.]+)ms\s+([\d.]+)ms\s+([\d.]+)ms\s*$"
 )
-# key=value rather than an aligned table, deliberately: an open-loop row must not be able to
-# match the closed-loop patterns above and land in a concurrency-keyed aggregate.
+# key=value on purpose, so an open-loop row cannot match the closed-loop patterns above.
 ROW_QPS = re.compile(r"^QPS_ROW\s+(.+)$")
-# Trace-replay result, same key=value discipline and for the same reason: one replay is one
-# row, and it must never be mistakable for a concurrency-sweep level.
+# Trace-replay row, same discipline: one replay is one row and must not look like a sweep level.
 ROW_TRACE = re.compile(r"^TRACE_ROW\s+(.+)$")
-# Server-counted token shape, emitted by every harness. Parsed separately from the summary
-# tables because the absence of a recorded INPUT size is precisely what let an OUTPUT cap of
-# 1,024 be read as an input length across several published reports.
+# Parsed apart from the tables because a missing input size let an output cap be read as one.
 ROW_SHAPE = re.compile(r"^TOKEN_SHAPE\s+(.+)$")
-# Achieved in-flight depth per level. Parsed separately for the same reason as TOKEN_SHAPE:
-# a level whose request count is below its concurrency silently reports a depth it never
-# reached, which is how a ~100-in-flight sample came to be published as concurrency=512.
+# Parsed apart for the same reason: an underfilled level reports a depth it never reached.
 ROW_FILL = re.compile(r"^CONCURRENCY_FILL\s+(.+)$")
-# Per-level request success. Parsed so a rep whose level lost requests can be excluded from
-# the median: percentiles computed over the survivors of a collapsed connection are not a
-# measurement of the server, and the count previously lived only inside the rep file.
+# Parsed so a rep that lost requests is excluded rather than averaged over its survivors.
 ROW_SUCCESS = re.compile(r"^REQUEST_SUCCESS\s+(.+)$")
 
 COLS_THROUGHPUT = ["tokens_per_sec", "req_per_sec", "p50_s", "p99_s"]
@@ -85,17 +62,13 @@ COLS_LATENCY = ["ttft_p50_s", "ttft_p99_s", "tpot_p50_ms", "tpot_p99_ms",
 COLS_QPS = ["achieved_qps", "ttft_p50_ms", "ttft_p99_ms", "tpot_p50_ms", "tpot_p99_ms",
             "openloop_tokens_per_sec", "input_tokens_median", "completed", "failed"]
 
-# Streaming metrics in trace replays are aiperf's definitions; the column names carry no
-# tpot_* on purpose — aiperf exports ITL, and latency calibration showed its streaming
-# numbers are not interchangeable with latency.py's.
+# Trace streaming metrics are aiperf's ITL definitions, never interchangeable with latency.py's.
 COLS_TRACE = ["tokens_per_sec", "req_per_sec", "ttft_p50_s", "ttft_p99_s",
               "itl_p50_ms", "itl_p99_ms"]
 COLS = {"throughput": COLS_THROUGHPUT, "latency": COLS_LATENCY, "arrival_rate": COLS_QPS,
         "aiperf": COLS_THROUGHPUT, "aiperf_trace": COLS_TRACE}
 
-# Label for the row-key column. Closed-loop harnesses are keyed by in-flight concurrency; the
-# open-loop harness is keyed by TARGET ARRIVAL RATE. Keys are ints either way (milli-QPS for
-# the open-loop case) so the median and spread machinery is shared.
+# Row-key label; keys are ints either way, milli-QPS open loop, so median machinery is shared.
 LEVEL_LABEL = {"throughput": "conc", "latency": "conc", "arrival_rate": "tgt_qps",
                "aiperf": "conc", "aiperf_trace": "run"}
 
@@ -185,10 +158,7 @@ def parse_qps_rows(text: str) -> dict[int, dict]:
         if "target_qps" not in fields:
             continue
         row: dict = {name: to_float(fields.get(name, "0")) for name in COLS_QPS}
-        # Carried as text, not aggregated: these are categorical verdicts, not numbers to take
-        # a median of. `sla` is the TTFT/TPOT constraint, which is the capacity answer;
-        # `early_stopping` is whether there were enough samples to certify the percentile. A
-        # run can hold the SLA and still be LoadGen-INVALID on sample count.
+        # Categorical verdicts carried as text: a run can hold the SLA and still be invalid on samples.
         row["_sla"] = fields.get("sla", "UNKNOWN")
         row["_early"] = fields.get("early_stopping", "UNKNOWN")
         row["_loadgen_result"] = fields.get("loadgen_result", "UNKNOWN")
@@ -246,12 +216,13 @@ def refuse_loopback_latency(args, protocol: dict, want_latency: bool) -> None:
     A port-forward or SSH tunnel adds roughly 185 ms of connection setup to every TTFT sample,
     measured at 276 ms first byte on a fresh connection against 90 ms warm. That is most of a
     500 ms SLA budget, and it is the harness's own tunnel being reported as the server's
-    latency. Refused rather than warned because a warning did not stop it: one run produced a
-    full latency table through a port-forward with every cell carrying a variance flag for
-    this reason.
+    latency. Refused rather than warned because a warning did not stop it: the 2026-08-08 GLM
+    run produced a full latency table through a port-forward and every cell carried a variance
+    flag for this reason.
 
-    Throughput-only runs are unaffected — tokens/sec and TPOT do not materially change through
-    a tunnel — so this fires only when the run will report TTFT.
+    Every loopback run is refused, not only the ones reporting TTFT, because the tunnel drops
+    connections under sustained load whatever is being measured. Whether the run reports TTFT
+    only decides if the message also explains the added first-token cost.
     """
     if not any(host in args.endpoint for host in config.LOOPBACK_HOSTS):
         return
@@ -267,14 +238,14 @@ def refuse_loopback_latency(args, protocol: dict, want_latency: bool) -> None:
     sys.exit(
         f"REFUSING TO MEASURE: endpoint {args.endpoint} is loopback.\n\n"
         f"A kubectl port-forward multiplexes every connection through ONE tunnel to the\n"
-        f"kubelet. It does not survive hundreds of sustained concurrent streams: in one\n"
-        f"observed run it dropped every request in 2 of 3 latency reps with `error creating\n"
+        f"kubelet. It does not survive hundreds of sustained concurrent streams: on\n"
+        f"2026-08-08 it dropped every request in 2 of 3 latency reps with `error creating\n"
         f"error stream ... Timeout occurred`, and the surviving rep's percentiles were the\n"
         f"only thing left to report.\n"
         + (f"\nIt also adds ~150-200 ms of connection setup to every TTFT sample, which is the\n"
            f"harness's own tunnel reported as the server's latency.\n" if reports_ttft else "")
         + f"\nRun in-cluster instead, which reaches the Service over cluster DNS:\n"
-        f"  python3 app/bench/src/main.py launch --context <ctx> --namespace <ns> \\\n"
+        f"  eks-bench measure --context <ctx> --namespace <ns> \\\n"
         f"      --service <svc> --protocol {args.protocol} --instance {args.instance} "
         f"--config {args.config} ...\n\n"
         f"To measure anyway, accepting that a dropped connection invalidates a rep:\n"
@@ -359,8 +330,8 @@ def recorded_wire_size(tokenizer: str | None, profile_name: str | None) -> str:
     if not profile_name:
         return "n/a (no profile: generated prompts, input size implicit)"
 
-    install = ("pip install -r app/bench/requirements-tokenizer.txt && "
-               "python3 app/bench/src/main.py verify-profiles --model <hf-repo-or-path>")
+    install = ("pip install -e '.[tokenizer]' && "
+               "eks-bench verify-prompts --model <hf-repo-or-path>")
     if not tokenizer:
         available = sorted(p.stem.replace("__", "/")
                            for p in config.TOKEN_COUNT_DIR.glob("*.json"))
@@ -393,8 +364,7 @@ def reference_thinking_mode(model_tag: str, server_config: str) -> str:
     token-count check for the wrong reason. The reference records how it was captured, which
     is the only correct value, so there is nothing for a caller to get wrong.
     """
-    # Reuse accuracy.py's locator rather than rebuild the path. Two copies of it is why one was
-    # still pointing at the old nested layout after the other moved.
+    # Reuse accuracy.py's locator, since two copies is how one kept pointing at the old layout.
     import accuracy
 
     ref_file = accuracy.reference_path(model_tag, server_config)
@@ -461,8 +431,7 @@ def discover_pod(context: str, namespace: str) -> tuple[str | None, str]:
     raw, error = shell_result(["kubectl", "--context", context, "-n", namespace,
                                "get", "pods", "-o", "json"], timeout=60)
     if error:
-        # Surfaced rather than reduced to "nothing found": an expired credential and an empty
-        # namespace are different problems and send the reader to different places.
+        # Surfaced rather than reduced to nothing found, since each cause sends the reader elsewhere.
         return None, f"kubectl failed for context {context}: {error.splitlines()[-1][:160]}"
     if not raw.strip():
         return None, f"no pods in namespace {namespace} (context {context})"
@@ -485,15 +454,10 @@ def discover_pod(context: str, namespace: str) -> tuple[str | None, str]:
     return candidates[0], f"auto-discovered {candidates[0]}"
 
 
-# Server-side facts worth recording, as (label, regex, how to reduce the matches). Each yields
-# ONE line. The previous version dumped raw grep output into a separate file, which came to 73
-# lines of which about 60 were the same CUDA-graph message repeated once per tensor-parallel
-# worker. The facts below are what any of that was ever read for.
-# Placeholder the in-cluster run leaves behind for the launcher to substitute. The runner pod has
-# no kubectl, so `launch` skips capture inside the Job and fills this in from the machine that
-# does have one. Shared as a constant because two modules must agree on it exactly.
+# Placeholder the in-cluster run leaves for the launcher, which owns the only kubectl.
 PROVENANCE_SKIPPED = "SERVER PROVENANCE: skipped (--no-provenance)."
 
+# Server-side facts worth recording as (label, regex, reducer), each yielding exactly one line.
 PROVENANCE_FACTS = (
     ("NCCL transport", r"NET/Plugin|NET/OFI|NET/Socket|Connected all rings", "last"),
     ("KV cache memory", r"Available KV cache memory: (\S+ GiB)", "first"),
@@ -520,8 +484,7 @@ def reduce_matches(logs: str, pattern: str, how: str) -> str:
         return values[0]
     if how == "last":
         return values[-1]
-    # "max" over percentages, used for prefix cache hit rate: the highest value observed is
-    # the one that matters, since any non-zero hit invalidates an uncached throughput claim.
+    # Max over percentages for cache hit rate, since any non-zero hit voids an uncached claim.
     numeric = [(float(v.rstrip("%")), v) for v in values if v.rstrip("%").replace(".", "", 1)
                .isdigit()]
     return max(numeric)[1] if numeric else values[-1]
@@ -659,8 +622,7 @@ def gpu_topology_summary(topology: str) -> str:
     topology = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", topology)
     lines = [line.split() for line in topology.splitlines() if line.split()]
     header = next((parts for parts in lines if parts and parts[0] == "GPU0"), None)
-    # The first GPU row also starts with GPU0, so a real header must contain GPU0 twice only
-    # when malformed. Prefer the non-row header, which has GPU1 immediately after GPU0.
+    # A real header has GPU1 right after GPU0, unlike the first GPU row which repeats GPU0.
     header = next((parts for parts in lines
                    if len(parts) > 1 and parts[0] == "GPU0" and parts[1] == "GPU1"), header)
     if not header:
@@ -702,6 +664,43 @@ def _optional_float(value: str | None) -> float | None:
     except ValueError:
         return None
     return parsed if math.isfinite(parsed) else None
+
+
+def kv_capacity_math(block_size: int | None, gpu_blocks: int | None, cache_tokens: int | None,
+                     max_model_len: int, memory_bytes: int | None) -> list[tuple[str, str]]:
+    """
+    Spell out how the server's KV allocation becomes a concurrent-sequence count.
+
+    Every input is read from the server itself, so this replaces the runbooks' capacity estimate
+    with the allocation actually in force. The runbook arithmetic needs the model's head count and
+    layer depth and a guessed runtime reserve; this needs none of them, because the server has
+    already done the division.
+
+    Args:
+        block_size: Tokens per KV block, as the server reports it
+        gpu_blocks: KV blocks the server allocated on the GPU
+        cache_tokens: Total KV capacity in tokens
+        max_model_len: Context length the server serves, 0 when unknown
+        memory_bytes: KV pool size in bytes, when the server reports it
+
+    Returns:
+        (label, value) pairs to append to the provenance block, empty when nothing is derivable
+    """
+    rows = []
+    if block_size and gpu_blocks and cache_tokens:
+        rows.append(("KV capacity from", f"{gpu_blocks:,} blocks x {block_size} tokens/block "
+                                         f"= {cache_tokens:,} tokens"))
+    if cache_tokens and max_model_len:
+        rows.append(("KV full-ctx seqs", f"{cache_tokens:,} / {max_model_len:,} tokens per request "
+                                         f"= {cache_tokens / max_model_len:.1f} concurrent"))
+    if memory_bytes and cache_tokens:
+        per_token = memory_bytes / cache_tokens
+        row = f"{per_token / 1024:.3f} KiB/token measured"
+        if max_model_len:
+            row += (f"; {per_token * max_model_len / 1024 ** 3:.2f} GiB per "
+                    f"{max_model_len:,}-token sequence")
+        rows.append(("KV cost per token", row))
+    return rows
 
 
 def provenance_facts(logs: str, metrics: str, raw_pod: str,
@@ -786,6 +785,9 @@ def provenance_facts(logs: str, metrics: str, raw_pod: str,
     facts += [("KV cache memory", cache_memory),
               ("KV cache size", cache_size),
               ("Max concurrency", max_concurrency)]
+    # Shown so a reader can check the capacity rather than recompute it from the runbook's estimate.
+    if not cache_ambiguous:
+        facts += kv_capacity_math(block_size, gpu_blocks, cache_tokens, max_model_len, memory_bytes)
     if prefix_enabled is not None:
         facts.append(("Prefix caching", "enabled" if prefix_enabled else "disabled"))
     if queries is not None or hits is not None:
@@ -876,15 +878,11 @@ def build_env(args, protocol: dict, profile: dict | None) -> dict:
     would produce a run labelled with a profile whose output shape came from elsewhere.
     """
     env = config.inherited_environment()
-    # Latency targets the caller set outrank the protocol's shipped values. Without this,
-    # `env.update(protocol["env"])` below silently discarded an exported TTFT_SLA_MS, so the
-    # knob that config.py appears to expose could not actually be turned, and the lock still
-    # printed the shipped number. Captured before the update, re-applied after it.
+    # Caller targets outrank the protocol's shipped values, which env.update would otherwise discard.
     caller_targets = {k: env[k] for k in ("TTFT_SLA_MS", "TPOT_SLA_MS") if k in env}
     env.update(protocol["env"])
     env.update(caller_targets)
-    # A flag outranks an environment variable, and is the only form that survives the trip
-    # into the launcher Job, which does not inherit the operator's shell.
+    # A flag outranks an env var and is the only form that survives the trip into the Job.
     for flag, key in (("ttft_target", "TTFT_SLA_MS"), ("tpot_target", "TPOT_SLA_MS")):
         value = getattr(args, flag, None)
         if value is not None:
@@ -895,8 +893,7 @@ def build_env(args, protocol: dict, profile: dict | None) -> dict:
         env.pop("PROMPT_TOKENS", None)
         env.pop("PROMPT_MODE", None)
     if args.trace:
-        # Travels as SUITE_ARGS through the launcher Job, unlike a user-exported env
-        # var, which the Job would never see. The lock records it via the env section.
+        # Travels as SUITE_ARGS, unlike an exported env var the Job would never see.
         env["TRACE_FILE"] = args.trace
     if env.get("AIPERF_MODE") == "trace" and not env.get("TRACE_FILE"):
         sys.exit(f"protocol {args.protocol!r} replays a trace but none is set: pass "
@@ -1116,27 +1113,18 @@ def sweep_qps_levels(protocol: dict, env: dict, rep: RepResult,
     """
     settle_s = protocol.get("settle_s", 0)
     for index, qps in enumerate(protocol["qps_levels"]):
-        # Let the server drain before the next level. Open loop is the only sweep that can
-        # leave a real backlog behind: arrivals are independent of completions, so a saturated
-        # level can still be working through queued requests when the harness process exits.
-        # Whatever is left in that queue lands in the NEXT level's first percentiles, which is
-        # a plausible mechanism for observed instability where the same target rate measured
-        # 522 ms and 22 s p99 TTFT in consecutive reps. Cheap to remove as a variable.
+        # Let the server drain, since only open loop can leave a backlog for the next level's percentiles.
         if index and settle_s:
             print(f"  settle {settle_s}s (drain before next level) ...", flush=True)
             time.sleep(settle_s)
-        # Liveness per LEVEL, not just per rep. Each open-loop level takes minutes, so a rep
-        # that loses its server early otherwise spends the rest of the sweep measuring
-        # nothing: in one run seven consecutive levels ran to completion against a deleted
-        # deployment. One request per level is free next to the level itself.
+        # Liveness per level, so a rep that loses its server stops rather than measuring nothing for minutes.
         if not server_alive(env["VLLM_API_URL"], env["MODEL_ID"]):
             print(f"  !! server not serving {env['MODEL_ID']!r} — abandoning the rest of this "
                   f"rep at target_qps={qps}. Levels already measured are kept; this rep will "
                   f"be excluded for incomplete request success.")
             return
         level_env = dict(env, SERVER_TARGET_QPS=str(qps),
-                         # LoadGen writes its own logs; keep them out of the results
-                         # directory, which holds exactly one file per run.
+                         # Keep LoadGen's own logs out of the results directory, which holds one file per run.
                          LOADGEN_OUTDIR=str(scratch /
                                             f"loadgen_{server_config}_qps{qps}_rep{rep_number}"))
         print(f"  target_qps={qps:<5} ...", end="", flush=True)
@@ -1144,10 +1132,7 @@ def sweep_qps_levels(protocol: dict, env: dict, rep: RepResult,
         parsed = parse_rows(stdout, protocol["harness"])
         rep.rows.update(parsed)
         level_key = int(round(float(qps) * 1000))
-        # Re-keyed onto this protocol's level units, as the context sweep does: without this
-        # the open-loop path recorded no success data at all, so degraded_levels() saw an
-        # empty dict and never excluded a rep. A rep with 100% request failures at 7 of 8
-        # levels was aggregated as successful.
+        # Re-keyed onto this protocol's level units, without which degraded_levels() excluded nothing.
         for entry in parse_success(stdout).values():
             rep.success[level_key] = entry
         client_cpu.setdefault(level_key, []).append(cpu)
@@ -1245,8 +1230,7 @@ def metric_table(harness: str, label: str, levels: list[int],
                  reps: list[dict[int, dict]]) -> tuple[list[str], list[str]]:
     """Build the median metric table, plus a warning for any cell with untrustworthy spread."""
     columns = COLS[harness]
-    # Width per column, so a long metric name cannot run into its neighbour and corrupt the
-    # table for whoever parses it next.
+    # Fixed column width, so a long metric name cannot run into its neighbour and corrupt the table.
     widths = {name: max(16, len(name) + 2) for name in columns}
     header = f"{label:>8}" + "".join(f"{name:>{widths[name]}}" for name in columns)
     lines, warnings = [header, "-" * len(header)], []
@@ -1308,8 +1292,7 @@ def targets_section(levels: list[int], reps: list[dict[int, dict]],
         names = [n for n, value, target in (("TTFT", ttft, ttft_target),
                                            ("TPOT", tpot, tpot_target)) if value > target]
         over[level] = names
-        # The smallest TPOT target that would hold this rate IS its own TPOT p99, but only
-        # while TTFT is inside its target: past that, no TPOT figure rescues the level.
+        # The smallest TPOT target holding a rate is its own p99, but only while TTFT is inside target.
         if names == ["TPOT"]:
             relaxing.append((level, tpot))
 
@@ -1327,26 +1310,19 @@ def targets_section(levels: list[int], reps: list[dict[int, dict]],
         lines.append(f"     {fmt_level('arrival_rate', level):>9}   {detail}")
 
     if relaxing:
-        # Round the budget UP. The smallest target that HOLDS a level has to be at or above its
-        # measured p99, and rounding down states a budget the level would breach: a p99 of
-        # 60.15 ms is held by 61 ms and not by 60.
+        # Round the budget up, since rounding down states a budget the level would actually breach.
         lines.append(f"  Holding TTFT at {ttft_target:g} ms, the smallest TPOT target that")
         for level, tpot in relaxing:
             lines.append(f"    would hold {fmt_level('arrival_rate', level):>9} QPS is "
                          f"{math.ceil(tpot):.0f} ms")
     ttft_bound = [level for level in levels if "TTFT" in over[level]]
     if ttft_bound:
-        # Deliberately not "TTFT is over too": at these rates TPOT may be comfortably inside
-        # its target, and the point is that TTFT alone caps the rate, so a looser TPOT buys
-        # nothing. Saying "too" implied TPOT was already the problem, which misread the run
-        # where TTFT was the sole binding constraint.
+        # Not "TTFT is over too": TTFT alone caps the rate here, so a looser TPOT buys nothing.
         lines.append(f"  From {fmt_level('arrival_rate', min(ttft_bound))} QPS up TTFT is over "
                      f"its target, so a looser TPOT target alone would not raise the rate that "
                      f"holds.")
 
-    # Sample sufficiency is the one verdict that is NOT derivable from the columns above, so it
-    # survives. It only matters where a percentile might be quoted, which is inside the targets:
-    # past them the level is already answered and a bigger sample would only confirm it.
+    # Sample sufficiency is the one verdict the columns cannot give, and only matters inside targets.
     uncertified = [level for level in levels
                    if any(rep[level].get("_early") == "UNDERSAMPLED"
                           for rep in reps if level in rep)]
@@ -1411,9 +1387,9 @@ def success_table(harness: str, per_rep: list[dict[int, dict]],
 
     Reported per rep rather than aggregated: a median hides exactly the case this exists to
     expose, where one rep is intact and another lost most of its requests. Before this, the
-    only record of a lost request was an `(n/total ok)` line inside a rep file, and one latency
-    run published percentiles from a single surviving rep while two others had failed every
-    request to a collapsed port-forward.
+    only record of a lost request was an `(n/total ok)` line inside a rep file, and the
+    2026-08-08 latency run published percentiles from a single surviving rep while two others
+    had failed every request to a collapsed port-forward.
     """
     if not per_rep or not any(per_rep):
         return [], []
@@ -1512,6 +1488,28 @@ def client_cpu_table(harness: str, label: str,
     return lines, warnings
 
 
+def preserve_existing(path: Path) -> Path | None:
+    """
+    Rename a result file already at this path so a new run cannot overwrite it.
+
+    A result file is evidence, so it is moved aside rather than replaced: two runs can share a
+    stem and still be different measurements. Shared with the launcher, which writes the same
+    files on the in-cluster path, because one copy of this rule cannot drift from another.
+
+    Args:
+        path: The result file about to be written
+
+    Returns:
+        Where the previous file was moved, or None when there was nothing to preserve
+    """
+    if not path.exists():
+        return None
+    superseded = path.with_name(f"{path.stem}.superseded-{utc_stamp('%Y%m%dT%H%M%SZ')}{path.suffix}")
+    path.rename(superseded)
+    print(f"previous result moved aside -> {superseded}")
+    return superseded
+
+
 def build_aggregate(args, protocol: dict, lock: list[str], reps: list[dict[int, dict]],
                     shapes: dict[int, dict], client_cpu: dict[int, list[float]],
                     fills: dict[int, dict] | None = None,
@@ -1522,8 +1520,7 @@ def build_aggregate(args, protocol: dict, lock: list[str], reps: list[dict[int, 
                     ) -> tuple[list[str], list[str]]:
     """Assemble the aggregate report, returning its lines and the warnings to echo."""
     harness = protocol["harness"]
-    # A protocol may re-key its rows on a different axis than its harness normally uses, so it
-    # can override the column label; latency_longctx sweeps prompt length at fixed concurrency.
+    # A protocol may re-key rows onto another axis, so it can override the column label.
     label = protocol.get("level_label", LEVEL_LABEL[harness])
     levels = sorted({level for rep in reps for level in rep})
 
@@ -1597,14 +1594,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-provenance", action="store_true",
                         help="skip server-side provenance capture. The result then carries no "
                              "evidence of NCCL transport, KV sizing or GPU topology.")
-    # Defaults to whatever kubectl is pointed at, resolved in main(). A hardcoded cluster name
-    # here once sent every provenance capture at a cluster the run had nothing to do with, and
-    # the failure only surfaced as a line at the bottom of the results file.
+    # Defaults to whatever kubectl points at, since a hardcoded cluster once misdirected capture.
     parser.add_argument("--k8s-context", default=None,
                         help="context used to capture server provenance. Defaults to the "
                              "current kubectl context.")
-    # No default. A personal namespace hardcoded here pointed pod discovery at a namespace the
-    # run had nothing to do with, and the only symptom was a missing provenance block.
+    # No default, since a hardcoded namespace once pointed discovery at an unrelated one.
     parser.add_argument("--namespace", default=None,
                         help="namespace used for pod discovery and provenance capture only. "
                              "Required unless --no-provenance is given.")
@@ -1655,8 +1649,7 @@ def parse_args() -> argparse.Namespace:
                              "Batch and summarisation workloads are usually far looser.")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    # Checked here rather than where provenance is captured, which happens after the sweep: a
-    # missing namespace must not surface only once the GPU time has already been spent.
+    # Checked before the sweep, so a missing namespace cannot surface after the GPU time is spent.
     if not args.namespace and not args.no_provenance:
         parser.error("--namespace is required to capture server provenance. Pass the namespace "
                      "the server is running in, or --no-provenance to record the result without "
@@ -1686,10 +1679,7 @@ def output_stem(args, protocol: dict, env: dict | None = None) -> str:
         parts.append(args.profile)
     if protocol["harness"] == "arrival_rate":
         parts.append("openloop")
-        # An overridden latency target changes the answer the report gives, so it is part of a
-        # result's identity for the same reason the profile is. Appended only when it differs
-        # from the protocol's shipped value, so runs at the defaults keep the filenames they
-        # have always had.
+        # An overridden target is part of a result's identity, so it joins the stem only when it differs.
         shipped, actual = latency_targets(protocol["env"]), latency_targets(env)
         for label, was, now in (("ttft", shipped[0], actual[0]),
                                 ("tpot", shipped[1], actual[1])):
@@ -1728,7 +1718,7 @@ def print_transport_remedy(args, rep_number: int, total_reps: int) -> None:
         forwarded.append(f"--tokenizer {args.tokenizer}")
     if args.out_dir:
         forwarded.append(f"--out-dir {args.out_dir}")
-    print("    python3 app/bench/src/main.py launch \\")
+    print("    eks-bench measure \\")
     print(f"        --context {args.k8s_context} --namespace {args.namespace} "
           f"--service <SERVICE> \\")
     for index, chunk in enumerate(_chunk(forwarded, 3)):
@@ -1758,30 +1748,24 @@ def main() -> int:
     """Run the selected protocol for the requested number of reps and write the results."""
     args = parse_args()
     protocol = config.PROTOCOLS[args.protocol]
-    # Resolved before anything reads args.profile, so the env, the protocol lock and the
-    # output filename all agree on which profile the run actually served.
+    # Resolved before anything reads it, so env, lock and filename agree on the profile served.
     args.profile = resolve_profile(args, protocol)
     profile = load_profile_doc(args.profile)
     out_dir = Path(args.out_dir)
-    # LoadGen's own logs go to a scratch directory outside the results tree, which holds
-    # exactly one file per run.
+    # LoadGen's logs go to scratch, outside the results tree that holds one file per run.
     scratch = Path(tempfile.mkdtemp(prefix="bench-scratch-"))
-    # Resolved before the stem, because an overridden latency target is part of a result's
-    # identity and so belongs in its filename.
+    # Resolved before the stem, because an overridden latency target belongs in the filename.
     env = build_env(args, protocol, profile)
     stem = output_stem(args, protocol, env)
 
-    # Record this tokenizer's input sizes before the lock is built, so the lock reports measured
-    # numbers on a first run instead of nominal ones. Only when --tokenizer was given, which is the
-    # user stating which tokenizer the served model uses; nothing is inferred.
+    # Recorded before the lock so it reports measured sizes, and only when --tokenizer was given.
     if args.tokenizer and args.profile:
         print(f"  {verify_profiles.ensure_counts(args.tokenizer)}")
 
     lock = build_lock(args, protocol, profile, env)
     print("\n".join(lock))
 
-    # A throughput sweep is non-streaming, so TTFT/TPOT/ITL need a second streaming pass.
-    # Reported as its own table beneath the throughput one, never folded into it.
+    # A throughput sweep is non-streaming, so TTFT/TPOT/ITL come from a second pass in its own table.
     want_latency = protocol["harness"] == "throughput" and not args.no_latency
 
     if args.dry_run:
@@ -1800,8 +1784,7 @@ def main() -> int:
         "NOT publishable" if loopback else "direct to Service over cluster DNS"))
 
     preflight(args.endpoint, args.model_id)
-    # Recorded in every rep file, so a result can always be traced to whether its server was
-    # verified. An unverified run must be identifiable as such after the fact.
+    # Recorded in every rep file, so an unverified run stays identifiable after the fact.
     lock.append(f"  accuracy gate : {run_accuracy_gate(args)}")
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1814,11 +1797,7 @@ def main() -> int:
     client_cpu: dict[int, list[float]] = {}
     for rep_number in range(1, args.reps + 1):
         print(f"\n=== rep {rep_number}/{args.reps} — {args.protocol} / {args.config} ===")
-        # Re-check the server before every rep, not just before the first. A run is hours
-        # long and the server can disappear inside it: in one run the deployment was deleted
-        # during rep 3, and with preflight running only once the suite discovered it by
-        # accumulating failures for 50 minutes. Reaching the endpoint is one request, so
-        # there is no reason to assume it is still there.
+        # Re-check before every rep, since a server can disappear inside an hours-long run.
         if rep_number > 1 and not server_alive(args.endpoint, args.model_id):
             print(f"  !! server no longer serving {args.model_id!r} at rep {rep_number}. "
                   f"Stopping and aggregating the {rep_number - 1} completed rep(s); a rep "
@@ -1834,9 +1813,7 @@ def main() -> int:
         if want_latency:
             latency_per_rep.append(run_latency_companion(protocol, env, rep))
 
-        # No per-rep file. A run produces exactly ONE results file; per-rep numbers appear in
-        # its raw-values table, which is the reason anyone opened a rep file. The raw harness
-        # output is only echoed when a rep failed to parse, where it is the sole diagnostic.
+        # One results file per run; per-rep numbers live in its raw-values table, not in separate files.
         if not rep.rows:
             print(f"  !! rep {rep_number} produced no parsable summary rows. "
                   f"Harness output follows:")
@@ -1848,14 +1825,12 @@ def main() -> int:
         if degraded:
             print(f"  !! rep {rep_number} EXCLUDED: levels {degraded} below "
                   f"{config.MIN_LEVEL_SUCCESS:.0%} request success")
-        # Stop after the first transport-broken rep. Continuing measures the same broken
-        # connection: one run spent two further hours producing two dead reps.
+        # Stop after the first transport-broken rep, since continuing measures the same dead connection.
         if any(rep.success[level]["transport"] for level in degraded):
             print_transport_remedy(args, rep_number, args.reps)
             break
 
-    # A rep that lost requests is dropped rather than allowed to contribute percentiles
-    # computed over the survivors. Recorded, not silent: the aggregate names which and why.
+    # A rep that lost requests is dropped and named in the aggregate rather than silently included.
     excluded = [n for n, success in enumerate(success_per_rep, start=1)
                 if degraded_levels(success)]
     good = [rows for n, rows in enumerate(per_rep, start=1)
@@ -1869,21 +1844,11 @@ def main() -> int:
                                       [rows for rows in latency_per_rep if rows],
                                       success_per_rep, excluded,
                                       targets=latency_targets(env))
-    # Provenance is a section of the one results file, not a second file: on its own it was 73
-    # lines of duplicated log output, and separating it let a result be read without its
-    # verification.
+    # Provenance is a section of the one results file, so a result cannot be read without it.
     lines += provenance_lines(args)
 
     results_path = out_dir / f"{stem}.txt"
-    # A result file is evidence, so never overwrite one. Two runs can share a stem and still be
-    # different measurements: a changed query floor, a new harness revision, or simply a rerun
-    # hours later. A second open-loop run once silently replaced the first, leaving the only
-    # surviving copy of the original in a launcher log. Refusing to write would be worse,
-    # because it would discard the run that just finished, so the older file is moved aside.
-    if results_path.exists():
-        superseded = out_dir / f"{stem}.superseded-{utc_stamp('%Y%m%dT%H%M%SZ')}.txt"
-        results_path.rename(superseded)
-        print(f"\nprevious result moved aside -> {superseded}")
+    preserve_existing(results_path)
     results_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"\nresults -> {results_path}")
     for warning in warnings:

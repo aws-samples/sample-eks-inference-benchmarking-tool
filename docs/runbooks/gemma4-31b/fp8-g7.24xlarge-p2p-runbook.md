@@ -79,13 +79,13 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 7. Prove this recipe passes the flags it claims.
 
    ```bash
-   python3 app/bench/src/main.py validate-manifests gemma4-31b/fp8-g7.24xlarge-p2p.yaml
+   eks-bench validate-manifests gemma4-31b/fp8-g7.24xlarge-p2p.yaml
    ```
 
 8. Generate the accuracy gate (.JSON) required for the next step.
 
    ```bash
-   python3 app/bench/src/main.py launch --capture-accuracy-reference \
+   eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service vllm-g7-tp4-p2p \
        --mode fingerprint \
        --model-tag gemma4-31b --config p2p-pix \
@@ -96,7 +96,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 9. Benchmark in-cluster. Change --config to match the arm: p2p-pix, p2p-phb, p2p-shm.
 
    ```bash
-   python3 app/bench/src/main.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service vllm-g7-tp4-p2p \
        --protocol corpus --profile legacy_corpus \
        --instance g7.24xlarge --model-tag gemma4-31b \

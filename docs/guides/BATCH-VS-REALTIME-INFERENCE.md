@@ -47,12 +47,12 @@ Closed-loop concurrency, open-loop arrival rate, context length, and trace time 
 Use the public CLI for operator commands:
 
 ```text
-python3 app/cli.py launch --help
-python3 app/cli.py suite --help
-python3 app/cli.py validate-manifests <model>/<recipe>.yaml
+eks-bench measure --help
+eks-bench measure-local --help
+eks-bench validate-manifests <model>/<recipe>.yaml
 ```
 
-`python3 app/cli.py launch ... --protocol <name>` is the normal in-cluster path for latency claims; `suite` is useful when the endpoint and provenance path are already available. The CLI dispatches to implementation harnesses such as `throughput.py`, `latency.py`, `arrival_rate.py`, and `aiperf_harness.py`. Those names are referenced below to explain metric semantics; the CLI is the supported entry point.
+`eks-bench measure ... --protocol <name>` is the normal in-cluster path for latency claims; `measure-local` is useful when the endpoint and provenance path are already available. The CLI dispatches to implementation harnesses such as `throughput.py`, `latency.py`, `arrival_rate.py`, and `aiperf_harness.py`. Those names are referenced below to explain metric semantics; the CLI is the supported entry point.
 
 ## Prompt length and aggregate prefill pressure
 
@@ -157,9 +157,9 @@ Per-request logging can add overhead and jitter at high request rates. Preserve 
 
 ## From a serving recipe to a real-time configuration
 
-1. **Select the current recipe and image.** Read its manifest and catalog entry, then run `python3 app/cli.py validate-manifests <model>/<recipe>.yaml`.
+1. **Select the current recipe and image.** Read its manifest and catalog entry, then run `eks-bench validate-manifests <model>/<recipe>.yaml`.
 2. **Define the service objective.** Pin the prompt profile or trace, output budget, arrival pattern, TTFT/TPOT percentiles, minimum success rate, required achieved rate, and capacity headroom.
-3. **Establish an accuracy-gated baseline.** Run in-cluster with `python3 app/cli.py launch ...` and preserve the protocol lock and provenance.
+3. **Establish an accuracy-gated baseline.** Run in-cluster with `eks-bench measure ...` and preserve the protocol lock and provenance.
 4. **Measure the closed-loop latency curve.** Use `latency` for a representative profile; use `latency_longctx` or `latency_sharedprefix` only for their specialized questions.
 5. **Change one serving variable at a time.** Scheduling, caching, precision, backend, and parallelism changes can interact, so isolate them before combining winners.
 6. **Verify sustainable arrivals.** Run `server_qps` to find the highest offered rate that meets latency, success, achieved-rate, and certification requirements.

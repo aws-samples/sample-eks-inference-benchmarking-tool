@@ -81,7 +81,7 @@ This recipe uses a custom vLLM image and carries a placeholder ECR account and r
 6. Generate the accuracy gate (.JSON) required for the next step.
 
    ```bash
-   python3 app/cli.py launch --capture-accuracy-reference \
+   eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service kimi-k3-b300 \
        --mode fingerprint \
        --model-tag kimi-k3 --config baseline \
@@ -93,7 +93,7 @@ This recipe uses a custom vLLM image and carries a placeholder ECR account and r
 7. Dry-run the exact in-cluster benchmark.
 
    ```bash
-   python3 app/cli.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service kimi-k3-b300 \
        --protocol corpus --profile legacy_corpus \
        --instance p6-b300.48xlarge --model-tag kimi-k3 \
@@ -108,7 +108,7 @@ This recipe uses a custom vLLM image and carries a placeholder ECR account and r
 8. Run the identical benchmark without `--dry-run`.
 
    ```bash
-   python3 app/cli.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service kimi-k3-b300 \
        --protocol corpus --profile legacy_corpus \
        --instance p6-b300.48xlarge --model-tag kimi-k3 \

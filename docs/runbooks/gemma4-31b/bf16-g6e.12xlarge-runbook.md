@@ -72,7 +72,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 6. Generate the accuracy gate (.JSON) required for the next step.
 
    ```bash
-   python3 app/cli.py launch --capture-accuracy-reference \
+   eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service gemma4-31b-vllm-g6e-bf16 \
        --mode fingerprint \
        --model-tag gemma4-31b --config bf16 \
@@ -83,7 +83,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 7. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
 
    ```bash
-   python3 app/cli.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service gemma4-31b-vllm-g6e-bf16 \
        --protocol corpus --profile legacy_corpus \
        --instance g6e.12xlarge --model-tag gemma4-31b \
@@ -97,7 +97,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 8. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
 
    ```bash
-   python3 app/cli.py launch \
+   eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service gemma4-31b-vllm-g6e-bf16 \
        --protocol corpus --profile legacy_corpus \
        --instance g6e.12xlarge --model-tag gemma4-31b \

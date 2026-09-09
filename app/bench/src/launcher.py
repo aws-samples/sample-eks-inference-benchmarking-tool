@@ -1,27 +1,13 @@
 #!/usr/bin/env python3
-"""Run the benchmark suite IN-CLUSTER, against the vLLM Service over cluster DNS.
-
-This is the default path for any figure that reports TTFT. Measured through a kubectl
-port-forward, first byte on a fresh connection was 276 ms against 90 ms on a warm one; the
-open-loop harness opens a connection per arrival, so roughly 185 ms of tunnel setup lands in
-every TTFT sample — most of a 500 ms SLA budget. Reaching the Service directly removes that,
-and removes the port-forward as a failure mode: it previously invalidated two reps mid-run.
-
-TPOT and tokens/sec are not materially affected by a tunnel. TTFT is.
-
-The suite runs inside the Job rather than only a harness, because the suite owns reps,
-medians, spread flags, the protocol lock and the accuracy gate. That also means the companion
-streaming-latency pass runs in-cluster automatically, since it runs inside the suite.
-
-Everything this does not recognize is forwarded verbatim to `main.py suite`, so protocol,
-profile and gate flags need no duplicate definition here.
-
-    python3 app/bench/src/main.py launch \\
-        --context <your-cluster-name> --namespace <your-namespace> \\
-        --service glm-52-b300-nvfp4 \\
-        --protocol corpus --instance p6-b300.48xlarge --config nvfp4 \\
-        --model-tag glm-5.2 --quant nvfp4 --model-id glm-5.2-nvfp4 --reps 3
-"""
+"""Run the benchmark suite in-cluster against the vLLM Service over cluster DNS, which is the required
+path for any figure that reports TTFT. Through a port-forward, first byte on a fresh connection
+measured 276 ms against 90 ms on a warm one, and the open-loop harness opens a connection per
+arrival, so roughly 185 ms of tunnel setup lands in every TTFT sample, most of a 500 ms SLA budget;
+TPOT and tokens per second are not materially affected, but TTFT is. The Job runs the suite rather
+than a bare harness because the suite owns reps, medians, spread flags, the protocol lock and the
+accuracy gate, which also means the companion streaming-latency pass runs in-cluster automatically.
+Anything this does not recognise is forwarded verbatim to main.py suite, so protocol, profile and
+gate flags need no duplicate definition here."""
 from __future__ import annotations
 
 import argparse
@@ -38,24 +24,16 @@ import config
 import verify_profiles
 from stats import shell_result, utc_stamp
 
-# Job manifest, templated by this module. Five placeholders: the suite's own flags travel as
-# one string rather than one env var each, so adding a suite flag needs no manifest change.
+# Job manifest templated here, with the suite's flags travelling as one string not one env var each.
 JOB_TEMPLATE = config.PROJECT_ROOT / "app" / "bench" / "suite-job.yaml"
 
-# Only what the suite and the accuracy gate read. Explicit so the payload cannot silently grow
-# past the ConfigMap limit as the repo does.
-#
-# docs/prompt_tokens is included because the protocol lock resolves the recorded wire input size
-# from it. Omitting it made every in-cluster lock read "wire in: NOT RECORDED" while the counts
-# sat on disk locally — the run was fine, but its own provenance was missing.
+# Only what the suite and gate read, listed so the payload cannot silently outgrow the ConfigMap.
 PAYLOAD_PATHS = ("app/bench", "docs/accuracy", "docs/prompt_tokens")
 
-# ConfigMap objects cap at 1 MiB. Refuse below that, since the failure at apply time is
-# obscure and happens after the pack has already succeeded.
+# ConfigMap objects cap at 1 MiB, so refuse below that rather than fail obscurely at apply time.
 PAYLOAD_LIMIT_B = 900_000
 
-# Result files come back between these markers in the Job's stdout, so nothing depends on the
-# pod surviving the run.
+# Results come back between these markers in stdout, so nothing depends on the pod surviving.
 RESULT_BLOCK = re.compile(
     r"^===== BEGIN RESULT FILE: (.+?) =====$(.*?)^===== END RESULT FILE: \1 =====$",
     re.M | re.S)
@@ -255,6 +233,7 @@ def extract_results(log: str, out_dir: Path) -> list[Path]:
     A name beginning `docs/accuracy/` is an accuracy reference and belongs in the repo, next to
     the others the gate reads. Everything else is a result and goes to --out-dir.
     """
+    import suite
     written = []
     for match in RESULT_BLOCK.finditer(log):
         name = match.group(1).strip()
@@ -263,6 +242,10 @@ def extract_results(log: str, out_dir: Path) -> list[Path]:
         else:
             destination = out_dir / name
         destination.parent.mkdir(parents=True, exist_ok=True)
+        # The suite's own never-overwrite guard runs against the Job's empty /work/out, where a
+        # collision cannot happen, so the in-cluster path needs it applied here instead.
+        if not name.startswith("docs/accuracy/"):
+            suite.preserve_existing(destination)
         destination.write_text(match.group(2).lstrip("\n"), encoding="utf-8")
         print(f"  wrote {destination}")
         written.append(destination)
@@ -320,9 +303,9 @@ def cleanup(context: str, namespace: str, job: str, configmap: str, keep: bool,
     A run whose runner exited non-zero is kept for the same reason, and the file count alone
     does not catch it. Every run echoes the accuracy reference files, so the extractor writes
     several of them even when the benchmark never started, and the count never reaches zero.
-    A preflight failure was therefore once cleaned up on the strength of five round-tripped
-    references, and the pod log holding the actual reason had to be reproduced by launching
-    the run a second time with --keep-job.
+    On 2026-08-13 a preflight failure was therefore cleaned up on the strength of five
+    round-tripped references, and the pod log holding the actual reason had to be reproduced
+    by launching the run a second time with --keep-job.
     """
     if extracted == 0 or runner_exit != 0:
         why = ("no result files were extracted" if extracted == 0
@@ -352,9 +335,7 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
         prog="main.py launch", description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--context", required=True, help="kubectl context")
-    # No default. Unlike the suite's, this one is needed on every path: it builds the cluster-DNS
-    # endpoint, places the Job, and finds the Service. Guessing `default` here would look up a
-    # Service in a namespace the run has nothing to do with.
+    # No default, since this builds the endpoint, places the Job and finds the Service on every path.
     parser.add_argument("--namespace", required=True,
                         help="namespace holding the vLLM Service; the runner Job is created here "
                              "too")
@@ -379,10 +360,7 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--dry-run", action="store_true",
                         help="pack and render, create nothing. Needs no cluster access.")
     args, forwarded = parser.parse_known_args()
-    # argparse's `required` is satisfied by an empty string, and the documented commands pass these
-    # from the environment: an unexported NAMESPACE arrives as `--namespace ""` rather than as a
-    # missing flag. Left unchecked that builds `http://svc..svc.cluster.local` and creates the Job
-    # in whatever namespace the context defaults to.
+    # argparse's required accepts an empty string, and an unexported variable arrives as exactly that.
     for flag in ("context", "namespace", "service"):
         if not getattr(args, flag).strip():
             parser.error(f"--{flag} is empty. It is probably an unset environment variable — "
@@ -402,15 +380,12 @@ def main() -> int:
 
     revision = harness_revision(repo)
 
-    # The Job cannot capture provenance: no kubectl in the image, no credentials. Tell the suite
-    # to skip it and leave its placeholder, then fill that in from here afterwards. Honour an
-    # explicit --no-provenance by not capturing at all.
+    # The Job has no kubectl, so it skips provenance and leaves a placeholder filled in from here.
     capturing = args.capture_accuracy_reference
     user_declined_provenance = "--no-provenance" in forwarded
     pod_hint = forwarded[forwarded.index("--pod") + 1] if "--pod" in forwarded else None
     if capturing:
-        # accuracy.py knows nothing of provenance or --out-dir; it writes the reference into
-        # the repo tree, which the Job returns through the same markers as a result file.
+        # accuracy.py writes the reference into the repo tree, returned through the same stdout markers.
         in_job_args = [*forwarded, "--write-reference"]
         suite_args = suite_args_string(in_job_args, endpoint, out_dir=False)
     else:
@@ -427,9 +402,7 @@ def main() -> int:
     if revision.endswith("-dirty"):
         print("  WARNING: uncommitted harness changes; results record a dirty revision")
 
-    # Record token counts here, before packing, rather than in the Job. The Job runs on a stock
-    # python image with aiohttp only and no network egress to Hugging Face, so the measurement has
-    # to happen on this side to reach the payload at all.
+    # Counted before packing, since the Job image has no route to Hugging Face to measure it itself.
     tokenizer = forwarded[forwarded.index("--tokenizer") + 1] if "--tokenizer" in forwarded \
         else None
     if tokenizer:
@@ -480,8 +453,7 @@ def main() -> int:
         print("  WARNING: no result files in the Job log. The run likely failed; inspect the")
         print("           output above before treating this as a measurement.")
 
-    # After the Job has exited, so this cannot influence the measurement, and while the serving
-    # pod is still up — cleanup below removes the runner Job, never the server.
+    # After the Job exits so it cannot influence the measurement, and while the server is still up.
     if capturing:
         print("  accuracy reference captured; run the benchmark as a separate launch")
     elif written and not user_declined_provenance:

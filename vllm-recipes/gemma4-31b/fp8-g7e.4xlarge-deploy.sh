@@ -33,5 +33,5 @@ kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \
 
 # Validate the serving manifest.
 echo "==> Validating the Gemma serving manifest"
-python3 app/cli.py validate-manifests \
+eks-bench validate-manifests \
   gemma4-31b/fp8-g7e.4xlarge.yaml

@@ -1,45 +1,15 @@
-"""Closed-loop throughput harness backed by NVIDIA AIPerf, behind the suite's seam.
-
-Reads the same environment contract as `throughput.py`, translates it to one
-`aiperf profile` invocation per concurrency level, parses the typed JSON export
-(`profile_export_aiperf.json` — not stdout), and re-emits this repo's stdout contract
-so `suite.py`'s medians, spread flags and success-floor exclusion work unchanged.
-
-What maps where (verified against a captured aiperf 0.12.0 export, schema 1.4):
-
-  summary row      tokens_per_sec = output_token_throughput.avg (tokens/sec)
-                   req_per_sec    = request_throughput.avg (requests/sec)
-                   p50/p99        = request_latency.p50/.p99 (ms -> s)
-  TOKEN_SHAPE      usage_prompt_tokens .p50/.min/.max — SERVER-counted, because the
-                   run passes --use-server-token-count; client-side tokenizer counts
-                   never enter a results file
-  CONCURRENCY_FILL effective_concurrency .avg (achieved) and .max (peak). Same
-                   semantics as throughput.py: the underfilled verdict keys on PEAK
-                   below requested, not the time-average
-  REQUEST_SUCCESS  request_count.avg completed; error_summary entries counted as
-                   failures. AIPerf does not split transport from server failures,
-                   so ALL its errors are reported as server_failures and
-                   transport_failures is 0 — ok_fraction, which drives the suite's
-                   exclusion rule, is unaffected by the split
-
-Deliberate non-goals: this harness never hosts the canonical sweep (corpus comparability 
-and fill verification stay on throughput.py), and generated prompt modes are unsupported — 
-a pinned profile is required, so both clients always measure the identical committed workload.
-
-TRACE MODE (AIPERF_MODE=trace): replays a committed timestamped trace once, streaming,
-under aiperf's --fixed-schedule — arrivals come from the trace's timestamps and
-per-turn delays, not from a concurrency knob. This is the Phase 2 payoff: a workload
-shape (multi-turn agentic traffic, real arrival timing, KV-prefix structure) that the
-aiohttp harness structurally cannot express. It emits a `TRACE_ROW key=value` line
-(following arrival_rate's QPS_ROW precedent) keyed as pseudo-level 1, since a replay
-is one run, not a sweep. Streaming metrics (TTFT/ITL) here are aiperf's definitions —
-per latency calibration they are NOT interchangeable with latency.py's columns and
-only appear in protocols that never had latency.py history. TOKEN_SHAPE is deliberately 
-not emitted: a trace has per-record output budgets, not a scalar cap, and the shape 
-lives in the committed trace artifact. CONCURRENCY_FILL is likewise omitted — 
-fixed-schedule is open-loop, so requested-vs-achieved depth is not the integrity question; 
-request success is.
-"""
+"""Closed-loop throughput harness backed by NVIDIA AIPerf, sitting behind the suite's harness seam. It
+reads the same environment contract as throughput.py, translates it into one aiperf profile
+invocation per concurrency level, parses the typed JSON export rather than stdout, and re-emits
+this repo's stdout contract so the suite's medians, spread flags and success-floor exclusion work
+unchanged. Token counts come from the server because the run passes --use-server-token-count, and
+AIPerf does not separate transport from server failures, so all its errors are reported as server
+failures and transport_failures stays 0 without affecting the ok_fraction the exclusion rule keys
+on. A pinned prompt profile is required, since generated prompt modes are unsupported here. Setting
+AIPERF_MODE=trace replays a committed timestamped trace once under aiperf's fixed schedule, taking
+arrivals from the trace rather than a concurrency knob and emitting a single TRACE_ROW line, whose
+streaming metrics are AIPerf's own definitions and are not interchangeable with latency.py's
+columns."""
 from __future__ import annotations
 
 import json
@@ -55,15 +25,10 @@ import client
 import config
 from throughput import requests_for_level
 
-# The tokenizer AIPerf's dataset manager insists on loading even with server-side
-# token counting. It never influences a recorded number (all counts are server usage);
-# gpt2 is small and public, so a run does not need model-specific HF access.
+# A tokenizer AIPerf insists on loading; it never influences a count, all of which are server usage.
 AIPERF_TOKENIZER = os.environ.get("AIPERF_TOKENIZER", "gpt2")
 AIPERF_BIN = os.environ.get("AIPERF_BIN", "aiperf")
-# Pinned rather than left to aiperf's formula, which sizes workers from HOST CPU count:
-# a 192-core cluster node and a laptop would run different client configurations and the
-# recorded argv would depend on where the harness happened to run. 16 matches the suite
-# Job's CPU limit. aiperf still takes min(concurrency, this), so low levels are unaffected.
+# Pinned rather than sized from host CPU count, so the recorded argv does not depend on where it ran.
 AIPERF_WORKERS_MAX = int(os.environ.get("AIPERF_WORKERS_MAX", "16"))
 
 
@@ -81,10 +46,7 @@ def build_argv(level: int, requests: int, dataset: Path, artifacts: Path) -> lis
         "--input-file", str(dataset),
         "--custom-dataset-type", "single_turn",
         "--concurrency", str(level),
-        # Scaled with the level by the SAME rule as throughput.py (imported, not copied):
-        # a flat count below the level cannot fill it, and a calibration run showed exactly
-        # that — c>=128 under-filled at 100 requests while the baseline
-        # ran 256/512/1024. Identical scaling is what makes the two clients comparable.
+        # Scaled by throughput.py's imported rule, since a flat count below the level cannot fill it.
         "--request-count", str(requests),
         "--workers-max", str(AIPERF_WORKERS_MAX),
         # aiperf 0.12.0 validates warmup-request-count > 0, so zero means omit the flag.
@@ -193,9 +155,7 @@ def build_trace_argv(trace: Path, trace_type: str, artifacts: Path) -> list[str]
         "--input-file", str(trace),
         "--custom-dataset-type", trace_type,
         "--streaming",
-        # Timestamps and per-turn delays in the trace drive arrivals; this is the whole
-        # point of trace replay, so the flag is explicit rather than left to aiperf's
-        # auto-switch for timestamped datasets.
+        # Trace timestamps drive arrivals, so the flag is explicit rather than left to aiperf's auto-switch.
         "--fixed-schedule",
         "--workers-max", str(AIPERF_WORKERS_MAX),
         "--random-seed", str(config.PROMPT_SEED),
@@ -251,7 +211,7 @@ def trace_main() -> int:
     trace_type = os.environ.get("TRACE_TYPE", "mooncake_trace")
     if shutil.which(AIPERF_BIN) is None:
         sys.exit(f"aiperf binary not found ({AIPERF_BIN!r}). "
-                 f"pip install -r app/bench/requirements-aiperf.txt, or set AIPERF_BIN.")
+                 f"pip install -e '.[aiperf]', or set AIPERF_BIN.")
     scratch = Path(tempfile.mkdtemp(prefix="aiperf-trace-"))
     print(f"aiperf trace replay: trace={trace_env} type={trace_type} "
           f"seed={config.PROMPT_SEED} tokenizer={AIPERF_TOKENIZER} (counting: server)")
@@ -282,7 +242,7 @@ def main() -> int:
                  "not supported, so both clients always measure the same pinned workload.")
     if shutil.which(AIPERF_BIN) is None:
         sys.exit(f"aiperf binary not found ({AIPERF_BIN!r}). "
-                 f"pip install -r app/bench/requirements-aiperf.txt, or set AIPERF_BIN.")
+                 f"pip install -e '.[aiperf]', or set AIPERF_BIN.")
     levels = [int(x) for x in os.environ["CONCURRENCY_SWEEP"].split(",") if x.strip()]
     output_cap = config.THROUGHPUT_MAX_TOKENS
     scratch = Path(tempfile.mkdtemp(prefix="aiperf-"))

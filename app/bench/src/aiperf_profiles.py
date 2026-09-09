@@ -1,22 +1,9 @@
-"""Convert pinned prompt profiles to AIPerf custom-dataset JSONL.
-
-One committed artifact drives both clients: the same profile that feeds `workload.py`
-is rendered to the JSONL that `aiperf profile --input-file ... --custom-dataset-type
-single_turn` consumes, one `{"text": ...}` object per line (schema confirmed against
-aiperf 0.12.0's SingleTurnDatasetLoader).
-
-The conversion cycles the prompt pool in file order to exactly `num_requests` lines,
-mirroring `workload.build_prompts` (`pool[i % len(pool)]`), so both clients send the
-same prompts in the same proportions. AIPerf is NOT given the pool to sample from,
-because its sampling order would differ from the aiohttp harness's cycling and the two
-runs would no longer be measuring the same workload.
-
-Every line carries `output_length`, which aiperf's SingleTurnDatasetLoader maps to the
-turn's max_tokens and sends as `max_completion_tokens` (loader/single_turn.py:142 in
-0.12.0). Without it aiperf sends NO output cap at all and the server generates to EOS:
-a calibration run decoded ~1,900 tokens per request against the profile's 150 budget,
-and its numbers were not comparable to throughput.py's on any level.
-"""
+"""Convert pinned prompt profiles to the AIPerf custom-dataset JSONL that aiperf consumes, one text
+object per line, so a single committed artifact drives both clients. The conversion cycles the
+prompt pool in file order to exactly num_requests lines, mirroring workload.build_prompts, rather
+than handing AIPerf the pool to sample from, because a different sampling order would stop the two
+clients from measuring the same workload. Every line carries output_length, which AIPerf maps to
+the turn's max_tokens; without it AIPerf sends no output cap and the server generates to EOS."""
 from __future__ import annotations
 
 import json

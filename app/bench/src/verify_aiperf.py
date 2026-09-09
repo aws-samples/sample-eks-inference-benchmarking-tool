@@ -1,37 +1,11 @@
-"""Regression checks for the aiperf adapter, runnable on a laptop without a GPU.
-
-Every check here exists because its absence let a bug ship. A calibration run was
-invalid for two adapter reasons — no output cap sent, flat request counts under-filling
-high levels — and the mock used for local verification at the time could not catch the
-first because it forgave a missing cap. These checks encode the failure modes so they
-cannot silently recur:
-
-  static  (no aiperf needed)
-    converter        every dataset line carries the profile's prompt (cycled in
-                     workload.build_prompts order) and output_length; cap<=0 refused
-    request scaling  per-level counts obey the shared requests_for_level rule:
-                     never below the level, whole waves, never below NUM_REQUESTS
-    argv formation   scaled --request-count, pinned --workers-max, warmup omitted
-                     when zero, /v1 stripped from --url
-
-  wire  (needs the aiperf binary; SKIPPED with a notice when absent)
-    output cap       against mock_server.py, which generates ~2,000 tokens when a
-                     request arrives uncapped: output_per_request must equal the cap
-    stdout contract  the emitted table and provenance lines parse via suite.py's own
-                     regexes (parse_rows, parse_token_shape, parse_fill, parse_success)
-    broken run       with MOCK_FAIL_EVERY injecting HTTP 500s, the adapter must report
-                     failures and suite.degraded_levels must exclude the level — the
-                     "success-floor exclusion fires on a deliberately broken run"
-                     verification the integration plan requires for Phase 1
-
-Wire checks are skipped, not failed, when aiperf is not installed: the binary is a
-harness-specific extra (requirements-aiperf.txt), and a laptop that only touches the
-aiohttp harnesses should still be able to run the static checks.
-
-Usage:
-    python3 main.py verify-aiperf
-    AIPERF_BIN=/path/to/aiperf python3 main.py verify-aiperf
-"""
+"""Regression checks for the AIPerf adapter, runnable on a laptop without a GPU, each encoding a
+failure mode that shipped once. The static checks cover dataset conversion carrying the profile's
+prompts and output length, per-level request counts obeying the shared scaling rule, and argv
+formation. The wire checks need the aiperf binary and prove the output cap reaches the server
+against a mock that generates to EOS when uncapped, that the emitted table and provenance lines
+parse through the suite's own regexes, and that injected HTTP 500s make the suite exclude the
+level. Wire checks are skipped with a notice rather than failed when aiperf is absent, since it is
+a harness-specific extra."""
 from __future__ import annotations
 
 import json
@@ -46,8 +20,7 @@ import urllib.request
 from pathlib import Path
 
 CHECK_ENV = {
-    # Deterministic, laptop-sized run. Set BEFORE importing config, which freezes its
-    # environment at import time.
+    # Deterministic and laptop-sized, set before importing config, which freezes its environment.
     "PROMPT_PROFILE": "legacy_corpus",
     "NUM_REQUESTS": "12",
     "WARMUP_REQUESTS": "0",
@@ -209,7 +182,7 @@ def wire_checks() -> None:
             check("aiperf level completes against mock", False, row["detail"])
             return
         check("aiperf level completes against mock", True)
-        check("output capped at exactly 150 (the bug the calibration run shipped with)",
+        check("output capped at exactly 150 (the bug the 2026-08-10 run shipped with)",
               row["output_per_request"] == 150.0,
               f"output_per_request={row['output_per_request']}")
         check("request count scaled for the level",
@@ -237,9 +210,7 @@ def wire_checks() -> None:
     config.VLLM_API_URL = f"http://127.0.0.1:{port}/v1"
     mock = start_mock(port)
     try:
-        # A tiny timestamped trace: three requests, 100ms apart. Small on purpose —
-        # this checks the streaming/fixed-schedule wiring and the TRACE_ROW contract,
-        # not trace realism (the committed agentx artifact covers that statically).
+        # A tiny timestamped trace, checking the fixed-schedule wiring and TRACE_ROW contract not realism.
         trace = scratch / "tiny_trace.jsonl"
         trace.write_text("".join(
             json.dumps({"timestamp": i * 100, "input_length": 40,
@@ -271,8 +242,7 @@ def wire_checks() -> None:
     try:
         row = aiperf_harness.run_level(2, "legacy_corpus", 150, scratch)
         if "error" in row:
-            # aiperf treating a mostly-failing server as a fatal run is acceptable:
-            # either way the level produces no trustworthy numbers.
+            # aiperf treating a mostly-failing server as fatal is fine, since the level has no trustworthy numbers.
             check("broken run is not reported as healthy", True)
         else:
             ok_fraction = row["successful"] / max(row["total"], 1)
@@ -300,7 +270,7 @@ def main() -> int:
     aiperf_bin = os.environ.get("AIPERF_BIN", "aiperf")
     if shutil.which(aiperf_bin) is None:
         print(f"wire checks: SKIPPED — aiperf binary not found ({aiperf_bin!r}).\n"
-              f"  pip install -r app/bench/requirements-aiperf.txt (needs python "
+              f"  pip install -e '.[aiperf]' (needs python "
               f">=3.11,<3.14), or point AIPERF_BIN at an installed copy.")
     else:
         wire_checks()
