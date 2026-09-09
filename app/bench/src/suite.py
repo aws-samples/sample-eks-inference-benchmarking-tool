@@ -666,6 +666,43 @@ def _optional_float(value: str | None) -> float | None:
     return parsed if math.isfinite(parsed) else None
 
 
+def kv_capacity_math(block_size: int | None, gpu_blocks: int | None, cache_tokens: int | None,
+                     max_model_len: int, memory_bytes: int | None) -> list[tuple[str, str]]:
+    """
+    Spell out how the server's KV allocation becomes a concurrent-sequence count.
+
+    Every input is read from the server itself, so this replaces the runbooks' capacity estimate
+    with the allocation actually in force. The runbook arithmetic needs the model's head count and
+    layer depth and a guessed runtime reserve; this needs none of them, because the server has
+    already done the division.
+
+    Args:
+        block_size: Tokens per KV block, as the server reports it
+        gpu_blocks: KV blocks the server allocated on the GPU
+        cache_tokens: Total KV capacity in tokens
+        max_model_len: Context length the server serves, 0 when unknown
+        memory_bytes: KV pool size in bytes, when the server reports it
+
+    Returns:
+        (label, value) pairs to append to the provenance block, empty when nothing is derivable
+    """
+    rows = []
+    if block_size and gpu_blocks and cache_tokens:
+        rows.append(("KV capacity from", f"{gpu_blocks:,} blocks x {block_size} tokens/block "
+                                         f"= {cache_tokens:,} tokens"))
+    if cache_tokens and max_model_len:
+        rows.append(("KV full-ctx seqs", f"{cache_tokens:,} / {max_model_len:,} tokens per request "
+                                         f"= {cache_tokens / max_model_len:.1f} concurrent"))
+    if memory_bytes and cache_tokens:
+        per_token = memory_bytes / cache_tokens
+        row = f"{per_token / 1024:.3f} KiB/token measured"
+        if max_model_len:
+            row += (f"; {per_token * max_model_len / 1024 ** 3:.2f} GiB per "
+                    f"{max_model_len:,}-token sequence")
+        rows.append(("KV cost per token", row))
+    return rows
+
+
 def provenance_facts(logs: str, metrics: str, raw_pod: str,
                      topology: str) -> list[tuple[str, str]]:
     """Resolve vLLM 0.26 metrics/pod facts with v0.21+ log-compatible fallbacks."""
@@ -748,6 +785,9 @@ def provenance_facts(logs: str, metrics: str, raw_pod: str,
     facts += [("KV cache memory", cache_memory),
               ("KV cache size", cache_size),
               ("Max concurrency", max_concurrency)]
+    # Shown so a reader can check the capacity rather than recompute it from the runbook's estimate.
+    if not cache_ambiguous:
+        facts += kv_capacity_math(block_size, gpu_blocks, cache_tokens, max_model_len, memory_bytes)
     if prefix_enabled is not None:
         facts.append(("Prefix caching", "enabled" if prefix_enabled else "disabled"))
     if queries is not None or hits is not None:
