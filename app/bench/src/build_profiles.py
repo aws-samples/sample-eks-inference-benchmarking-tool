@@ -486,10 +486,19 @@ LEGACY_FIXED = [
 
 # Pool size falls as prompts grow, keeping each profile shippable inside a 1 MiB ConfigMap.
 SPECS = [
+    dict(name="chat_terse", input_tokens=80, output_tokens=30, n=32, kind="chat",
+         use_case="Short single-turn question answered in a sentence or two.",
+         rationale="Observed production shape for short-answer assistants: ~80 tokens in, "
+                   "25-30 out. The short output is the point. Fixed per-request cost "
+                   "amortises over 30 tokens rather than hundreds, so requests/sec is the "
+                   "figure to quote and tokens/sec understates what the server is doing. "
+                   "KV per request is ~110 tokens, far below any plausible pool, so "
+                   "concurrency is bounded by --max-num-seqs and compute, never by KV."),
     dict(name="chat_short", input_tokens=128, output_tokens=512, n=32, kind="chat",
          use_case="Single-turn question with no conversation history.",
-         rationale="Floor case for interactive chat. Prefill is negligible, so this "
-                   "isolates decode cost with a plausible prompt rather than a 41-token one."),
+         rationale="Short-input chat with a full-length answer. Prefill is negligible, so "
+                   "this isolates decode cost with a plausible prompt rather than a "
+                   "41-token one. For a shorter answer budget see chat_terse."),
     dict(name="chat_typical", input_tokens=512, output_tokens=1024, n=32, kind="chat",
          # Mutation tags are token-dense and shift with length, so this profile needs its own ratio.
          chars_per_token=4.84,
