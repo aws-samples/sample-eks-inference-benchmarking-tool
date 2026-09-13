@@ -28,8 +28,10 @@ KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, u
 
 Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
 
-- Everything in the [BF16 runbook's Before you begin](./bf16-g7.2xlarge-runbook.md#before-you-begin): the `g7.2xlarge` node group and the `nvidia-open-driver-healer` DaemonSet
-- A bound `fsx-pvc` claim. Unlike the BF16 recipes, these mount the claim rather than downloading into an `emptyDir`, because a quantized checkpoint has to outlive the Job that produced it
+- Create a `g7.2xlarge` node group in a subnet with free IPs; the AZ this instance's capacity lands in may have none by default, so check first
+- [Apply the `nvidia-open-driver-healer` DaemonSet](../../../k8s/examples/daemonset-nvidia-open-driver.yaml). The AL2023 NVIDIA AMI ships the closed kernel module, which Blackwell does not support, so without this the node advertises no GPU indefinitely rather than failing loudly
+- No RAID0 launch template is needed here, unlike the BF16 node group. That template exists so a weight-download `emptyDir` lands on the NVMe instance store; these recipes read the checkpoint from the claim and download nothing
+- A bound `fsx-pvc` claim. These recipes mount the claim rather than downloading into an `emptyDir`, because a quantized checkpoint has to outlive the Job that produced it
 
   ```bash
   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
@@ -40,7 +42,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
 ## Quantize the checkpoint
 
-Apply [`model-quantize/gemma4-e4b-fp8.yaml`](../../../model-quantize/gemma4-e4b-fp8.yaml), which carries the E4B-specific values; [`model-quantize/README.md`](../../../model-quantize/README.md) covers the prerequisites and the quantizer-image caveat. The Job takes roughly five minutes on one g7.2xlarge; the GPU must be free, so tear down any server on it first.
+The Job takes roughly five minutes on one g7.2xlarge. The GPU must be free, so tear down any server on it first.
 
 ```bash
 kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-quantize/gemma4-e4b-fp8.yaml
@@ -48,17 +50,38 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
     --for=condition=complete job/quantize-gemma4-e4b-fp8 --timeout=30m
 ```
 
-Two values in that Job are worth knowing about. `MODEL_LOADER` must be `image_text_to_text`, because the default `causal_lm` auto-class cannot load this checkpoint. And the exclude patterns extend the vision set `k8s/examples/README.md` documents for a VLM: **the audio patterns are specific to E4B**, which carries an audio tower alongside the vision one, and the calibration prompts are text-only so neither tower would see calibration data.
+Two values in that Job are worth knowing about. `MODEL_LOADER` must be `image_text_to_text`, because the default `causal_lm` auto-class cannot load this checkpoint. And **the audio exclude patterns are specific to E4B**, which carries an audio tower alongside the vision one; the calibration prompts are text-only, so neither tower would see calibration data.
 
-Verify the result before serving it. A real export is roughly three quarters of the BF16 size and carries `hf_quant_config.json`; a checkpoint the same size as the source, or missing that file, is the invalid legacy export described in `app/quantize/src/quantize.py` and will emit garbage rather than failing.
+The Job also needs the `quantizer-src` ConfigMap, which overlays this repository's quantizer source onto the image. Create it before applying:
 
 ```bash
-# Expect ~11 GiB, hf_quant_config.json present, quant_algo FP8, kv_cache_quant_algo null.
-ls -la /models/quantized/gemma-4-E4B-it-fp8
-cat /models/quantized/gemma-4-E4B-it-fp8/hf_quant_config.json
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create configmap quantizer-src \
+    --from-file=app/quantize/src/quantize.py \
+    --from-file=app/quantize/src/config.py \
+    --from-file=app/quantize/src/fix_amax.py \
+    --from-file=app/quantize/src/verify_checkpoint.py
 ```
 
-Confirm from the Job log that the run used the intended path. All three of these must appear: one `Excluding from quantization` line per pattern, `calibration N/16 done` for each prompt, and `Exporting REAL FP8 checkpoint via export_hf_checkpoint`. A log containing `Renamed and scaled ..._amax` instead is the legacy path.
+That overlay is a workaround for an image built before the current quantizer source. `scripts/push-image.sh` builds the image from `app/quantize/src/`, so a freshly built image agrees with this repository by construction; drop the `src` volume and its mount once it does.
+
+### Why an unverified checkpoint is dangerous
+
+A checkpoint can carry a `quantization_config` announcing FP8 while its weights are still BF16. vLLM then reads BF16 bytes as FP8 and serves fluent-looking nonsense rather than refusing to start. Nothing upstream fails: the Job exits 0, the checkpoint lands on the claim, all four FP8 recipes inherit it, and an accuracy gate captured against the same bad checkpoint agrees with itself. Benchmark numbers can be published from it.
+
+Three routes produce one: `MODELOPT_REAL_EXPORT=0` selects the legacy export, which is invalid by design; `CALIBRATE=0` leaves the static `input_scale` tensors unpopulated; and an image older than `app/quantize/src/` may take the legacy path whatever this repository says.
+
+`quantize.py` now verifies its own output and exits non-zero rather than writing a checkpoint that does not match the requested format, so a Job that reached `condition=complete` has cleared that bar. Verify from outside as well when the checkpoint predates that check, or when the Job ran from an image not built from `app/quantize/src`, since a stale image runs its own verifier or none:
+
+```bash
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create configmap checkpoint-verifier \
+    --from-file=verify_checkpoint.py=app/quantize/src/verify_checkpoint.py
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-quantize/verify-checkpoint.yaml
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
+    --for=condition=complete job/verify-checkpoint --timeout=5m
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs job/verify-checkpoint
+```
+
+A failed Job means do not serve that path; the log names each problem. Expect roughly 11 GiB, three quarters of the BF16 size, with `hf_quant_config.json` recording `quant_algo: FP8` and `kv_cache_quant_algo: null`.
 
 ## Quickstart
 

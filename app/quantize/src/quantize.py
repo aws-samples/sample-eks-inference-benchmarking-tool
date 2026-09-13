@@ -17,6 +17,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import modelopt.torch.quantization as mtq
 
 import config
+import verify_checkpoint
 
 # FP8 E4M3 maximum magnitude, since modelopt stores an amax where vLLM expects amax over this.
 FP8_E4M3_MAX = 448.0
@@ -204,14 +205,52 @@ def rename_amax_keys(shard_path: str) -> None:
 #                               ENTRY POINT                                    #
 # ---------------------------------------------------------------------------- #
 
-def main() -> int:
-    """Quantize the configured model and export it for vLLM."""
+def print_settings() -> None:
+    """Announce the settings that decide which export path runs, before any work happens."""
     print(f"Starting quantization for {config.MODEL_ID} to {config.QUANTIZATION_FORMAT}")
     print(f"  REAL_EXPORT={config.MODELOPT_REAL_EXPORT}  CALIBRATE={config.CALIBRATE}  "
           f"CALIB_SAMPLES={config.CALIB_SAMPLES}")
     if not config.HF_TOKEN:
         print("WARNING: HUGGING_FACE_HUB_TOKEN is not set. Gated models will fail to download.")
 
+
+def export_checkpoint(model, tokenizer, output_path: str) -> None:
+    """Write the quantized model by whichever export path the configuration selects."""
+    if config.MODELOPT_REAL_EXPORT:
+        export_real_fp8(model, tokenizer, output_path)
+        return
+    export_legacy(model, tokenizer, output_path)
+    print("Legacy save complete (see export_legacy for why this checkpoint is invalid).")
+
+
+def exit_code_for(problems: list[str]) -> int:
+    """Turn verification problems into an exit code, so a bad export fails the Job.
+
+    Without this a checkpoint that vLLM will serve as garbage lands on a shared claim behind a
+    Job that exited 0, and the next reader inherits it. The legacy path fails here on purpose.
+    """
+    if not problems:
+        return 0
+    if config.ALLOW_INVALID_EXPORT:
+        print("\nALLOW_INVALID_EXPORT is set, so exiting 0 despite the problems above. "
+              "Do not benchmark this checkpoint.")
+        return 0
+    print("\nExport failed verification. The checkpoint is on disk for inspection but must "
+          "not be served. Set ALLOW_INVALID_EXPORT=1 only to reproduce the legacy export.")
+    return 1
+
+
+def verify_export(output_path: str) -> int:
+    """Verify the exported checkpoint and return the exit code it earns."""
+    problems, notes = verify_checkpoint.verify(
+        output_path, config.QUANTIZATION_FORMAT, config.QUANT_EXCLUDE_PATTERNS, config.CALIBRATE)
+    verify_checkpoint.report(output_path, problems, notes)
+    return exit_code_for(problems)
+
+
+def main() -> int:
+    """Quantize the configured model, export it for vLLM, and refuse to pass off a bad export."""
+    print_settings()
     tokenizer = load_tokenizer()
     model = load_model()
     forward_loop = build_forward_loop(tokenizer)
@@ -221,12 +260,8 @@ def main() -> int:
 
     output_path = config.quantized_model_path()
     os.makedirs(output_path, exist_ok=True)
-    if config.MODELOPT_REAL_EXPORT:
-        export_real_fp8(model, tokenizer, output_path)
-    else:
-        export_legacy(model, tokenizer, output_path)
-        print("Legacy save complete (see export_legacy for why this checkpoint is invalid).")
-    return 0
+    export_checkpoint(model, tokenizer, output_path)
+    return verify_export(output_path)
 
 
 if __name__ == "__main__":
