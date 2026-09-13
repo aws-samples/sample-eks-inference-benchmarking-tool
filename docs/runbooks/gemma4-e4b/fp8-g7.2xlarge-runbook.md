@@ -19,7 +19,7 @@ The FP8 checkpoint occupies 11.09 GiB against BF16's 14.89 GiB, a 25% reduction,
 | **Weight precision** | FP8 E4M3, static input scales | `hf_quant_config.json`, `quant_algo: FP8` |
 | **KV cache precision** | BF16, 16-bit | `kv_cache_quant_algo: null`; `KV_CACHE_DTYPE=auto` |
 | **Context length** | 8,192 | `MAX_MODEL_LEN`, model supports 131,072 |
-| **Memory fraction** | 0.90 | `GPU_MEM_UTIL` |
+| **Memory fraction** | 0.80 | `GPU_MEM_UTIL` |
 | **Max sequences** | 1,024 | `MAX_NUM_SEQS` |
 
 KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, unchanged from the BF16 recipe at 2 KiB on a sliding layer and 4 KiB on a full attention layer. FP8 weights do not shrink the cache; they shrink what the weights occupy, leaving more room for it. The reason to expect a gain here is decode bandwidth rather than concurrency: decode re-reads the weights every step, and FP8 cuts that by about a quarter.
@@ -218,7 +218,6 @@ The checkpoint on `fsx-pvc` survives, so a later run needs no requantization.
 
 - **`nvidia.com/gpu: 1`** g7.2xlarge = 1x Blackwell RTX PRO 4500, 32 GB (sm_120).
 
-- **`VLLM_ATTENTION_BACKEND=FLASHINFER` is inert.** vLLM 0.21.0 logs it as an unknown environment variable, so the backend is auto-selected. Retained for continuity with the other Gemma recipes.
 
 - **The quantizer image and the repo's source can disagree.** The image in this account produced a legacy, invalid checkpoint when driven with the current env vars, while the repo's committed `quantize.py` produced a correct one from the same image by overlaying `/app/src` with the tracked source. Confirm the three log markers listed under Quantize the checkpoint on every run rather than assuming the image is current, and rebuild it with `scripts/push-image.sh` when ECR push is available.
 
