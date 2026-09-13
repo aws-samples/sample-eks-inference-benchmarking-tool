@@ -218,7 +218,6 @@ The checkpoint on `fsx-pvc` survives, so a later run needs no requantization.
 
 - **`nvidia.com/gpu: 1`** g7.2xlarge = 1x Blackwell RTX PRO 4500, 32 GB (sm_120).
 
-
 - **The quantizer image and the repo's source can disagree.** The image in this account produced a legacy, invalid checkpoint when driven with the current env vars, while the repo's committed `quantize.py` produced a correct one from the same image by overlaying `/app/src` with the tracked source. Confirm the three log markers listed under Quantize the checkpoint on every run rather than assuming the image is current, and rebuild it with `scripts/push-image.sh` when ECR push is available.
 
 - **Quote `req_per_sec`, not `tokens_per_sec`, on this profile.** `tokens_per_sec` counts output tokens only, and `chat_terse` puts 96 of its 126 tokens on the input side. The BF16 runbook's note on reading that metric applies unchanged.
