@@ -23,7 +23,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: vllm
-          image: public.ecr.aws/deep-learning-containers/vllm:0.21.0-gpu-py312
+          image: vllm/vllm-openai:v0.29.0
           command:
             - bash
             - -c
@@ -40,6 +40,7 @@ spec:
                 --max-num-batched-tokens ${MAX_NUM_BATCHED_TOKENS} \
                 --stream-interval ${STREAM_INTERVAL} \
                 --scheduling-policy ${SCHEDULING_POLICY} \
+                --max-cudagraph-capture-size ${MAX_CUDAGRAPH} \
                 --async-scheduling \
                 --no-enable-prefix-caching \
                 --enable-chunked-prefill \
@@ -66,16 +67,18 @@ spec:
               value: "10"
             - name: SCHEDULING_POLICY
               value: "fcfs"
+            # Matches the canonical sweep's top level, so every measured batch size is
+            # graph-captured and nothing is captured above it.
+            - name: MAX_CUDAGRAPH
+              value: "512"
             - name: GPU_MEM_UTIL
-              value: "0.90"
+              value: "0.80"
             - name: INSTANCE_TYPE
               value: "g7.2xlarge"
             - name: HF_HOME
               value: "/models"
             - name: PYTHONUNBUFFERED
               value: "1"
-            - name: VLLM_ATTENTION_BACKEND
-              value: "FLASHINFER"
             - name: VLLM_LOGGING_LEVEL
               value: "WARNING"
           resources:
@@ -96,14 +99,11 @@ spec:
           volumeMounts:
             - { name: dshm, mountPath: /dev/shm }
             - { name: model-storage, mountPath: /models }
-            - { name: sitecustomize, mountPath: /usr/local/lib/python3.12/dist-packages/sitecustomize.py, subPath: sitecustomize.py }
       volumes:
         - name: dshm
           emptyDir: { medium: Memory }
         - name: model-storage
           persistentVolumeClaim: { claimName: fsx-pvc }
-        - name: sitecustomize
-          configMap: { name: vllm-sitecustomize }
       terminationGracePeriodSeconds: 120
 ---
 apiVersion: v1
