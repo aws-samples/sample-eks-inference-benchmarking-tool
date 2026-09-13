@@ -40,20 +40,15 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
 ## Quantize the checkpoint
 
-Follow [`k8s/examples/README.md`](../../../k8s/examples/README.md) for the general workflow, with the E4B-specific values below. The Job takes roughly five minutes on one g7.2xlarge; the GPU must be free, so tear down any server on it first.
+Apply [`model-quantize/gemma4-e4b-fp8.yaml`](../../../model-quantize/gemma4-e4b-fp8.yaml), which carries the E4B-specific values; [`model-quantize/README.md`](../../../model-quantize/README.md) covers the prerequisites and the quantizer-image caveat. The Job takes roughly five minutes on one g7.2xlarge; the GPU must be free, so tear down any server on it first.
 
-```yaml
-- name: MODEL_ID
-  value: "google/gemma-4-E4B-it"
-- name: QUANTIZATION_FORMAT
-  value: "fp8"
-- name: MODEL_LOADER
-  value: "image_text_to_text"
-- name: QUANT_EXCLUDE_PATTERNS
-  value: "*vision_tower*,*embed_vision*,*multi_modal_projector*,*vision*,*audio_tower*,*embed_audio*,*audio*,*lm_head*"
+```bash
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-quantize/gemma4-e4b-fp8.yaml
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
+    --for=condition=complete job/quantize-gemma4-e4b-fp8 --timeout=30m
 ```
 
-`MODEL_LOADER` must be `image_text_to_text`; the default `causal_lm` auto-class cannot load this checkpoint. The vision patterns are the set `k8s/examples/README.md` documents for a VLM. **The audio patterns are additional and specific to E4B**, which carries an audio tower alongside the vision one; the repo's documented set does not cover it, and the calibration prompts are text-only so neither tower would see calibration data.
+Two values in that Job are worth knowing about. `MODEL_LOADER` must be `image_text_to_text`, because the default `causal_lm` auto-class cannot load this checkpoint. And the exclude patterns extend the vision set `k8s/examples/README.md` documents for a VLM: **the audio patterns are specific to E4B**, which carries an audio tower alongside the vision one, and the calibration prompts are text-only so neither tower would see calibration data.
 
 Verify the result before serving it. A real export is roughly three quarters of the BF16 size and carries `hf_quant_config.json`; a checkpoint the same size as the source, or missing that file, is the invalid legacy export described in `app/quantize/src/quantize.py` and will emit garbage rather than failing.
 
