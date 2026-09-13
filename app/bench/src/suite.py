@@ -59,7 +59,9 @@ ROW_SUCCESS = re.compile(r"^REQUEST_SUCCESS\s+(.+)$")
 COLS_THROUGHPUT = ["tokens_per_sec", "req_per_sec", "p50_s", "p99_s"]
 COLS_LATENCY = ["ttft_p50_s", "ttft_p99_s", "tpot_p50_ms", "tpot_p99_ms",
                 "itl_p50_ms", "itl_p99_ms"]
+# e2e is the whole request, which is the SLA for any caller that does not render a partial answer.
 COLS_QPS = ["achieved_qps", "ttft_p50_ms", "ttft_p99_ms", "tpot_p50_ms", "tpot_p99_ms",
+            "e2e_p50_ms", "e2e_p99_ms",
             "openloop_tokens_per_sec", "input_tokens_median", "completed", "failed"]
 
 # Trace streaming metrics are aiperf's ITL definitions, never interchangeable with latency.py's.
@@ -1106,6 +1108,33 @@ def sweep_context_levels(protocol: dict, env: dict, rep: RepResult,
                      f"requests={count} client_cpu={cpu:.2f}", body)
 
 
+def parse_qps_levels(raw: str, protocol_name: str, protocol: dict) -> list:
+    """Parse --qps-levels into arrival rates, rejecting anything the sweep cannot run.
+
+    Order is preserved rather than sorted: the caller decides, and only they know whether a
+    descending sweep is deliberate.
+    """
+    if not protocol.get("qps_levels"):
+        sys.exit(f"--qps-levels does not apply to protocol {protocol_name!r}, which sweeps no "
+                 f"arrival rates. It is for the open-loop protocol, e.g. --protocol server_qps.")
+    levels = []
+    for field in raw.split(","):
+        field = field.strip()
+        if not field:
+            continue
+        try:
+            value = float(field)
+        except ValueError:
+            sys.exit(f"--qps-levels: {field!r} is not a number")
+        if value <= 0:
+            sys.exit(f"--qps-levels: {field!r} is not a positive arrival rate")
+        # Whole rates stay ints, so labels and log directory names read 16 rather than 16.0.
+        levels.append(int(value) if value == int(value) else value)
+    if not levels:
+        sys.exit("--qps-levels is empty")
+    return levels
+
+
 def sweep_qps_levels(protocol: dict, env: dict, rep: RepResult,
                      client_cpu: dict[int, list[float]], scratch: Path,
                      server_config: str, rep_number: int) -> None:
@@ -1650,6 +1679,12 @@ def parse_args() -> argparse.Namespace:
                              "every 50 ms, or 20 per second, which suits interactive and "
                              "robotics work and is strict for a large model on smaller GPUs. "
                              "Batch and summarisation workloads are usually far looser.")
+    parser.add_argument("--qps-levels", default=None, metavar="CSV",
+                        help="comma-separated target arrival rates for the open-loop protocol, "
+                             "overriding its shipped levels. The shipped list brackets a small "
+                             "server; a faster one needs higher rates or every level passes the "
+                             "SLA and the run locates no boundary. Reaches an in-cluster run, "
+                             "which an exported variable does not.")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     # Checked before the sweep, so a missing namespace cannot surface after the GPU time is spent.
@@ -1750,7 +1785,10 @@ def run_accuracy_gate(args) -> str:
 def main() -> int:
     """Run the selected protocol for the requested number of reps and write the results."""
     args = parse_args()
-    protocol = config.PROTOCOLS[args.protocol]
+    # Copied, so an override edits this run's protocol and not the shipped dict every run reads.
+    protocol = dict(config.PROTOCOLS[args.protocol])
+    if args.qps_levels is not None:
+        protocol["qps_levels"] = parse_qps_levels(args.qps_levels, args.protocol, protocol)
     # Resolved before anything reads it, so env, lock and filename agree on the profile served.
     args.profile = resolve_profile(args, protocol)
     profile = load_profile_doc(args.profile)
