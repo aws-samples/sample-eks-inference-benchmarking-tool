@@ -28,10 +28,11 @@ KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, u
 
 Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
 
-- Create a `g7.2xlarge` node group in a subnet with free IPs; the AZ this instance's capacity lands in may have none by default, so check first
-- [Apply the `nvidia-open-driver-healer` DaemonSet](../../../k8s/examples/daemonset-nvidia-open-driver.yaml). The AL2023 NVIDIA AMI ships the closed kernel module, which Blackwell does not support, so without this the node advertises no GPU indefinitely rather than failing loudly
-- A bound `fsx-pvc` claim, which these recipes mount instead of downloading into an `emptyDir`, because a quantized checkpoint has to outlive the Job that produced it
-- No RAID0 launch template, unlike the BF16 node group: that template puts a weight-download `emptyDir` on NVMe, and these recipes download nothing
+- [Create a `g7.2xlarge` node group](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (in a subnet with free IPs; this instance type's AZ may have none by default)
+- [Apply the `nvidia-open-driver-healer` DaemonSet](../../../k8s/examples/daemonset-nvidia-open-driver.yaml) (without it the node advertises no GPU indefinitely)
+- [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
+
+No RAID0 launch template, unlike the BF16 node group. That template puts a weight-download `emptyDir` on the NVMe instance store, and these recipes read the checkpoint from the claim and download nothing.
 
 ## Quickstart
 

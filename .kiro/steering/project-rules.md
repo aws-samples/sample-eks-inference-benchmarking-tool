@@ -21,6 +21,7 @@
 * Write every instruction a runbook needs into that runbook. Link to a file as a reference, never as a substitute for the steps. Cross-references also hide divergence: the FP8 runbook inherited a RAID0 launch template from the BF16 one that its recipes do not need.
 * Keep a runbook to its established sections and nothing else: `Capacity sizing`, `Before you begin`, `Quickstart`, `Throughput test`, `Latency test`, `Tear down`, `Settings`. Compare against a sibling runbook before adding a heading.
 * Make each Quickstart step one short sentence followed by its command, around 20 words. Reasoning belongs in `Settings` as a bullet, never as prose between the steps.
+* Write each `Before you begin` bullet as `- [Imperative phrase](relative/path)` on one line, with at most a short parenthetical caveat. The linked file carries the explanation; the bullet does not.
 * Split a function once it needs a second `try`/`except` or a second conditional variable, and compose small named helpers instead. Each check in `verify_checkpoint.py` is its own function returning `(problems, notes)`, and `verify()` only concatenates them, so a new check is a new function rather than another branch.
 * Tear down GPU deployments and scale the nodegroup to zero as soon as measurement stops.
 
