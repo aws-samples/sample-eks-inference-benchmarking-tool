@@ -822,6 +822,9 @@ def collect_provenance(pod: str, context: str, namespace: str) -> list[str]:
     lines = ["", "SERVER PROVENANCE (from the serving pod, at measurement time).",
              f"  captured : {utc_stamp('%Y-%m-%d %H:%M:%S')} UTC",
              f"  pod      : {pod}  ({context}/{namespace})"]
+    # The serving image, because engine behavior and performance are version-specific
+    if container.get("image"):
+        lines.append(f"  image    : {container['image']}")
     if models:
         lines.append(f"  GPUs     : {len(gpus.splitlines())}x {models[0]}")
     for label, value in provenance_facts(logs, metrics, raw_pod, topology):
