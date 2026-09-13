@@ -28,7 +28,7 @@ KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, u
 
 Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
 
-- Everything in the [BF16 runbook's Before you begin](./bf16-g7.2xlarge-runbook.md#before-you-begin): the `g7.2xlarge` node group, the `nvidia-open-driver-healer` DaemonSet, and the `vllm-sitecustomize` ConfigMap
+- Everything in the [BF16 runbook's Before you begin](./bf16-g7.2xlarge-runbook.md#before-you-begin): the `g7.2xlarge` node group and the `nvidia-open-driver-healer` DaemonSet
 - A bound `fsx-pvc` claim. Unlike the BF16 recipes, these mount the claim rather than downloading into an `emptyDir`, because a quantized checkpoint has to outlive the Job that produced it
 
   ```bash
