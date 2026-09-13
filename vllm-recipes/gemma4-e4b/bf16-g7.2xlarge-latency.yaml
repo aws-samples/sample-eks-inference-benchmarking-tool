@@ -1,19 +1,19 @@
 #
-# Gemma 4 E4B at BF16 on one g7.2xlarge, a single RTX PRO 4500. The 14.89 GiB checkpoint leaves roughly 7.8 GiB for KV cache, and E4B caches cheaply: 18 of its 42 layers share KV and its 35 sliding layers hold at most 512 tokens, so only 4 full-attention layers grow with context. Downloads its own weights into the instance-store emptyDir, no FSx.
+# Gemma 4 E4B at BF16 on one g7.2xlarge, a single GPU, tuned for real-time latency. Pairs with bf16-g7.2xlarge-throughput.yaml; streams every token, prefix caching off, and it downloads its own weights.
 #
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: gemma4-e4b-vllm-g7-2xl-bf16
-  labels: { app: gemma4-e4b-vllm-g7-2xl-bf16 }
+  name: gemma4-e4b-vllm-g7-2xl-latency
+  labels: { app: gemma4-e4b-vllm-g7-2xl-latency }
 spec:
   replicas: 1
   strategy: { type: Recreate }
   selector:
-    matchLabels: { app: gemma4-e4b-vllm-g7-2xl-bf16 }
+    matchLabels: { app: gemma4-e4b-vllm-g7-2xl-latency }
   template:
     metadata:
-      labels: { app: gemma4-e4b-vllm-g7-2xl-bf16 }
+      labels: { app: gemma4-e4b-vllm-g7-2xl-latency }
     spec:
       nodeSelector:
         node.kubernetes.io/instance-type: "g7.2xlarge"
@@ -36,7 +36,6 @@ spec:
                 echo "FATAL: ${avail} GiB free at $MOUNT_ROOT, need ${MIN_FREE_GIB} GiB." >&2
                 exit 1
               fi
-              # E4B ships one safetensors file, so there is no shard index to count against.
               if [ -f "$MODEL_DIR/config.json" ] \
                  && [ -f "$MODEL_DIR/model.safetensors" ] \
                  && [ "$(find "$MODEL_DIR" -name '*.incomplete' | wc -l)" -eq 0 ]; then
@@ -94,7 +93,10 @@ spec:
                 --max-model-len ${MAX_MODEL_LEN} \
                 --max-num-seqs ${MAX_NUM_SEQS} \
                 --max-num-batched-tokens ${MAX_NUM_BATCHED_TOKENS} \
-                --enable-prefix-caching \
+                --stream-interval ${STREAM_INTERVAL} \
+                --scheduling-policy ${SCHEDULING_POLICY} \
+                --async-scheduling \
+                --no-enable-prefix-caching \
                 --enable-chunked-prefill \
                 --port 8000
           ports:
@@ -102,25 +104,21 @@ spec:
           env:
             - name: MODEL_DIR
               value: "/models/gemma-4-E4B-it"
-            # Pinned rather than inferred, so the precision is stated in the manifest and not
-            # left to the checkpoint. Gemma overflows in float16, so bfloat16 is the only
-            # 16-bit option here; see the runbook's Settings notes.
             - name: DTYPE
               value: "bfloat16"
-            # "auto" follows DTYPE above, giving a BF16 cache. The literal value "bfloat16" is
-            # documented as valid only for models that default to FP8, which E4B does not, so
-            # pinning the weights dtype is how the cache precision gets fixed.
+            # Must stay "auto": "bfloat16" passes the CLI then aborts the engine. See the runbook.
             - name: KV_CACHE_DTYPE
               value: "auto"
-            # 8,192 matches the canonical sweep's context; E4B supports 131,072 if you need it.
             - name: MAX_MODEL_LEN
               value: "8192"
             - name: MAX_NUM_SEQS
-              value: "512"
+              value: "1024"
             - name: MAX_NUM_BATCHED_TOKENS
-              value: "8192"
-            # 0.90 rather than the 0.95 the 31B recipes use, because a 32 GiB card leaves less
-            # absolute headroom for activations and CUDA graphs once weights are resident.
+              value: "2048"
+            - name: STREAM_INTERVAL
+              value: "1"
+            - name: SCHEDULING_POLICY
+              value: "fcfs"
             - name: GPU_MEM_UTIL
               value: "0.90"
             - name: INSTANCE_TYPE
@@ -164,8 +162,8 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: gemma4-e4b-vllm-g7-2xl-bf16
+  name: gemma4-e4b-vllm-g7-2xl-latency
 spec:
-  selector: { app: gemma4-e4b-vllm-g7-2xl-bf16 }
+  selector: { app: gemma4-e4b-vllm-g7-2xl-latency }
   ports:
     - { protocol: TCP, port: 8000, targetPort: 8000 }
