@@ -12,6 +12,7 @@ Each precision ships a throughput-tuned and a latency-tuned recipe that differ o
 | -------- | --------- | ---- | ---- | -- | ------- |
 | `g7.2xlarge` | BF16 | Single node inference | 1 | unset | [Runbook](./bf16-g7.2xlarge-runbook.md) |
 | `g7.2xlarge` | FP8 | Single node inference | 1 | unset | [Runbook](./fp8-g7.2xlarge-runbook.md) |
+| `g7e.2xlarge` | FP8 | Single node inference | 1 | unset | [Runbook](./fp8-g7e.2xlarge-runbook.md) |
 
 Two further FP8 recipes add GPU n-gram speculative decoding, `fp8-g7.2xlarge-ngram-throughput.yaml` and `fp8-g7.2xlarge-ngram-latency.yaml`. They are identical to the FP8 pair apart from `--speculative-config`, so running them back to back against it attributes the difference to speculation alone. Speculation is always its own labelled config and is never folded into a baseline.
 

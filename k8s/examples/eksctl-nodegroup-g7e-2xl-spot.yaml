@@ -1,0 +1,39 @@
+#
+# eksctl Spot node group for one g7e.2xlarge, pinned to a single subnet. Use this when the recipe reads its checkpoint from an FSx claim, which is single-AZ and therefore fixes the zone.
+#
+# SUBSTITUTE: my-cluster, us-east-1, and the subnet in your FSx filesystem's availability zone.
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: my-cluster
+  region: us-east-1
+
+managedNodeGroups:
+  - name: g7e-2xl-spot
+    instanceType: g7e.2xlarge
+    spot: true
+
+    # Starts at zero so the node is created when a run begins, not when this group is created.
+    desiredCapacity: 0
+    minSize: 0
+    maxSize: 1
+
+    # One subnet, not three: FSx for Lustre is single-AZ, so a node in another zone cannot mount it.
+    subnets:
+      - subnet-0123456789abcdef0
+
+    privateNetworking: false
+    amiFamily: AmazonLinux2023
+
+    volumeSize: 200
+    volumeType: gp3
+    volumeThroughput: 1000
+    volumeIOPS: 16000
+
+    labels:
+      role: gpu-spot
+    taints:
+      - key: nvidia.com/gpu
+        value: "true"
+        effect: NoSchedule
