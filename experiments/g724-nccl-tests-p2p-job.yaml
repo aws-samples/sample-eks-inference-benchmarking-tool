@@ -1,7 +1,6 @@
 # NCCL all-reduce microbenchmark for the PCIe-switch vs host-copy study.
 # Single node, 4 GPUs (intra-node) on g7.24xlarge (4x RTX PRO 4500 Blackwell, PCIe, no NVLink)
-# on the gemma-g7-bench cluster. PREREQ: scale g7-gpu-spot to 1 and re-apply the Blackwell
-# open-kernel-module fix so GPUs register (k8s/examples/job-node-driver-fix.yaml).
+# PREREQ: apply the Blackwell open-kernel-module fix so GPUs register (k8s/examples/job-node-driver-fix.yaml).
 # This is the CLEAN interconnect signal
 # (no model, no vLLM stack). Run it once per NCCL_P2P_LEVEL setting and compare busbw.
 #
@@ -28,7 +27,7 @@ spec:
         app: nccl-p2p-study
     spec:
       restartPolicy: Never
-      # Pin to the single g7.24xlarge (4x RTX PRO 4500 Blackwell) on gemma-g7-bench.
+      # Pin to the single g7.24xlarge (4x RTX PRO 4500 Blackwell) in the cluster.
       nodeSelector:
         node.kubernetes.io/instance-type: g7.24xlarge
       tolerations:
