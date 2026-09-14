@@ -30,32 +30,16 @@ KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, 2
 
 Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
 
-- [Create a `g7e.2xlarge` node group](../../../k8s/examples/eksctl-nodegroup-g7e-2xl-spot.yaml) (single subnet, in the same availability zone as your FSx filesystem)
+- [Create a `g7e.2xlarge` node group](../../../k8s/examples/eksctl-nodegroup-g7e-2xl-spot.yaml) (one subnet only, in your FSx filesystem's availability zone; [check offerings first](../../../k8s/examples/README.md#discover-gpu-capacity-before-creating-node-groups), since not every zone carries this type)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
 
-No `nvidia-open-driver-healer` DaemonSet, unlike the g7.2xlarge node group. That healer builds the NVIDIA open kernel module on nodes whose AMI shipped the closed one, which g7e does not require. Confirm the node advertises a GPU before deploying:
-
-```bash
-kubectl --context "$EKS_CLUSTER_NAME" get nodes -l node.kubernetes.io/instance-type=g7e.2xlarge \
-    -o custom-columns=NAME:.metadata.name,GPU:.status.allocatable.nvidia\\.com/gpu
-```
-
-No RAID0 launch template either. That template puts a weight-download `emptyDir` on the NVMe instance store, and these recipes read the checkpoint from the claim and download nothing.
-
-`g7e.2xlarge` is offered in a subset of a region's availability zones. Check offerings before choosing a subnet, since FSx for Lustre is single-AZ and fixes the zone:
-
-```bash
-aws ec2 describe-instance-type-offerings --region "$AWS_REGION" \
-    --location-type availability-zone \
-    --filters "Name=instance-type,Values=g7e.2xlarge" \
-    --query 'InstanceTypeOfferings[].Location' --output text
-```
+No `nvidia-open-driver-healer` DaemonSet and no RAID0 launch template, unlike the g7.2xlarge node group. See Settings for why neither applies here.
 
 ## Quickstart
 
 Steps 1 to 5 are shared. Then run the throughput test, the latency test, or both. There is one GPU, so tear down one config before deploying the other.
 
-The checkpoint lives on `fsx-pvc` and outlives the Job that produced it, so steps 3 and 4 are skipped whenever an earlier run on any instance type already wrote it. Step 5 always runs.
+The checkpoint outlives the Job that produced it, so step 4 is skipped when an earlier run on any instance type already wrote it to the claim. Step 5 runs either way, since it needs no GPU and catches an invalid export that the producing Job reported as successful.
 
 1. Set environment variables.
 
@@ -67,20 +51,20 @@ The checkpoint lives on `fsx-pvc` and outlives the Job that produced it, so step
    export INSTANCE_TYPE=g7e.2xlarge
    ```
 
-2. Configure the EKS context and namespace, install the NVIDIA Kubernetes device plugin, and create the `hf-token` secret. Then confirm the claim is bound and check whether the checkpoint is already present.
+2. Configure the EKS context and namespace, install the NVIDIA Kubernetes device plugin, and create the `hf-token` secret.
 
    ```bash
    ./scripts/install-prerequisites.sh
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-       --for=jsonpath='{.status.phase}'=Bound pvc/fsx-pvc --timeout=2m
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" run ckpt-check --rm -it --restart=Never \
-       --image=public.ecr.aws/docker/library/busybox:1.36 \
-       --overrides='{"spec":{"containers":[{"name":"c","image":"public.ecr.aws/docker/library/busybox:1.36","command":["sh","-c","ls -la /models/quantized/gemma-4-E4B-it-fp8 2>/dev/null || echo ABSENT"],"volumeMounts":[{"name":"m","mountPath":"/models","readOnly":true}]}],"volumes":[{"name":"m","persistentVolumeClaim":{"claimName":"fsx-pvc"}}]}}'
    ```
 
-   A listing showing `model.safetensors` and `hf_quant_config.json` means skip to step 5. `ABSENT` means run steps 3 and 4 first.
+3. Confirm the claim is bound.
 
-3. **First run only.** Overlay this repository's quantizer source onto the image, since an image built earlier takes an export path that produces an invalid checkpoint.
+   ```bash
+   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
+       --for=jsonpath='{.status.phase}'=Bound pvc/fsx-pvc --timeout=2m
+   ```
+
+4. Quantize the checkpoint to `/models/quantized/gemma-4-E4B-it-fp8`. Roughly five minutes, and it needs the GPU.
 
    ```bash
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create configmap quantizer-src \
@@ -88,17 +72,12 @@ The checkpoint lives on `fsx-pvc` and outlives the Job that produced it, so step
        --from-file=app/quantize/src/config.py \
        --from-file=app/quantize/src/fix_amax.py \
        --from-file=app/quantize/src/verify_checkpoint.py
-   ```
-
-4. **First run only.** Quantize the checkpoint to `/models/quantized/gemma-4-E4B-it-fp8`. Roughly five minutes, and it needs the GPU, so tear down any server first.
-
-   ```bash
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-jobs/gemma4-e4b/fp8-model-quantize.yaml
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
        --for=condition=complete job/quantize-gemma4-e4b-fp8 --timeout=30m
    ```
 
-5. Confirm the checkpoint is really FP8. Run this on every new instance type, including when reusing a checkpoint, because it needs no GPU and catches an invalid export that the producing Job reported as successful. Expect ~11 GiB; a failed Job names each problem and means do not serve it.
+5. Confirm the checkpoint is really FP8. Expect ~11 GiB; a failed Job names each problem.
 
    ```bash
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create configmap checkpoint-verifier \
@@ -244,7 +223,11 @@ The checkpoint on `fsx-pvc` survives, so a later run needs no requantization.
 
 - **`nvidia.com/gpu: 1`** g7e.2xlarge = 1x Blackwell RTX PRO 6000 Server Edition, 96 GB (sm_120).
 
-- **No driver healer on this instance type.** The g7.2xlarge runbook applies `nvidia-open-driver-healer` because its AMI shipped the closed kernel module and the node otherwise advertises `nvidia.com/gpu: 0` indefinitely. g7e does not need it. The `gemma4-31b` g7e recipes also run without it.
+- **No driver healer on this instance type.** The g7.2xlarge runbook applies `nvidia-open-driver-healer` because its AMI shipped the closed kernel module and the node otherwise advertises `nvidia.com/gpu: 0` indefinitely. g7e does not need it, and the `gemma4-31b` g7e recipes also run without it. Confirm `nvidia.com/gpu` reads 1 in the node's allocatable resources before deploying, since that failure is silent either way.
+
+- **No RAID0 launch template.** That template exists so a weight-download `emptyDir` lands on the NVMe instance store rather than the EBS root volume. These recipes read the checkpoint from the claim and download nothing, so the 1,900 GB instance store goes unused.
+
+- **The node group carries `nvidia.com/gpu.present=true`.** The NVIDIA device plugin selects on that label. Without it the node joins Ready, advertises no GPU, and every pod stays Pending.
 
 - **`MODEL_LOADER=image_text_to_text`** in the quantize Job. The default `causal_lm` auto-class cannot load this checkpoint.
 
