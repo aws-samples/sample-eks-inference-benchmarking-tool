@@ -34,8 +34,6 @@ spec:
           args:
             - |
               set -euo pipefail
-              echo "=== installing harness dependencies ==="
-              pip install -q --no-cache-dir aiohttp==3.11.18 mlcommons-loadgen==6.0.17
 
               # One base64 gzipped tarball, because ConfigMap keys cannot contain '/' and a tarball preserves the tree.
               echo "=== unpacking harness ==="
@@ -43,6 +41,9 @@ spec:
               base64 -d /app/code.tar.gz.b64 | tar xzf - -C /work/repo
               cd /work/repo
               echo "  unpacked: $(find . -type f | wc -l) files"
+
+              echo "=== installing harness dependencies ==="
+              pip install -q --no-cache-dir -r app/bench/requirements-loadgen.txt
 
               # The requirements file rides inside the payload, so the repo's pin is what gets installed here.
               if [ -n "${EXTRA_REQUIREMENTS}" ]; then
