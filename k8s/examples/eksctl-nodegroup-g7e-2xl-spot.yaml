@@ -31,8 +31,10 @@ managedNodeGroups:
     volumeThroughput: 1000
     volumeIOPS: 16000
 
+    # gpu.present is what the NVIDIA device plugin's nodeSelector matches; without it no GPU is advertised.
     labels:
       role: gpu-spot
+      nvidia.com/gpu.present: "true"
     taints:
       - key: nvidia.com/gpu
         value: "true"

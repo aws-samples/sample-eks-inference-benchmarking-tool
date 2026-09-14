@@ -53,7 +53,9 @@ aws ec2 describe-instance-type-offerings --region "$AWS_REGION" \
 
 ## Quickstart
 
-Steps 1 to 6 are shared. Then run the throughput test, the latency test, or both. There is one GPU, so tear down one config before deploying the other.
+Steps 1 to 5 are shared. Then run the throughput test, the latency test, or both. There is one GPU, so tear down one config before deploying the other.
+
+The checkpoint lives on `fsx-pvc` and outlives the Job that produced it, so steps 3 and 4 are skipped whenever an earlier run on any instance type already wrote it. Step 5 always runs.
 
 1. Set environment variables.
 
@@ -65,20 +67,20 @@ Steps 1 to 6 are shared. Then run the throughput test, the latency test, or both
    export INSTANCE_TYPE=g7e.2xlarge
    ```
 
-2. Configure the EKS context and namespace, install the NVIDIA Kubernetes device plugin, and create the `hf-token` secret.
+2. Configure the EKS context and namespace, install the NVIDIA Kubernetes device plugin, and create the `hf-token` secret. Then confirm the claim is bound and check whether the checkpoint is already present.
 
    ```bash
    ./scripts/install-prerequisites.sh
-   ```
-
-3. Confirm the claim is bound.
-
-   ```bash
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
        --for=jsonpath='{.status.phase}'=Bound pvc/fsx-pvc --timeout=2m
+   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" run ckpt-check --rm -it --restart=Never \
+       --image=public.ecr.aws/docker/library/busybox:1.36 \
+       --overrides='{"spec":{"containers":[{"name":"c","image":"public.ecr.aws/docker/library/busybox:1.36","command":["sh","-c","ls -la /models/quantized/gemma-4-E4B-it-fp8 2>/dev/null || echo ABSENT"],"volumeMounts":[{"name":"m","mountPath":"/models","readOnly":true}]}],"volumes":[{"name":"m","persistentVolumeClaim":{"claimName":"fsx-pvc"}}]}}'
    ```
 
-4. Overlay this repository's quantizer source onto the image, since an image built earlier takes an export path that produces an invalid checkpoint. Skip steps 4 to 6 if the checkpoint is already on the claim from an earlier run.
+   A listing showing `model.safetensors` and `hf_quant_config.json` means skip to step 5. `ABSENT` means run steps 3 and 4 first.
+
+3. **First run only.** Overlay this repository's quantizer source onto the image, since an image built earlier takes an export path that produces an invalid checkpoint.
 
    ```bash
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create configmap quantizer-src \
@@ -88,7 +90,7 @@ Steps 1 to 6 are shared. Then run the throughput test, the latency test, or both
        --from-file=app/quantize/src/verify_checkpoint.py
    ```
 
-5. Quantize the checkpoint to `/models/quantized/gemma-4-E4B-it-fp8`. Roughly five minutes, and it needs the GPU, so tear down any server first.
+4. **First run only.** Quantize the checkpoint to `/models/quantized/gemma-4-E4B-it-fp8`. Roughly five minutes, and it needs the GPU, so tear down any server first.
 
    ```bash
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-jobs/gemma4-e4b/fp8-model-quantize.yaml
@@ -96,7 +98,7 @@ Steps 1 to 6 are shared. Then run the throughput test, the latency test, or both
        --for=condition=complete job/quantize-gemma4-e4b-fp8 --timeout=30m
    ```
 
-6. Confirm the checkpoint is really FP8. Expect ~11 GiB; a failed Job names each problem and means do not serve it.
+5. Confirm the checkpoint is really FP8. Run this on every new instance type, including when reusing a checkpoint, because it needs no GPU and catches an invalid export that the producing Job reported as successful. Expect ~11 GiB; a failed Job names each problem and means do not serve it.
 
    ```bash
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create configmap checkpoint-verifier \
