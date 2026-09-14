@@ -1,8 +1,10 @@
 # Accuracy references
 
-This directory holds only this README in a fresh clone. `docs/accuracy/*.json` is gitignored. A reference is the output of your server on your hardware, and it is only meaningful as ground truth for a server you have verified yourself, so inheriting a reference from another environment would gate your runs against a configuration you have not inspected.
+Before the first benchmark of a model and server config, capture an accuracy reference. Every `measure` run then checks the live server against it and aborts if they disagree.
 
-The gate fails closed, so read this before your first benchmark. With no reference for the `(model_tag, config)` you are running, `measure` aborts before measuring anything:
+Every runbook in [`docs/runbooks/`](../runbooks/README.md) includes the capture as a numbered step before its first benchmark, so following a runbook covers this. Capture it once per `(model_tag, config)` pair, against a server you have checked yourself.
+
+With no reference for the pair you are running, `measure` stops before measuring:
 
 ```
 FAIL: no accuracy reference at docs/accuracy/<model-tag>-<config>.json
@@ -11,17 +13,24 @@ This gate fails closed. A missing reference is not a pass, because silently
 proceeding is the exact failure this gate exists to prevent.
 ```
 
-There are two ways forward. Capturing a reference is the intended path: it takes one command against a running server and is step 5 of every runbook in [`docs/runbooks/`](../runbooks/README.md). Alternatively, `--skip-accuracy` proceeds and records `accuracy gate : SKIPPED (--skip-accuracy) — results unverified` in the protocol lock, so the result states that nothing verified it.
+Two ways forward:
 
-Capture is a manual step and cannot be automated. A reference is captured from a server, so if the harness generated a missing reference on your behalf, it would capture from the server under test and then compare that server against itself, which always passes. The truncated-argv failure this gate exists for — a server serving at the wrong precision with both parsers dropped, reporting clean numbers — would pass, because the wrong-precision output would have become the reference. Prompt token counts are generated automatically, because they involve no server and so cannot manufacture agreement; see [`docs/prompt_tokens/README.md`](../prompt_tokens/README.md).
+- Capture a reference, which is one command against a running server. See [Capturing a reference](#capturing-a-reference).
+- Pass `--skip-accuracy`. The run proceeds and the protocol lock records `accuracy gate : SKIPPED (--skip-accuracy) — results unverified`.
 
-There is one JSON file per `(model_tag, config)` pair, at `docs/accuracy/<model-tag>-<config>.json`, flat, matching how recipes and results are named. `app/bench/src/accuracy.py` checks a live server against them.
+This directory holds only this README in a fresh clone. `docs/accuracy/*.json` is gitignored, because a reference describes your server on your hardware. A reference from another environment would gate your runs against a configuration you have not seen.
 
-These files are generated rather than hand-written. Capture them against a server you have independently verified.
+Files are named `docs/accuracy/<model-tag>-<config>.json`, flat, matching how recipes and results are named. `app/bench/src/accuracy.py` checks a live server against them.
 
-## Why they exist
+## Why capture is manual
 
-Throughput and latency numbers do not indicate whether a server is serving the configuration it claims to. A truncated `vllm serve` argv dropped `--kv-cache-dtype fp8` and both parsers, and the server came up healthy and served traffic at the wrong precision with no error. Comparing output against a reference catches that; `validate-manifests` catches the truncation itself.
+A reference is captured from a server. If the harness generated a missing one on demand, it would capture from the server under test and compare that server against itself, which always passes. The failure this gate exists for would pass too: a server serving at the wrong precision, with both parsers dropped, would have its wrong-precision output recorded as the reference.
+
+Prompt token counts are generated automatically, because they involve no server and cannot manufacture agreement. See [`docs/prompt_tokens/README.md`](../prompt_tokens/README.md).
+
+## What the gate catches
+
+Throughput and latency numbers do not show whether a server is serving the configuration it claims to. A truncated `vllm serve` argv once dropped `--kv-cache-dtype fp8` and both parsers; the server came up healthy and served traffic at the wrong precision with no error. Comparing output against a reference catches that. `validate-manifests` catches the truncation itself.
 
 ## Two tiers
 
@@ -40,7 +49,7 @@ eks-bench fetch-eval-data --verify
 
 ## Capturing a reference
 
-Run against a known-good server. Both tiers write to the same file and preserve each other, so the order does not matter. Capture runs in-cluster over cluster DNS, like a measurement, so it needs no port-forward:
+Run against a server you have checked. Both tiers write to the same file and preserve each other, so order does not matter. Capture runs in-cluster over cluster DNS, so it needs no port-forward:
 
 ```bash
 # tier 1: fingerprint (fast, gates every benchmark run)
@@ -60,11 +69,11 @@ eks-bench capture-reference \
     --out-dir docs/results
 ```
 
-The reference lands here, in `docs/accuracy/`. For a server you can already reach without a tunnel — a local vLLM, or a run from inside the cluster — `main.py accuracy` runs the same checks directly against any endpoint via `--endpoint` and `--write-reference`.
+The reference lands here, in `docs/accuracy/`. For a server you can already reach without a tunnel, such as a local vLLM or a run from inside the cluster, `eks-bench capture-reference-local` runs the same checks against any `--endpoint`.
 
 ### Checking quantization with `--reference-config`
 
-A standalone FP8 score has no baseline to be measured against. Score the BF16 build first, then check the quantized build against that reference. This involves two servers, so two runs:
+A standalone FP8 score has no baseline. Score the BF16 build first, then check the quantized build against that reference. Two servers, so two runs:
 
 ```bash
 # 1. Capture against the BF16 server.
@@ -73,16 +82,19 @@ eks-bench capture-reference \
     --mode score --model-tag qwen7b --config bf16 \
     --model-id <served-model-name> --out-dir docs/results
 
-# 2. Check the FP8 server against the BF16 result.
-eks-bench measure \
-    --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service <fp8-service> \
+# 2. Check the FP8 server against the BF16 result. This runs where you type it, so give it an
+#    endpoint you can reach: from inside the cluster, or a port-forward to the FP8 Service.
+eks-bench check-accuracy \
     --mode score --model-tag qwen7b --config fp8 --reference-config bf16 \
-    --model-id <served-model-name> --out-dir docs/results
+    --endpoint http://<fp8-service>.<namespace>.svc.cluster.local:8000/v1 \
+    --model-id <served-model-name>
 ```
 
-This reads `qwen7b/bf16.json` while serving the FP8 build, and fails if the FP8 score falls below 99% of the reference (adjustable with `--tolerance`). Both runs must use the same `--n`; a 60-problem score has much wider error bars than a 200-problem one, so the gate refuses to compare across counts.
+This reads `qwen7b-bf16.json` while serving the FP8 build, and fails if the FP8 score falls below 99% of the reference. Adjust with `--tolerance`. Both runs must use the same `--n`: a 60-problem score has much wider error bars than a 200-problem one, so the gate refuses to compare across counts.
 
-`--reference-config` is score-only. Fingerprints are exact text comparisons, and different weights legitimately produce different text, so cross-config fingerprinting would fail for an unrelated reason.
+`--reference-config` belongs to `check-accuracy` and `capture-reference`, not to `measure`. The gate a `measure` run invokes is always `--mode fingerprint` against `<model-tag>-<config>.json`.
+
+`--reference-config` is score-only. Fingerprints are exact text comparisons, and different weights produce different text, so cross-config fingerprinting would fail for an unrelated reason.
 
 ## Schema
 
@@ -100,15 +112,22 @@ This reads `qwen7b/bf16.json` while serving the FP8 build, and fails if the FP8 
 | `fingerprint.items[]` | per problem: `sha256` of normalised output, an 80-char `preview` for debugging, `completion_tokens`, `has_reasoning_content`, `finish_reason` |
 | `score.value`, `score.n`, `score.max_tokens` | tier 2 GSM8K exact-match result |
 
-`max_tokens` is stored per tier rather than globally, because the two tiers use different budgets (256 and 512). A reference captured at a different budget produces different text and different token counts, so the gate refuses to compare across them.
+`max_tokens` is stored per tier, because the two tiers use different budgets, 256 and 512. A reference captured at a different budget produces different text and different token counts, so the gate refuses to compare across them.
 
 ## `reproducible: false`
 
-`--write-reference` runs the fingerprint set twice and compares. If the two passes disagree at `temperature: 0`, the model is not bit-reproducible.
+Capture runs the fingerprint set twice and compares. If the two passes disagree at `temperature: 0`, the model is not bit-reproducible. This is the expected outcome for a batched server, and it is not confined to MoE models.
 
-This is the expected outcome for a batched server, and it is not confined to MoE models. Two measurements, both at FP8 across 4 GPUs, illustrate the range. A 235B-class MoE model with 128 experts and 8 active per token produced different text on 18 of 20 prompts between two identical passes: requests run at concurrency 8, so batch composition varies between passes, which changes expert routing and therefore the numerics. A 31B-class dense model with tensor parallelism and chunked prefill differed on 16 of 20, with no experts involved. The shared cause is that batch composition sets the order of floating-point reductions, so a request batched differently is not guaranteed the same logits, and at FP8 a difference far below the noise floor is enough to move an argmax. Expert routing amplifies this rather than causing it. Treat `reproducible: false` as information about the serving configuration rather than as a fault to investigate.
+Batch composition sets the order of floating-point reductions, so a request batched differently is not guaranteed the same logits, and at FP8 a difference far below the noise floor can move an argmax. Expert routing amplifies this; it is not the cause. Two measurements, both FP8 across 4 GPUs, show the range:
 
-When a reference records `reproducible: false` the gate switches checks:
+| Model | Prompts differing between two identical passes |
+| ----- | --- |
+| 235B-class MoE, 128 experts, 8 active per token, concurrency 8 | 18 of 20 |
+| 31B-class dense, tensor parallel, chunked prefill | 16 of 20 |
+
+`reproducible: false` describes the serving configuration. It is not a fault to investigate.
+
+When a reference records it, the gate switches checks:
 
 | Check | `reproducible: true` | `reproducible: false` |
 | ----- | -------------------- | --------------------- |
@@ -119,15 +138,15 @@ When a reference records `reproducible: false` the gate switches checks:
 | Non-empty, no repetition collapse | enforced | enforced |
 | `reasoning_content` presence | enforced | enforced |
 
-The per-item token band is dropped rather than widened because on that same run individual items moved by 10% between identical passes, so no per-item threshold separates jitter from a real fault. The aggregate mean does separate them: a negative control with the reasoning trace re-enabled failed on mean tokens (256.0 vs 202.4, 26% drift) and on truncation rate (20/20 vs 8/20), so the weaker path still catches genuine drift.
+The per-item token band is dropped instead of widened because individual items moved by 10% between identical passes on that run, so no per-item threshold separates jitter from a real fault. The aggregate mean does separate them: a negative control with the reasoning trace re-enabled failed on mean tokens, 256.0 against 202.4, and on truncation rate, 20/20 against 8/20.
 
-The reproducibility verdict is stored in the file rather than inferred at run time, so a weaker check is visible rather than silent.
+The verdict is stored in the file, not inferred at run time, so the weaker check is visible.
 
-## Scores are stable even when text is not
+## Scores stay usable when text does not
 
-Text-level non-reproducibility does not make the score tier unusable. On that same deployment the reference scored 0.9600 and two subsequent independent checks both scored 0.9700, above the 0.9504 floor. Aggregate accuracy averages out routing jitter.
+Text-level non-reproducibility does not make the score tier unusable. On the same deployment the reference scored 0.9600 and two later independent checks scored 0.9700, above the 0.9504 floor. Aggregate accuracy averages out routing jitter.
 
-Two cautions apply on a 200-problem set. A 99% tolerance is about two problems of slack, so for a non-reproducible model, prefer capturing the reference from the lowest of a few runs rather than from a single run. And scores taken at different `--n` are not comparable; the gate refuses to compare them.
+Two cautions on a 200-problem set. A 99% tolerance is about two problems of slack, so for a non-reproducible model capture the reference from the lowest of a few runs. And scores taken at different `--n` are not comparable; the gate refuses to compare them.
 
 ## When to recapture
 
@@ -135,15 +154,13 @@ Recapture, and note why alongside the run, when any of these change intentionall
 
 * the served model weights or quantization
 * any serving flag that affects output: precision, parsers, sampling defaults, chat template
-* `app/bench/data/gsm8k_subset.jsonl` (the gate will abort on the digest mismatch first)
+* `app/bench/data/gsm8k_subset.jsonl`, though the gate aborts on the digest mismatch first
 
-Recapturing to clear a failing gate defeats the purpose of the check. A mismatch means the server changed, so establish which side is wrong before overwriting the reference.
+A mismatch means the server changed. Establish which side is wrong before overwriting the reference.
 
 ## Hybrid-thinking models
 
-Some reasoning models emit a `<think>` trace by default. On a maths word problem that trace routinely
-exceeds the token budget, so the response never reaches its final answer and the score measures
-truncation rather than correctness. Pass `--thinking off` for those models:
+Some reasoning models emit a `<think>` trace by default. On a maths word problem that trace routinely exceeds the token budget, so the response never reaches its final answer and the score measures truncation. Pass `--thinking off` for those models:
 
 ```bash
 eks-bench capture-reference \
@@ -153,13 +170,8 @@ eks-bench capture-reference \
     --model-id <served-model-name> --out-dir docs/results
 ```
 
-The gate refuses to report a score when more than 20% of responses hit the token ceiling
-unfinished, and it records the thinking mode in the reference, so a later run cannot be compared
-against a differently configured one.
+The gate refuses to report a score when more than 20% of responses hit the token ceiling unfinished, and it records the thinking mode in the reference, so a later run cannot be compared against a differently configured one.
 
 ## Why the gate and the benchmarks use different temperatures
 
-The gate uses its own request path at `temperature: 0`, `top_p: 1`, `seed: 1337`, because a
-reference has to be comparable against itself. The benchmark protocols stay at `temperature: 0.7`,
-because that is representative traffic and changing it would break comparability with every
-run already taken. The two settings are deliberate and independent.
+The gate uses `temperature: 0`, `top_p: 1`, `seed: 1337`, because a reference has to be comparable against itself. The benchmark protocols use `temperature: 0.7`, because that is representative traffic and changing it would break comparability with every run already taken.

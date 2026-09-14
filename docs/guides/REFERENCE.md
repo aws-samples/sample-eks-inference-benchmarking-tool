@@ -3,7 +3,6 @@
 Complete specification of the measurement tool: the commands, their flags, the environment variables a run sets, and the benchmark protocols. See the [README](../../README.md) for the recipes and runbooks. Install the CLI with `pip install -e .`, then use `eks-bench <command> [flags]`. The operator CLI execs `app/bench/src/main.py`, which dispatches the implementation commands. Optional harnesses install as extras (`.[tokenizer]`, `.[loadgen]`, `.[aiperf]`); the individual requirements filenames below name the same dependencies for a minimal environment.
 
 - [CLI commands](#cli-commands)
-- [Optional extras](#optional-extras)
 - [`measure` flags](#measure-flags)
 - [`measure-local` flags](#measure-local-flags)
 - [Environment knobs](#environment-knobs)

@@ -60,7 +60,7 @@ An ordinary `eks-bench measure` dispatches `suite` in the Job. `eks-bench captur
 ## Project structure
 
 ```
-serving-sweep/
+sample-eks-inference-benchmarking-tool/
 ├── vllm-recipes/                      # vLLM serve recipes, one per published result.
 │                                      #   <model>/<quant>-<instance>[-<config>].yaml, grouped
 │                                      #   by model. Each opens with one line stating what it
@@ -80,7 +80,8 @@ serving-sweep/
 │   │   └── src/
 │   │       ├── config.py              # Quantization-specific env vars
 │   │       ├── quantize.py            # FP8/INT8/AWQ quantization via nvidia-modelopt
-│   │       └── fix_amax.py            # Repair pass: rename _amax → weight_scale for vLLM
+│   │       ├── fix_amax.py            # Repair pass: rename _amax → weight_scale for vLLM
+│   │       └── verify_checkpoint.py   # Prove a written checkpoint is the precision it claims
 │   ├── bench/                         # Benchmark client (async HTTP, CPU-only)
 │   │   ├── Dockerfile                 # Benchmark image
 │   │   ├── suite-job.yaml             # Job template `measure` renders to run in-cluster
@@ -121,8 +122,10 @@ serving-sweep/
 │       ├── Dockerfile                 # vLLM DLC + Nsight Systems CLI, multi-stage
 │       └── profile.sh                 # Launch-wraps `vllm serve` under nsys
 ├── scripts/
-│   ├── install-benchmark-client.sh    # One-shot .venv with every extra; `pip install -e .`
-│                                      #   is the supported path.
+│   ├── install-benchmark-client.sh    # One-shot .venv with the benchmark, tokenizer and CLI
+│                                      #   dependencies. It does not install the package, so
+│                                      #   `pip install -e '.[tokenizer]'` is the supported
+│                                      #   path and the one the README gives.
 │   ├── install-prerequisites.sh       # Configure EKS namespace, plugin, secret, and node check.
 │   ├── push-image.sh                  # Build and push the quantizer image to ECR
 │   ├── patch-efa-plugin.sh            # Fixes the EFA device plugin's stale allow-list
@@ -133,9 +136,11 @@ serving-sweep/
 │                                      #   build, diagnostics, profiling. See its README for
 │                                      #   what to substitute and the order to apply them.
 ├── experiments/                       # One-off studies, kept as evidence for a report rather
-│   ├── README.md                      #   than as reusable templates. Contain environment-
-│   ├── nccl-tests-p2p-g7e.yaml        #   specific cluster names and namespaces; see its
-│   └── nccl-tests-p2p-job.yaml        #   README before changing anything here.
+│   ├── README.md                      #   than as reusable templates. They pin a node by
+│   ├── g724-nccl-tests-p2p-job.yaml   #   hostname or instance type, so substitute that
+│   ├── g7e12-nccl-tests-p2p.yaml      #   before applying; see its README before changing
+│   ├── g7e12-nccl-p2p-shm-matrix.yaml #   anything here.
+│   └── g7e12-switch-study-storage-and-model-stage.yaml
 └── docs/
     ├── guides/                        # Architecture, reference, troubleshooting, and methodology.
     ├── reports/                       # Written analyses. Gitignored; README.md documents

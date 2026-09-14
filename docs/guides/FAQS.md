@@ -1,6 +1,6 @@
 # FAQs
 
-Common questions about scope, methodology, and how this repo relates to other benchmarking tools. See the [README](../../README.md) for the recipes and runbooks. Install the CLI with `pip install -e '.[tokenizer]'`, then use `eks-bench <command> [flags]`. See [Optional extras](./REFERENCE.md#optional-extras) for when the other two extras are needed.
+Common questions about scope, methodology, and how this repo relates to other benchmarking tools. See the [README](../../README.md) for the recipes and runbooks. Install the CLI with `pip install -e '.[tokenizer]'`, then use `eks-bench <command> [flags]`. The [CLI commands table](./REFERENCE.md#cli-commands) lists which commands need the other two extras.
 
 ### Does it benchmark training or fine-tuning?
 
@@ -28,11 +28,13 @@ They answer different questions. MLPerf answers how one vendor's system compares
 
 That places this work outside MLPerf's Closed division, because its model list is fixed. At the time of this comparison (MLPerf Inference v6.0), the list covers GPT-OSS-120B, DeepSeek-R1, Qwen3-VL-235B-A22B, Wan 2.2, and a handful of others, rather than Kimi K3, GLM-5.2, Gemma 4 31B, or Qwen2.5-7B. The models benchmarked here are outside that point-in-time list. The Open division permits custom models, but without the cross-vendor comparability that is the Closed division's main contribution.
 
-Two further differences in output shape. MLPerf's Server scenario produces one number, the maximum queries/sec under a latency bound, rather than the concurrency-sweep curve (per-user tok/s at 1, 8, 32, 128, 256, 512) used here to convert a latency SLA into a node count. And MLCommons recommends benchmarking a system through the vendor implementation, which is a heavier lift than running this harness.
+MLPerf also requires accuracy within a tolerance of a reference implementation. Its accuracy harnesses are bound to specific model-dataset pairs, so there is no MLPerf check for the models here. This repo applies the same idea locally: a pinned GSM8K subset and a tolerance against a reference captured from your own server. See [`docs/accuracy/README.md`](../accuracy/README.md).
+
+Two further differences in output shape. MLPerf's Server scenario produces one number, the maximum queries/sec under a latency bound. This repo produces a concurrency-sweep curve at 1, 8, 32, 128, 256 and 512, reporting aggregate tokens/sec and per-request latency at each level, which is what converts a latency SLA into a node count. MLCommons also recommends benchmarking through the vendor implementation, which is more setup than running this harness.
 
 ### How does this relate to `vllm bench serve`?
 
-`vllm bench serve` is a vLLM-native load generator. This repo adds the surrounding machinery: one methodology held constant across models and instance types, a correctness gate that aborts before measuring, a protocol lock and provenance in every result file, and manifest validation before a deploy. The goal is a number that can be compared against another number taken elsewhere.
+`vllm bench serve` is a vLLM-native load generator. This repo adds the surrounding machinery: one methodology held constant across models and instance types, a correctness gate that aborts before measuring, a protocol lock and provenance in every result file, and manifest validation before a deploy. Together those make a result comparable with one taken on different hardware at a different time.
 
 ### Is there anything from MLPerf adopted here?
 
@@ -51,32 +53,30 @@ Two things are kept regardless: the concurrency sweep, which is the sizing tool 
 
 ### How does this relate to AIPerf?
 
-This repo uses AIPerf, as a second independent load generator behind the same protocol seam and as the driver for the committed agentic traces. AIPerf provides load generation; the accuracy gate, the record of what the server was running, and manifest validation come from this repo. Its results are scoped to the deployment they sit beside.
+This repo uses AIPerf, as a second independent load generator behind the same protocol seam and as the driver for the committed agentic traces. AIPerf generates the load; the accuracy gate, the record of what the server was running, and manifest validation come from this repo. Three protocols use it: `corpus_aiperf` for cross-client calibration, and `agentx` and `trace_replay` for trace replay. An in-cluster `measure` run of any of them needs nothing extra locally, because the Job installs AIPerf on every run.
 
 ### How does this relate to FMBench?
 
-They serve different readers. [FMBench](https://github.com/aws-samples/foundation-model-benchmarking-tool) helps someone choose a platform across Bedrock, SageMaker, EC2, and EKS, and treats the endpoint as a black box. This repo is for the operator who has already chosen self-managed serving and needs the serving configuration itself to be the object of study.
+They answer different questions. [FMBench](https://github.com/aws-samples/foundation-model-benchmarking-tool) compares platforms across Bedrock, SageMaker, EC2 and EKS, and treats the endpoint as a black box. This repo assumes self-managed serving is already chosen, and measures the effect of the serving configuration itself.
 
 ### Why not a general-purpose load tester like Locust or k6?
 
 They have no concept of a token, so TTFT, time per output token, and throughput accounting cannot be measured.
 
-### What is the biggest known gap in this repo's methodology?
+### How do I know a result was correctness-checked?
 
-Accuracy validation was the largest gap, and that gate now exists: see [the accuracy references README](../accuracy/README.md). Every run records its verdict in the protocol lock, either `accuracy gate : PASSED` against a named reference or a statement that it was skipped.
+Read the `accuracy gate` line in the protocol lock at the top of the result file. It reads either `PASSED (docs/accuracy/<model-tag>-<config>.json)`, naming the reference it matched, or it records that the gate was skipped.
 
-The remaining gap is uneven coverage rather than absence, and coverage is environment-specific: a model with no captured reference is a model whose runs carry no correctness verification. Check the lock at the top of a result before quoting it.
-
-MLPerf mandates accuracy within a tolerance of a reference implementation, which contributes to the trust its numbers carry, but its accuracy harnesses are bound to specific model-dataset pairs, so there is no MLPerf check for the models here. The gate in this repo is local and follows the same approach: a pinned problem set and a tolerance against a reference. See [`docs/accuracy/README.md`](../accuracy/README.md).
+The gate runs before every benchmark and aborts the run if the server disagrees with its reference, so a result cannot be produced with a silently failing gate. Capturing the reference is a one-time step per model and server config, and every runbook includes it. See [`docs/accuracy/README.md`](../accuracy/README.md).
 
 ### Why don't the throughput baselines benefit from prefix caching?
 
 A cache hit skips prefill work, so any throughput number it affects is inflated by construction, and the size of the inflation depends on how much prefix real traffic would share. The canonical `corpus` protocol is retained for historical comparability and cycles the five fixed prompts in `legacy_corpus`; with server-side prefix caching enabled, it can hit the cache and is then not an uncached throughput baseline. The default `corpus` workload therefore requires prefix caching disabled for a cache-free claim. More generally, a cache-free claim requires either server-side caching disabled or demonstrably unique prompts, plus provenance showing a zero observed hit rate. If provenance is absent or reports hits, treat the figure as cache-inflated. Generated `PROMPT_MODE=unique` prompts defeat prefix matching, but only when no pinned profile is selected, and they are not what the default `corpus` protocol sends.
 
-The cache-hit case is measured separately, as its own workload, by the `latency_sharedprefix` protocol. It sends a byte-identical 4,000-token shared prefix and requires prefix caching enabled server side. The effect is not uniformly positive: a shared prefix is usually longer than the prompt it replaces, so at moderate concurrency the extra prefill can cost more than the hit saves and TTFT increases rather than decreases. Compare `latency_sharedprefix` only with runs of the same protocol, and not against a unique-prompt or cache-free baseline.
+The cache-hit case is measured separately, as its own workload, by the `latency_sharedprefix` protocol. It sends a byte-identical 4,000-token shared prefix and requires prefix caching enabled server side. The effect can go either way: a shared prefix is usually longer than the prompt it replaces, so at moderate concurrency the extra prefill can cost more than the cache hit saves, and TTFT goes up. Compare `latency_sharedprefix` only with runs of the same protocol, never against a unique-prompt or cache-free baseline.
 
 ### Why does a benchmark report show `ok%` per concurrency level?
 
-Because a median can rest on far fewer completed requests than the protocol specifies, and a bare tok/s column does not show it. In one sweep, the three reps at concurrency 1 disagreed widely, and two of them had lost nearly all their requests to client-side connection failures, so the 3-rep median largely reflected a broken client. That cell now reports the one clean rep, marked `†` as a single-rep figure.
+A median can rest on far fewer completed requests than the protocol specifies, and a tok/s column alone does not show it. In one sweep the three reps at concurrency 1 disagreed widely, and two had lost nearly all their requests to client-side connection failures, so the 3-rep median mostly reflected a broken client. That cell now reports the one clean rep, marked `†`.
 
-The runner now enforces this. `measure` emits a `REQUEST SUCCESS per level, per rep` table and excludes any rep with a level below `MIN_LEVEL_SUCCESS` (95%) from the medians. Failures are split into transport (the client's connection broke, so the sample is invalid) and server (the server rejected the request, which is a result). With no usable rep it does not aggregate. The `ok%` column, the `*` degraded-success marker, and the `†` single-rep marker make this visible in the results file itself; results predating the enforcement carry hand-applied markers.
+`measure` enforces this. It emits a `REQUEST SUCCESS per level, per rep` table and excludes any rep with a level below `MIN_LEVEL_SUCCESS` (95%) from the medians. Failures are split into transport (the client's connection broke, so the sample is invalid) and server (the server rejected the request, which is a result). With no usable rep it does not aggregate. The `ok%` column, the `*` degraded-success marker, and the `†` single-rep marker make this visible in the results file itself; results predating the enforcement carry hand-applied markers.
