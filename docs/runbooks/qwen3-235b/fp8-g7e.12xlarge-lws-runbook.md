@@ -78,7 +78,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 4. Stage `Qwen/Qwen3-235B-A22B-FP8` on the persistent `fsx-pvc`. A completed earlier Job and checkpoint make this a no-op on redeploy.
 
    ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-downloads/qwen3-235b-fp8.yaml
+   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-jobs/qwen3-235b/fp8-model-download.yaml
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait --for=condition=complete job/download-qwen3-235b-fp8 --timeout=6h
    ```
 

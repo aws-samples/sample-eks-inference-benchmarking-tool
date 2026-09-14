@@ -28,7 +28,7 @@ Each benchmark run saves a gitignored results file to `docs/results/`. The filen
 
 ## Checkpoint staging
 
-All BF16 recipes stage the published `Qwen/Qwen2.5-7B-Instruct` checkpoint. Every FP8 recipe uses `/models/quantized/Qwen2.5-7B-Instruct-fp8`, which can be populated either by the published `Qwen/Qwen2.5-7B-Instruct-FP8` staging Job or by local quantization; see the [model-download provenance notes](../../../model-downloads/README.md#fp8-weights-downloaded-or-quantized). The `g7e`, `g7e` kvscales, and `p5en` runbooks apply the published staging Job directly. The `g6e` and `p5` runbooks expect the path to be pre-populated, so apply that same staging Job first or complete the selected runbook's environment exports and `./scripts/install-prerequisites.sh`, then use the canonical [`job-quantize-model.yaml` workflow](../../../k8s/examples/README.md#job-quantize-modelyaml).
+All BF16 recipes stage the published `Qwen/Qwen2.5-7B-Instruct` checkpoint. Every FP8 recipe uses `/models/quantized/Qwen2.5-7B-Instruct-fp8`, which can be populated either by the published `Qwen/Qwen2.5-7B-Instruct-FP8` staging Job or by local quantization; see the [model-download provenance notes](../../../model-jobs/README.md#fp8-weights-downloaded-or-quantized). The `g7e`, `g7e` kvscales, and `p5en` runbooks apply the published staging Job directly. The `g6e` and `p5` runbooks expect the path to be pre-populated, so apply that same staging Job first or complete the selected runbook's environment exports and `./scripts/install-prerequisites.sh`, then use the canonical [`job-quantize-model.yaml` workflow](../../../k8s/examples/README.md#job-quantize-modelyaml).
 
 The g7e recipes run on Blackwell, so their compatibility fixes are already applied in the recipes.
 

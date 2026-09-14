@@ -54,7 +54,7 @@ GLM-5.2-NVFP4 at NVFP4 occupies 432.9 GiB of the 1,341.1 GiB on 8 B200 cards, 27
 4. Stage the weights on the PVC. A completed earlier run makes this a no-op. Run it on a node in the filesystem's own AZ so the write path stays intra-AZ.
 
    ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-downloads/glm-5.2-nvfp4.yaml
+   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-jobs/glm-5.2/nvfp4-model-download.yaml
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait --for=condition=complete job/download-glm-52-nvfp4 --timeout=6h
    ```
 

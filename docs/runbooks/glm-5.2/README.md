@@ -10,6 +10,7 @@ Use any one of the following runbook recipes to get started. For additional flag
 | -------- | --------- | ---- | ---- | -- | ------- |
 | `p5en.48xlarge` | FP8 | Single node inference | 8 | 8 | [Runbook](./fp8-p5en.48xlarge-runbook.md) |
 | `p6-b200.48xlarge` | FP8 | Single node inference | 8 | 8 | [Runbook](./fp8-p6-b200.48xlarge-runbook.md) |
+| `p6-b200.48xlarge` | NVFP4 | Single node inference | 8 | 8 | [Runbook](./nvfp4-p6-b200.48xlarge-runbook.md) |
 | `p6-b300.48xlarge` | NVFP4 | Single node inference | 8 | 8 | [Runbook](./nvfp4-p6-b300.48xlarge-runbook.md) |
 
 ## Results

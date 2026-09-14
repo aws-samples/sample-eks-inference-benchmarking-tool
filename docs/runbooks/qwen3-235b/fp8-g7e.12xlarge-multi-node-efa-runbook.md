@@ -111,7 +111,7 @@ Run the commands from the repository root. This capacity/EFA study also requires
 
    ```bash
    kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply \
-     -f model-downloads/qwen3-235b-fp8.yaml
+     -f model-jobs/qwen3-235b/fp8-model-download.yaml
    kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" wait \
      --for=condition=complete job/download-qwen3-235b-fp8 --timeout=6h
    ```

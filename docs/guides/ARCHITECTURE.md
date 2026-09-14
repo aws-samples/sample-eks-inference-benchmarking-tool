@@ -41,7 +41,7 @@ What this repo is, how its pieces fit together, and the integrity mechanisms beh
  ┌─────────────────────┐ ┌─────────────────────┐ ┌─────────────────────┐
  │  WEIGHT STAGING JOB │ │     QUANTIZE JOB    │ │       NSYS POD      │
  │ CPU node            │ │ GPU node            │ │ GPU node            │
- │ model-downloads/    │ │ app/quantize image  │ │ app/vllm-nsys image │
+ │ model-jobs/         │ │ app/quantize image  │ │ app/vllm-nsys image │
  │ one Job per model   │ │ nvidia-modelopt     │ │ nsys wraps its own  │
  │ and precision       │ │ reads BF16, writes  │ │ vllm serve, load    │
  │ writes the claim    │ │ FP8/INT8/AWQ        │ │ driven in-pod       │
@@ -65,7 +65,8 @@ serving-sweep/
 │                                      #   <model>/<quant>-<instance>[-<config>].yaml, grouped
 │                                      #   by model. Each opens with one line stating what it
 │                                      #   serves and when to use it.
-├── model-downloads/                   # Weight staging Jobs, one per model and precision.
+├── model-jobs/                        # Checkpoint staging Jobs, grouped by model.
+│                                      #   <model>/<quant>-model-{download,quantize}.yaml.
 │                                      #   Recipes wait for weights, they do not fetch them.
 │                                      #   Apply the Job for your model first, once per
 │                                      #   filesystem. See its README.
