@@ -3,7 +3,7 @@
   "name": "chat_short",
   "legacy": false,
   "use_case": "Single-turn question with no conversation history.",
-  "rationale": "Floor case for interactive chat. Prefill is negligible, so this isolates decode cost with a plausible prompt rather than a 41-token one.",
+  "rationale": "Short-input chat with a full-length answer. Prefill is negligible, so this isolates decode cost with a plausible prompt rather than a 41-token one. For a shorter answer budget see chat_terse.",
   "target_input_tokens": 128,
   "output_tokens": 512,
   "fixed_prompt_set": false,

@@ -1,0 +1,169 @@
+#
+# Gemma 4 E4B at BF16 on one g7.2xlarge, a single GPU, tuned for real-time latency. Pairs with bf16-g7.2xlarge-throughput.yaml; streams every token, prefix caching off, and it downloads its own weights.
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gemma4-e4b-vllm-g7-2xl-latency
+  labels: { app: gemma4-e4b-vllm-g7-2xl-latency }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: gemma4-e4b-vllm-g7-2xl-latency }
+  template:
+    metadata:
+      labels: { app: gemma4-e4b-vllm-g7-2xl-latency }
+    spec:
+      nodeSelector:
+        node.kubernetes.io/instance-type: "g7.2xlarge"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      initContainers:
+        - name: fetch-weights
+          image: python:3.12-slim
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              echo "=== disk before ==="; df -h "$MOUNT_ROOT"
+              # emptyDir lands wherever kubelet's root is, not necessarily the instance store.
+              avail=$(df -Pk "$MOUNT_ROOT" | awk 'NR==2 {print int($4/1048576)}')
+              if [ "$avail" -lt "$MIN_FREE_GIB" ]; then
+                echo "FATAL: ${avail} GiB free at $MOUNT_ROOT, need ${MIN_FREE_GIB} GiB." >&2
+                exit 1
+              fi
+              if [ -f "$MODEL_DIR/config.json" ] \
+                 && [ -f "$MODEL_DIR/model.safetensors" ] \
+                 && [ "$(find "$MODEL_DIR" -name '*.incomplete' | wc -l)" -eq 0 ]; then
+                echo "checkpoint already staged: $(du -sh "$MODEL_DIR" | cut -f1), none partial"
+                exit 0
+              fi
+              pip install --no-cache-dir -q "huggingface_hub==$HF_HUB_VERSION"
+              mkdir -p "$MODEL_DIR" "$HF_HOME"
+              echo "=== downloading $MODEL_REPO $(date -u) ==="
+              hf download "$MODEL_REPO" --local-dir "$MODEL_DIR"
+              echo "=== complete $(date -u) ==="
+              PART=$(find "$MODEL_DIR" -name '*.incomplete' | wc -l)
+              echo "incomplete files: $PART"
+              { [ -f "$MODEL_DIR/model.safetensors" ] && [ "$PART" -eq 0 ]; } \
+                || { echo "FATAL: incomplete checkpoint" >&2; exit 1; }
+              du -sh "$MODEL_DIR"; df -h "$MOUNT_ROOT"
+          env:
+            - name: MODEL_REPO
+              value: google/gemma-4-E4B-it
+            - name: MODEL_DIR
+              value: /models/gemma-4-E4B-it
+            - name: MOUNT_ROOT
+              value: /models
+            - name: MIN_FREE_GIB
+              value: "25"
+            - name: HF_HOME
+              value: /models/.hf-cache
+            - name: HF_XET_HIGH_PERFORMANCE
+              value: "1"
+            - name: HF_HUB_VERSION
+              value: "1.28.0"
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef: { name: hf-token, key: token }
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          volumeMounts:
+            - { name: model-storage, mountPath: /models }
+          resources:
+            requests: { cpu: "2", memory: 8Gi }
+            limits: { cpu: "4", memory: 16Gi }
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.29.0
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              echo "=== starting vLLM on ${INSTANCE_TYPE}: $(date -u) ==="
+              vllm serve ${MODEL_DIR} \
+                --dtype ${DTYPE} \
+                --kv-cache-dtype ${KV_CACHE_DTYPE} \
+                --gpu-memory-utilization ${GPU_MEM_UTIL} \
+                --max-model-len ${MAX_MODEL_LEN} \
+                --max-num-seqs ${MAX_NUM_SEQS} \
+                --max-num-batched-tokens ${MAX_NUM_BATCHED_TOKENS} \
+                --stream-interval ${STREAM_INTERVAL} \
+                --scheduling-policy ${SCHEDULING_POLICY} \
+                --max-cudagraph-capture-size ${MAX_CUDAGRAPH} \
+                --async-scheduling \
+                --no-enable-prefix-caching \
+                --enable-chunked-prefill \
+                --port 8000
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MODEL_DIR
+              value: "/models/gemma-4-E4B-it"
+            - name: DTYPE
+              value: "bfloat16"
+            # Must stay "auto": "bfloat16" passes the CLI then aborts the engine. See the runbook.
+            - name: KV_CACHE_DTYPE
+              value: "auto"
+            - name: MAX_MODEL_LEN
+              value: "8192"
+            - name: MAX_NUM_SEQS
+              value: "1024"
+            - name: MAX_NUM_BATCHED_TOKENS
+              value: "2048"
+            - name: STREAM_INTERVAL
+              value: "1"
+            - name: SCHEDULING_POLICY
+              value: "fcfs"
+            # Matches the canonical sweep's top level, so every measured batch size is
+            # graph-captured and nothing is captured above it.
+            - name: MAX_CUDAGRAPH
+              value: "512"
+            - name: GPU_MEM_UTIL
+              value: "0.80"
+            - name: INSTANCE_TYPE
+              value: "g7.2xlarge"
+            - name: HF_HOME
+              value: "/models"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: VLLM_LOGGING_LEVEL
+              value: "WARNING"
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 15
+            failureThreshold: 120
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 30
+            failureThreshold: 6
+          volumeMounts:
+            - { name: dshm, mountPath: /dev/shm }
+            - { name: model-storage, mountPath: /models }
+      volumes:
+        - name: dshm
+          emptyDir: { medium: Memory }
+        - name: model-storage
+          emptyDir: { sizeLimit: 60Gi }
+      terminationGracePeriodSeconds: 120
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gemma4-e4b-vllm-g7-2xl-latency
+spec:
+  selector: { app: gemma4-e4b-vllm-g7-2xl-latency }
+  ports:
+    - { protocol: TCP, port: 8000, targetPort: 8000 }

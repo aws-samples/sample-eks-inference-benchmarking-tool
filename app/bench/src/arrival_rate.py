@@ -352,6 +352,9 @@ def print_results(sut: SystemUnderTest, summary: dict, wall_seconds: float) -> N
           f"ttft_p99_ms={summary_ms(summary, '99.00 percentile first token latency (ns)'):.1f} "
           f"tpot_p50_ms={summary_ms(summary, '50.00 percentile time to output token (ns)'):.2f} "
           f"tpot_p99_ms={summary_ms(summary, '99.00 percentile time to output token (ns)'):.2f} "
+          # Whole-request latency, which TTFT plus TPOT cannot reconstruct: a p99 sum is not a summed p99.
+          f"e2e_p50_ms={summary_ms(summary, '50.00 percentile latency (ns)'):.1f} "
+          f"e2e_p99_ms={summary_ms(summary, '99.00 percentile latency (ns)'):.1f} "
           f"openloop_tokens_per_sec={summary_number(summary, 'Completed tokens per second'):.1f} "
           f"input_tokens_median={median(sut.input_token_counts)} "
           f"completed={sut.completed} failed={sut.failures} "

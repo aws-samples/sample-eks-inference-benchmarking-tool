@@ -209,7 +209,13 @@ spec:
                   - key: node.kubernetes.io/instance-type
                     operator: In
                     values:
+                      # Every Blackwell (sm_120) type any recipe targets. A type missing here is
+                      # not skipped loudly: the node simply advertises no GPU forever, because the
+                      # healer never schedules onto it. Add new g7/g7e sizes alongside new recipes.
+                      - g7.2xlarge
                       - g7.24xlarge
+                      - g7e.2xlarge
+                      - g7e.4xlarge
                       - g7e.12xlarge
                       - g7e.24xlarge
       hostPID: true

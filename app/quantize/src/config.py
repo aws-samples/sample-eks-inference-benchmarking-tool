@@ -69,6 +69,10 @@ MODELOPT_REAL_EXPORT = env_flag("MODELOPT_REAL_EXPORT", True)
 # Whether to run a calibration forward pass for static activation scales.
 CALIBRATE = env_flag("CALIBRATE", True)
 
+# Exit 0 even when the exported checkpoint fails verification. Only for reproducing the legacy
+# export, which is invalid by design; a run that sets this must not feed a benchmark.
+ALLOW_INVALID_EXPORT = env_flag("ALLOW_INVALID_EXPORT", False)
+
 # Number of calibration prompts to run.
 CALIB_SAMPLES = env_int("CALIB_SAMPLES", 16)
 
