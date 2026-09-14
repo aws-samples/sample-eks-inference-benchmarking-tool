@@ -42,7 +42,7 @@ pip install -e '.[tokenizer]'
 eks-bench verify-prompts --model Qwen/Qwen2.5-7B-Instruct
 ```
 
-There is one file per tokenizer, named after the repo id with `/` replaced by `__`, so `Qwen/Qwen2.5-7B-Instruct` becomes `Qwen__Qwen2.5-7B-Instruct.json`. Quantization does not change a tokenizer, so an FP8 or NVFP4 deployment uses its base model's file: `nvidia/GLM-5.2-NVFP4` covers the GLM FP8 recipes too.
+There is one file per tokenizer, named after the repo id with `/` replaced by `__` and `:` by `_`, so `Qwen/Qwen2.5-7B-Instruct` becomes `Qwen__Qwen2.5-7B-Instruct.json`. Quantization does not change a tokenizer, so an FP8 or NVFP4 deployment uses its base model's file: `nvidia/GLM-5.2-NVFP4` covers the GLM FP8 recipes too.
 
 Kimi K3's tokenizer needs `tiktoken`, which is why that requirements file pins it.
 
