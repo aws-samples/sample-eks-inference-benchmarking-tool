@@ -228,9 +228,22 @@ python3 scripts/flatten_nccl_logs.py \
 )
 ```
 
-## Quickstart: run the six serving arms
+## Quickstart
 
 Run one deployment at a time in this recorded order. The default arm is a negative control: it must agree with explicit PIX and select P2P without an override.
+
+1. Confirm kubectl points at the study cluster. These arms continue in the same shell as `Setup`, which set the variables and the `isolated_launch` function.
+
+   ```bash
+   aws eks update-kubeconfig \
+     --name "$EKS_CLUSTER_NAME" \
+     --region "$AWS_REGION" \
+     --alias "$EKS_CLUSTER_NAME"
+
+   kubectl config current-context
+   ```
+
+2. Deploy and measure the six arms in this order.
 
 | Order | Recipe | Deployment / Service | Model tag | Config | Model ID | Tokenizer | Extra |
 |---:|---|---|---|---|---|---|---|
