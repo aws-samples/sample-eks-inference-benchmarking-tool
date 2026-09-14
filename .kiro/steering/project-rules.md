@@ -2,7 +2,7 @@
 
 ## Always
 
-* Commit quantization jobs to git at `/model-quantize`.
+* Commit every checkpoint-staging Job to `model-jobs/<model-name>/`, named `<quant>-model-download.yaml` for published weights or `<quant>-model-quantize.yaml` for weights this repo produces. Use the same model directory name as `vllm-recipes/` and `docs/runbooks/`.
 * Commit any manifest you apply to a cluster. A cluster is not source control, and an ad-hoc `kubectl apply` leaves nothing in git to recover.
 * Disable prefix caching in every benchmark (`--no-enable-prefix-caching`), no matter what production runs. It roughly doubled throughput on `chat_terse` and only the uncached number is honest.
 * Use the placeholder account (`012345678901`), a region placeholder, and a `SUBSTITUTE:` header line in every committed manifest.
@@ -21,7 +21,7 @@
 * Write every instruction a runbook needs into that runbook. Link to a file as a reference, never as a substitute for the steps. Cross-references also hide divergence: the FP8 runbook inherited a RAID0 launch template from the BF16 one that its recipes do not need.
 * Keep a runbook to its established sections and nothing else: `Capacity sizing`, `Before you begin`, `Quickstart`, `Throughput test`, `Latency test`, `Tear down`, `Settings`. Compare against a sibling runbook before adding a heading.
 * Make each Quickstart step one short sentence followed by its command, around 20 words. Reasoning belongs in `Settings` as a bullet, never as prose between the steps.
-* Write each `Before you begin` bullet as `- [Imperative phrase](relative/path)` on one line, with at most a short parenthetical caveat. The linked file carries the explanation; the bullet does not.
+* Write each `Before you begin` bullet as one line: a bulleted markdown link whose text is an imperative phrase and whose target is the relative path, with at most a short parenthetical caveat. The linked file carries the explanation; the bullet does not.
 * Split a function once it needs a second `try`/`except` or a second conditional variable, and compose small named helpers instead. Each check in `verify_checkpoint.py` is its own function returning `(problems, notes)`, and `verify()` only concatenates them, so a new check is a new function rather than another branch.
 * Tear down GPU deployments and scale the nodegroup to zero as soon as measurement stops.
 

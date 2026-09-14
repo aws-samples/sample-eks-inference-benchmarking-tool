@@ -227,13 +227,13 @@ kubectl create configmap vllm-sitecustomize --from-file=sitecustomize.py=k8s/exa
 
 ### `job-download-weights-to-pvc.yaml`
 
-This is the template. For the models the recipes in this repo serve, [`model-downloads/`](../../model-downloads/README.md) already holds filled-in Jobs, so start there and use this template for a model it does not cover.
+This is the template. For the models the recipes in this repo serve, [`model-jobs/`](../../model-jobs/README.md) already holds filled-in Jobs, so start there and use this template for a model it does not cover.
 
 Runs on a CPU node, because a download needs bandwidth and disk rather than GPU capacity billed by the hour. Re-applying resumes rather than restarting, by counting the shards already on disk against the index.
 
 `backoffLimit` is 0 deliberately: silent retries turn one diagnosable failure into an unbounded transfer cost. Keep the hub cache on the same volume, or the container's root disk fills. Verify against the index at the end, because a partial download can exit 0 and fail later at model load.
 
-Xet has been observed stalling and running out of memory on very large repositories, so it is disabled here. That carries a cost: `hf_transfer` has been removed from the hub client, so with Xet off there is no accelerated transfer path and downloads run over plain HTTP, measured at roughly 60 MB/s on a 15 GB checkpoint. The Jobs in [`model-downloads/`](../../model-downloads/README.md) make the opposite tradeoff and set `HF_XET_HIGH_PERFORMANCE=1`, matching NVIDIA's [Dynamo GLM recipe](https://github.com/ai-dynamo/dynamo/blob/main/recipes/glm-5.2/model-cache/model-download.yaml). Xet stays off in this template while the stall is only reproducible on very large repositories; revisiting it requires a measurement on one of those.
+Xet has been observed stalling and running out of memory on very large repositories, so it is disabled here. That carries a cost: `hf_transfer` has been removed from the hub client, so with Xet off there is no accelerated transfer path and downloads run over plain HTTP, measured at roughly 60 MB/s on a 15 GB checkpoint. The Jobs in [`model-jobs/`](../../model-jobs/README.md) make the opposite tradeoff and set `HF_XET_HIGH_PERFORMANCE=1`, matching NVIDIA's [Dynamo GLM recipe](https://github.com/ai-dynamo/dynamo/blob/main/recipes/glm-5.2/model-cache/model-download.yaml). Xet stays off in this template while the stall is only reproducible on very large repositories; revisiting it requires a measurement on one of those.
 
 Gated repositories need a Secret named `hf-token` with key `token`.
 

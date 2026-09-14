@@ -58,7 +58,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 4. Stage the weights on the PVC.
 
    ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-downloads/gemma4-31b-bf16.yaml
+   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-jobs/gemma4-31b/bf16-model-download.yaml
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait --for=condition=complete job/download-gemma4-31b-bf16 --timeout=6h
    ```
 

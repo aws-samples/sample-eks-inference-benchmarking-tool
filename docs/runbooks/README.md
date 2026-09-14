@@ -43,7 +43,7 @@ Runbooks are grouped by model under `docs/runbooks/<model>/`; each directory's `
 
 ## Quantization
 
-Published checkpoints are staged by the model-specific Jobs indexed in [`model-downloads/`](../../model-downloads/README.md#fp8-weights-downloaded-or-quantized). When a recipe requires local conversion, follow the [`job-quantize-model.yaml` workflow](../../k8s/examples/README.md#job-quantize-modelyaml); the model overview and runbook identify those cases.
+Published checkpoints are staged by the model-specific Jobs indexed in [`model-jobs/`](../../model-jobs/README.md#fp8-weights-downloaded-or-quantized). When a recipe requires local conversion, follow the [`job-quantize-model.yaml` workflow](../../k8s/examples/README.md#job-quantize-modelyaml); the model overview and runbook identify those cases.
 
 ## Studies
 

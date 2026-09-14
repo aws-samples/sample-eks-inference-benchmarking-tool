@@ -48,4 +48,4 @@ An unset `Parallelism` cell means the recipe passes no `--tensor-parallel-size`,
 
 ## What a recipe is not
 
-A recipe runs `vllm serve`. Weight staging Jobs live in [`model-downloads/`](../model-downloads/README.md), quantization is a Job from [`k8s/examples/`](../k8s/examples/README.md), and infrastructure examples live there too. None of those belong here.
+A recipe runs `vllm serve`. Weight staging Jobs live in [`model-jobs/`](../model-jobs/README.md), quantization is a Job from [`k8s/examples/`](../k8s/examples/README.md), and infrastructure examples live there too. None of those belong here.

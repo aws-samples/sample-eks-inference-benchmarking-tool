@@ -74,7 +74,7 @@ Steps 1 to 6 are shared. Then run the throughput test, the latency test, or both
 5. Quantize the checkpoint to `/models/quantized/gemma-4-E4B-it-fp8`. Roughly five minutes, and it needs the GPU, so tear down any server first.
 
    ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-quantize/gemma4-e4b-fp8.yaml
+   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-jobs/gemma4-e4b/fp8-model-quantize.yaml
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
        --for=condition=complete job/quantize-gemma4-e4b-fp8 --timeout=30m
    ```
@@ -84,7 +84,7 @@ Steps 1 to 6 are shared. Then run the throughput test, the latency test, or both
    ```bash
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create configmap checkpoint-verifier \
        --from-file=verify_checkpoint.py=app/quantize/src/verify_checkpoint.py
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-quantize/verify-checkpoint.yaml
+   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-jobs/gemma4-e4b/fp8-model-verify.yaml
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
        --for=condition=complete job/verify-checkpoint --timeout=5m
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs job/verify-checkpoint
