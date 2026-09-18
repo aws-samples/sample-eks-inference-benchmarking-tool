@@ -15,6 +15,7 @@ Runbooks are grouped by model under `docs/runbooks/<model>/`; each directory's `
 | Gemma 4 E4B | g7.2xlarge — BF16 | [`bf16-g7.2xlarge-runbook.md`](./gemma4-e4b/bf16-g7.2xlarge-runbook.md) | published BF16 downloaded in pod | none |
 | Gemma 4 E4B | g7.2xlarge — FP8 | [`fp8-g7.2xlarge-runbook.md`](./gemma4-e4b/fp8-g7.2xlarge-runbook.md) | locally quantized FP8 on FSx | none |
 | Gemma 4 E4B | g7e.2xlarge — FP8 | [`fp8-g7e.2xlarge-runbook.md`](./gemma4-e4b/fp8-g7e.2xlarge-runbook.md) | locally quantized FP8 on FSx | none |
+| Gemma 4 E4B | g7e.2xlarge — FP8, FP8 KV cache | [`fp8-g7e.2xlarge-fp8kv-runbook.md`](./gemma4-e4b/fp8-g7e.2xlarge-fp8kv-runbook.md) | locally quantized FP8 on FSx | uncalibrated KV scales; no pinned attention backend |
 | Gemma 4 31B | g6e.12xlarge — BF16 | [`bf16-g6e.12xlarge-runbook.md`](./gemma4-31b/bf16-g6e.12xlarge-runbook.md) | published BF16 staged to FSx | none |
 | Gemma 4 31B | g7.24xlarge — BF16 | [`bf16-g7.24xlarge-runbook.md`](./gemma4-31b/bf16-g7.24xlarge-runbook.md) | published BF16 staged to FSx | none |
 | Gemma 4 31B | g7e.2xlarge — BF16 | [`bf16-g7e.2xlarge-runbook.md`](./gemma4-31b/bf16-g7e.2xlarge-runbook.md) | published BF16 downloaded in pod | none |
