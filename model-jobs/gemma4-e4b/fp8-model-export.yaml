@@ -1,0 +1,85 @@
+#
+# Job that copies the published ModelOpt FP8 checkpoint off the shared claim and into an S3 staging prefix, so a cluster in another region can serve the same bytes. Pairs with fp8-model-download.yaml, which loads it on the far side.
+#
+# Naming note: the two sanctioned names in this directory are <quant>-model-download.yaml and
+# <quant>-model-quantize.yaml. This Job is neither. It does not fetch published weights and it does
+# not produce a checkpoint, it exports one this repo already produced, so it takes a third name
+# rather than misfiling under either.
+#
+# Prefer exporting over re-quantizing in the second region. Calibration is data-dependent and this
+# checkpoint is not bit-reproducible, so a fresh quantize yields different weights and makes results
+# incomparable to every measurement taken on the original.
+#
+# The node role needs s3:PutObject and s3:ListBucket on the staging bucket only. Remove that grant
+# when the staging prefix is deleted.
+#
+# SUBSTITUTE: my-checkpoint-bucket and fsx-pvc.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: export-gemma4-e4b-fp8
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      # No GPU. This is a copy, so it runs anywhere that can mount the claim.
+      containers:
+        - name: exporter
+          image: public.ecr.aws/aws-cli/aws-cli:latest
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              SRC="${CHECKPOINT_DIR}"
+              DEST="s3://${STAGING_BUCKET}/${STAGING_PREFIX}"
+
+              echo "=== verifying the checkpoint before uploading anything ==="
+              test -d "$SRC" || { echo "FAIL: $SRC does not exist"; exit 1; }
+              test -s "$SRC/config.json" || { echo "FAIL: no config.json in $SRC"; exit 1; }
+              shards=$(find "$SRC" -maxdepth 1 -name '*.safetensors' | wc -l)
+              [ "$shards" -gt 0 ] || { echo "FAIL: no .safetensors shards in $SRC"; exit 1; }
+              if [ "$shards" -gt 1 ]; then
+                test -s "$SRC/model.safetensors.index.json" || { echo "FAIL: $shards shards but no index"; exit 1; }
+              fi
+              # A ModelOpt FP8 export carries per-tensor scales. Their absence means the
+              # directory holds unquantized weights under a quantized name.
+              grep -q 'quantization_config\|quant_method' "$SRC/config.json" \
+                || { echo "FAIL: config.json declares no quantization; this is not an FP8 export"; exit 1; }
+              echo "  shards: $shards"
+              du -sh "$SRC" | sed 's/^/  size: /'
+
+              echo "=== recording sha256 per file, so the far side can prove it got the same bytes ==="
+              cd "$SRC"
+              find . -type f | LC_ALL=C sort | xargs sha256sum > /tmp/SHA256SUMS
+              wc -l < /tmp/SHA256SUMS | sed 's/^/  files hashed: /'
+
+              echo "=== uploading ==="
+              aws s3 sync "$SRC" "$DEST" --only-show-errors
+              aws s3 cp /tmp/SHA256SUMS "$DEST/SHA256SUMS" --only-show-errors
+
+              echo "=== confirming the far side will see every file ==="
+              want=$(find . -type f | wc -l)
+              got=$(aws s3 ls "$DEST/" --recursive | grep -vc '/SHA256SUMS$' || true)
+              echo "  local files: $want   objects in s3: $got"
+              [ "$got" -ge "$want" ] || { echo "FAIL: $want files locally but only $got objects uploaded"; exit 1; }
+              echo "=== export complete ==="
+          env:
+            - name: CHECKPOINT_DIR
+              value: "/models/quantized/gemma-4-E4B-it-fp8"
+            - name: STAGING_BUCKET
+              value: "my-checkpoint-bucket"
+            - name: STAGING_PREFIX
+              value: "gemma-4-E4B-it-fp8"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          resources:
+            requests:
+              cpu: "2"
+              memory: 4Gi
+          volumeMounts:
+            - { name: models, mountPath: /models }
+      volumes:
+        - name: models
+          persistentVolumeClaim: { claimName: fsx-pvc }
