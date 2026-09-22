@@ -8,7 +8,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 DEPLOYMENT=gemma4-31b-vllm-g7e-fp8kv-32k
 
 # Deploy the Gemma 4 31B server. It serves the FP8 checkpoint from the shared claim.
-echo "==> Deploying Gemma 4 31B FP8 on g7e.4xlarge (FP8 KV, 32k context, FLASHINFER)"
+echo "==> Deploying Gemma 4 31B FP8 on g7e.4xlarge (FP8 KV, 32k context, TRITON_ATTN)"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply \
   -f "$SCRIPT_DIR/fp8-g7e.4xlarge-fp8kv-32k.yaml"
 
@@ -42,19 +42,19 @@ echo "    KV cache confirmed: fp8"
 # Confirm the pinned attention backend actually took effect. v0.29.0 does not read
 # VLLM_ATTENTION_BACKEND, so a pin passed as an environment variable leaves the engine on
 # whatever it auto-selects. Fail here rather than let that reach a result file.
-echo "==> Confirming the attention backend is FLASHINFER"
+echo "==> Confirming the attention backend is TRITON_ATTN"
 SERVER_LOG=$(kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" logs \
   "deployment/$DEPLOYMENT" --container vllm)
 if grep -q "Unknown vLLM environment variable detected: VLLM_ATTENTION_BACKEND" <<<"$SERVER_LOG"; then
   echo "FAIL: server ignored VLLM_ATTENTION_BACKEND; the pin must be --attention-backend" >&2
   exit 1
 fi
-if ! grep -q "Using AttentionBackendEnum.FLASHINFER backend" <<<"$SERVER_LOG"; then
-  echo "FAIL: requested FLASHINFER but the server did not report it" >&2
+if ! grep -q "Using AttentionBackendEnum.TRITON_ATTN backend" <<<"$SERVER_LOG"; then
+  echo "FAIL: requested TRITON_ATTN but the server did not report it" >&2
   grep -E "Using AttentionBackendEnum" <<<"$SERVER_LOG" >&2 || echo "  no backend line in the log" >&2
   exit 1
 fi
-echo "    backend confirmed: FLASHINFER"
+echo "    backend confirmed: TRITON_ATTN"
 
 # Record the KV pool this context and precision produced, and the uncalibrated-scale caveat.
 echo "==> KV pool and scale caveat, from the server log"

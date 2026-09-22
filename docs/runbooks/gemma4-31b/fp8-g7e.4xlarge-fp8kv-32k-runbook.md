@@ -6,7 +6,9 @@ This is the long-context sibling of [`fp8-g7e.4xlarge-runbook.md`](./fp8-g7e.4xl
 
 ## Capacity sizing
 
-gemma-4-31b-it at FP8 occupies 30.4 GiB of the 89.4 GiB on 1 RTX PRO 6000 Blackwell card, leaving 47.1 GiB for KV cache. At FP8 KV precision and this recipe's 32,768 token context that pool holds 16 concurrent full-length sequences, and about 23 at the ~21.3k tokens a `coding_repo_context` request occupies. At 16-bit KV those figures would be 8 and 11, which is why the KV cache is FP8 here.
+gemma-4-31b-it at FP8 occupies 30.4 GiB of the 89.4 GiB on 1 RTX PRO 6000 Blackwell card. The served pool, from `vllm:cache_config_info` at deploy time, is **123,723 tokens: 3.78 concurrent full-length sequences at this recipe's 32,768 token context, and about 5.8 at the ~21.3k tokens a `coding_repo_context` request occupies.** At 16-bit KV those figures halve, which is why the KV cache is FP8 here.
+
+Do not size this pool from the interleaved-attention formula the other Gemma runbooks use. That formula assumes only the 10 full-attention layers grow with context and predicts ~16 full-length sequences here; the engine on this image allocates its page pool uniformly across all 60 layers (~480 KiB per token at FP8), so the sliding-window saving does not appear as capacity. The measured pool is a quarter of the formula's prediction. Read `KV cache size` and `Max concurrency` from the deploy script's output rather than computing them.
 
 | Property | Value | Source |
 |---|---|---|
@@ -18,13 +20,13 @@ gemma-4-31b-it at FP8 occupies 30.4 GiB of the 89.4 GiB on 1 RTX PRO 6000 Blackw
 | **Tensor parallel size** | 1 | one GPU, no `--tensor-parallel-size` |
 | **Weight precision** | FP8 E4M3, static input scales | `QUANTIZATION=modelopt`, `hf_quant_config.json` |
 | **KV cache precision** | FP8 E4M3, uncalibrated scales | `KV_CACHE_DTYPE=fp8`; see Settings |
-| **Attention backend** | FLASHINFER, pinned | `--attention-backend`, from `ATTENTION_BACKEND` |
+| **Attention backend** | TRITON_ATTN, pinned; the only one this configuration admits | `--attention-backend`, from `ATTENTION_BACKEND`; see Settings |
 | **Context length** | 32,768 | `MAX_MODEL_LEN` |
 | **Memory fraction** | 0.95 | `GPU_MEM_UTIL` |
 | **Max sequences** | 64 | `MAX_NUM_SEQS` |
 | **Max batched tokens** | 32,768 | `MAX_NUM_BATCHED_TOKENS` |
 
-KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, which is 8 KiB at FP8 and 16 KiB at 16-bit. Gemma 4 interleaves attention, so the 50 sliding layers hold at most 1,024 tokens each whatever the context length (0.39 GiB per sequence at FP8) and per-sequence cost grows only through the 10 full attention layers (2.5 GiB at 32,768 tokens, 1.63 GiB at 21.3k). The 47.1 GiB pool is 89.4 GiB at 0.95 utilization, less 30.4 GiB of weights, less roughly 7.5 GiB for activations and CUDA graphs. Read `KV cache size` and `Max concurrency` in the result file's provenance block for the allocation the engine actually made.
+KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, 8 KiB at FP8, and on this image every one of the 60 layers is charged for the full context: ~480 KiB per token, ~15 GiB per full-length sequence. The pool behind the 123,723-token figure is 89.4 GiB at 0.95 utilization, less 30.4 GiB of weights, less activations, graphs and the vision tower. The provenance block of every result file repeats the allocation in force.
 
 ## Before you begin
 
@@ -60,7 +62,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --for=jsonpath='{.status.phase}'=Bound pvc/fsx-pvc --timeout=2m
    ```
 
-4. Deploy and validate the model server. The script fails if the KV cache is not FP8 or the attention backend is not FLASHINFER, so a server that started on the wrong settings never reaches a result file.
+4. Deploy and validate the model server. The script fails if the KV cache is not FP8 or the attention backend is not TRITON_ATTN, so a server that started on the wrong settings never reaches a result file.
 
    ```bash
    ./vllm-recipes/gemma4-31b/fp8-g7e.4xlarge-fp8kv-32k-deploy.sh
@@ -85,7 +87,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
        --service gemma4-31b-vllm-g7e-fp8kv-32k \
        --protocol server_qps --profile coding_repo_context \
-       --qps-levels 0.5,0.75,1,1.5 --ttft-target 5000 \
+       --qps-levels 0.1,0.2,0.4 --ttft-target 5000 \
        --instance g7e.4xlarge --model-tag gemma4-31b \
        --config fp8kv-32k --quant fp8 \
        --model-id /models/quantized/gemma-4-31b-it-fp8 \
@@ -96,14 +98,14 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-7. Run the open-loop capacity search. Expect roughly two and a half hours for one rep at these four levels; see Settings for why.
+7. Run the open-loop capacity search. Expect roughly eight hours for one rep at these three levels; see Settings for why.
 
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
        --service gemma4-31b-vllm-g7e-fp8kv-32k \
        --protocol server_qps --profile coding_repo_context \
-       --qps-levels 0.5,0.75,1,1.5 --ttft-target 5000 \
+       --qps-levels 0.1,0.2,0.4 --ttft-target 5000 \
        --instance g7e.4xlarge --model-tag gemma4-31b \
        --config fp8kv-32k --quant fp8 \
        --model-id /models/quantized/gemma-4-31b-it-fp8 \
@@ -153,11 +155,11 @@ The checkpoint on `fsx-pvc` survives, so a later run needs no requantization.
 
 - **`--kv-cache-dtype fp8`, the KV precision under test.** At 30k tokens a sequence holds about 5.4 GiB of KV at 16-bit and 2.7 GiB at FP8, so on one card the KV cache is the binding constraint and FP8 doubles the sequences in flight. The scales are uncalibrated: vLLM 0.29.0 rejects `--calculate-kv-scales` and refuses to start, so the server logs `Using KV cache scaling factor 1.0 for fp8_e4m3` at startup. That bounds any accuracy claim taken from this recipe. Confirm `cache_dtype="fp8"` in `vllm:cache_config_info`; the deploy script fails if it is absent.
 
-- **`--attention-backend FLASHINFER`, pinned, passed as a flag.** vLLM 0.29.0 does not read `VLLM_ATTENTION_BACKEND`; it logs `Unknown vLLM environment variable detected` and runs its auto-selected backend, so a pin passed that way records nothing. Pinned because vLLM's auto-priority tables are written for sm_10x B200 and this card is sm_120. FLASHINFER matches the 8k sibling and is the long-context kernel. Do not carry over the E4B finding that TRITON_ATTN decoded 8–13% faster: that was 96-token prompts on a 4B model. FLASH_ATTN cannot serve an FP8 KV cache on sm_120 at all; the engine requires FA3 on SM90 or FA4 on SM100. The deploy script asserts `Using AttentionBackendEnum.FLASHINFER backend` in the server log. To A/B, copy this recipe with `ATTENTION_BACKEND=TRITON_ATTN` and nothing else changed.
+- **`--attention-backend TRITON_ATTN`, pinned, passed as a flag.** vLLM 0.29.0 does not read `VLLM_ATTENTION_BACKEND`; it logs `Unknown vLLM environment variable detected` and runs its auto-selected backend, so a pin passed that way records nothing. Here the pin documents rather than chooses, because this configuration admits exactly one backend. The engine refuses FLASHINFER for this model: `Selected backend AttentionBackendEnum.FLASHINFER is not valid for this configuration. Reason: ['partial multimodal token full attention not supported']` — Gemma 4 31B carries a vision tower, unlike the 8k sibling's text-only serving path on 0.21.0, where FLASHINFER runs. It refuses FLASH_ATTN for the FP8 KV cache on sm_120: `FP8 KV cache requires FA3 on SM90 or FA4 on SM100`. Both refusals were observed on this image at deploy time. There is no backend A/B to run on this model at this KV precision; the deploy script asserts `Using AttentionBackendEnum.TRITON_ATTN backend` in the server log.
 
 - **`--max-model-len 32768`, the context under test.** `coding_repo_context` measures 20,296 wire tokens median on this tokenizer (nominal 16,384; the profile runs +24% over) with prompts to 21,098, plus 1,024 output, so 24,576 would fit but leaves no room for a customer trace at the top of its range. 32,768 is the window the [pinned agentic trace](../../../app/bench/data/traces/README.md) was scaled for.
 
-- **`--max-num-seqs 64` and `--max-cudagraph-capture-size 64`, down from the sibling's 512.** The pool holds 16 full-length sequences and about 23 at the profile's size, so 512 is unreachable and capturing graphs to 512 spends memory that could hold KV. 64 covers every reachable batch with margin for short requests.
+- **`--max-num-seqs 64` and `--max-cudagraph-capture-size 64`, down from the sibling's 512.** The measured pool holds under 6 profile-sized sequences, so 512 is unreachable and capturing graphs to 512 spends memory that could hold KV. 64 already carries a wide margin; it is kept rather than tightened further so shorter-than-profile requests still batch freely.
 
 - **`--max-num-batched-tokens 32768`.** A full 21k-token prompt prefills in one chunk. Held at the sibling's value.
 
@@ -169,11 +171,11 @@ The checkpoint on `fsx-pvc` survives, so a later run needs no requantization.
 
 - **Open-loop `server_qps`, not the closed-loop `corpus` sweep.** The question is fleet size for an arrival rate, and closed-loop concurrency understated SLA-safe capacity by 26% on this model. `server_qps` issues Poisson arrivals at each target rate and reports whether TTFT and TPOT p99 hold. Fleet size is then `arrival rate ÷ SLA-safe rate per card`, rounded up, times a peak factor. At the customer's 1.4M input tokens per minute and ~30k tokens per request that arrival rate is 0.78 requests per second.
 
-- **`--qps-levels 0.5,0.75,1,1.5`, not the shipped `1,2,3,4,5,6,8,16`.** Those levels were set for `coding_completion` at 256 output tokens. Here a request holds its KV slot for roughly 22–33 seconds (a 20k-token prefill plus 1,024 decode steps at 20–30 ms), and about 23 slots exist, so the card saturates near 0.7–1.0 requests per second. The four levels bracket that with one saturated level to establish the ceiling. Move them once the first rep shows where the boundary actually is.
+- **`--qps-levels 0.1,0.2,0.4`, not the shipped `1,2,3,4,5,6,8,16`.** Those levels were set for `coding_completion` at 256 output tokens. Here a request holds its KV slot for roughly 22–33 seconds (a 20k-token prefill plus 1,024 decode steps at 20–30 ms), and the measured pool holds about 5.8 profile-sized requests, so the card saturates near 0.2 requests per second. The three levels put one below, one at, and one past that boundary, the last establishing the ceiling. Move them once the first rep shows where the boundary actually is.
 
 - **`--ttft-target 5000`, overriding the shipped 500 ms.** Prefilling 20k tokens on one card takes on the order of 1.5–2.5 seconds before any queueing, so the shipped target fails at every rate and measures nothing. 5,000 ms is a placeholder that admits one queued prefill ahead; substitute the customer's real TTFT SLA when known. The override is appended to the result filename so it cannot overwrite a run at the defaults. TPOT p99 stays at the shipped 50 ms.
 
-- **Run time is set by `MIN_QUERY_COUNT=1500`, which the CLI cannot lower.** LoadGen issues at least 1,500 requests per level, so a level at 0.5 requests per second takes 50 minutes and any saturated level drains at the server's own rate regardless of target, about 30 minutes. Four levels at one rep is roughly two and a half hours; three reps at three levels is longer still. Budget the node accordingly.
+- **Run time is set by `MIN_QUERY_COUNT=1500`, which the CLI cannot lower.** LoadGen issues at least 1,500 requests per level, so the level at 0.1 requests per second takes about four hours, 0.2 about two, and the saturated 0.4 level drains at the server's own rate (~0.2 req/s), two more. One rep at these three levels is roughly eight hours and that cost is inherent to certifying a p99 at a low arrival rate on one card. Budget the node accordingly, and prefer a spot-interruption-tolerant window.
 
 - **The profile is directionally right, not a match.** `coding_repo_context` sends ~20.3k input tokens and caps output at 1,024. The customer's traffic backs out to ~25–30k input and ~5k output (250K output tokens per minute over 46.7 requests per minute). Residency, KV occupancy and per-card throughput all scale with output length, so the SLA-safe rate this run produces will overstate per-card capacity, plausibly by 3–4x, and the fleet size derived from it is a floor. A sibling profile with `output_tokens` near 5,120 would close the gap and is a protocol change: a new pinned file, never an edit to this one.
 

@@ -70,12 +70,14 @@ spec:
             - name: KV_CACHE_DTYPE
               value: "fp8"
             # Pinned rather than auto-selected so the kernel that served is on record; no result
-            # file captures it otherwise. FLASHINFER matches the 8k sibling's pin and is the
-            # long-context kernel. Do not carry the E4B finding that TRITON_ATTN decoded faster:
-            # that was 96-token prompts on a different model. FLASH_ATTN cannot serve an FP8 KV
-            # cache on sm_120 at all (the engine requires FA3 on SM90 or FA4 on SM100).
+            # file captures it otherwise. TRITON_ATTN is the only backend this configuration can
+            # run, so the pin documents rather than chooses: the engine refuses FLASHINFER for
+            # this model ("partial multimodal token full attention not supported"; Gemma 4 31B
+            # carries a vision tower), and refuses FLASH_ATTN for the FP8 KV cache on sm_120
+            # ("FP8 KV cache requires FA3 on SM90 or FA4 on SM100"). Both refusals observed on
+            # this image at deploy time.
             - name: ATTENTION_BACKEND
-              value: "FLASHINFER"
+              value: "TRITON_ATTN"
             # The context under test. The 8k sibling caps at 8192; this serves the largest window
             # the coding_repo_context profile needs (20.3k wire input + 1024 output on this
             # tokenizer) with room for prompts at the top of its range.
