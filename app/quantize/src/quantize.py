@@ -92,9 +92,27 @@ def quant_config():
                          f"Expected one of {sorted(QUANT_CONFIGS)}")
     cfg = getattr(mtq, attr)
     for pattern in config.QUANT_EXCLUDE_PATTERNS:
-        cfg["quant_cfg"][pattern] = {"enable": False}
+        apply_exclusion(cfg["quant_cfg"], pattern)
         print(f"Excluding from quantization (kept full precision): {pattern}")
     return cfg
+
+
+def apply_exclusion(quant_cfg, pattern):
+    """Disable quantization for one module pattern, on either quant_cfg schema.
+
+    modelopt <= 0.45 ships quant_cfg as a dict of pattern -> settings; 0.46 made it a
+    list of {"quantizer_name": pattern, ...} entries evaluated in order, later entries
+    winning. Appending keeps the exclusion authoritative over the earlier defaults.
+    Anything else is a schema this code has not seen, and silently continuing would
+    quantize modules the caller asked to protect, so it raises instead.
+    """
+    if isinstance(quant_cfg, dict):
+        quant_cfg[pattern] = {"enable": False}
+    elif isinstance(quant_cfg, list):
+        quant_cfg.append({"quantizer_name": pattern, "enable": False})
+    else:
+        raise TypeError(f"unrecognized modelopt quant_cfg schema: {type(quant_cfg).__name__}; "
+                        f"refusing to guess how to exclude {pattern!r}")
 
 
 def build_forward_loop(tokenizer):
