@@ -15,6 +15,7 @@ Use any one of the following runbook recipes to get started. For additional flag
 | `g7.24xlarge` | FP8 | Single node inference | 4 | 4 | [Runbook](./fp8-g7.24xlarge-runbook.md) |
 | `g7e.4xlarge` | FP8 | Single node inference | 1 | unset | [Runbook](./fp8-g7e.4xlarge-runbook.md) |
 | `g7e.4xlarge` | FP8, FP8 KV, 32k context | Single node inference | 1 | unset | [Runbook](./fp8-g7e.4xlarge-fp8kv-32k-runbook.md) |
+| `g7e.2xlarge` | FP8, FP8 KV, 32k context | Single node inference | 1 | unset | [Runbook](./fp8-g7e.2xlarge-fp8kv-32k-runbook.md) |
 
 Another recipe serves this model on `g7.24xlarge` to compare `NCCL_P2P_LEVEL` settings rather than to measure serving performance. To learn more, see [Interconnect studies](../../../experiments/README.md#interconnect-studies).
 
