@@ -1,0 +1,111 @@
+#
+# Job that stages the published NVIDIA Nemotron 3 Ultra 550B A55B NVFP4 checkpoint from Hugging
+# Face into S3, once, so any cluster can pull it later. The checkpoint is ~328 GiB across 113
+# safetensors shards; the Job fails on a shard-count or size mismatch so an incomplete stage can
+# never exit 0.
+#
+# SUBSTITUTE: WEIGHTS_BUCKET, AWS_REGION, and the IRSA-annotated ServiceAccount.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nemotron-3-ultra-nvfp4-hf-to-s3
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 86400
+  template:
+    metadata:
+      labels:
+        app: nemotron-3-ultra-nvfp4-hf-to-s3
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: nemotron-3-ultra-bench
+      # A cluster whose only autoscaled pool is GPU-tainted cannot place this pod without the
+      # toleration; the ephemeral-storage request rules out typical system CPU nodes anyway.
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: stager
+          image: public.ecr.aws/docker/library/python:3.12-slim
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          command: ["bash", "-c"]
+          env:
+            - name: MODEL_REPO
+              value: nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4
+            - name: WEIGHTS_BUCKET
+              value: SUBSTITUTE-weights-bucket
+            - name: PREFIX
+              value: nemotron-3-ultra-nvfp4
+            - name: STAGE_DIR
+              value: /scratch/model
+            - name: HF_HOME
+              value: /scratch/.hf-cache
+            # Xet high-perf transfer OOM'd and stalled on an earlier large pull on this pattern;
+            # classic HTTP plus hf_transfer is the combination that completed.
+            - name: HF_HUB_DISABLE_XET
+              value: "1"
+            - name: HF_HUB_ENABLE_HF_TRANSFER
+              value: "1"
+            - name: EXPECTED_SHARDS
+              value: "113"
+            - name: MIN_TOTAL_GIB
+              value: "300"
+            - name: AWS_REGION
+              value: us-east-1
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          args:
+            - |
+              set -euo pipefail
+              pip install --no-cache-dir -q "huggingface_hub[hf_transfer]==1.28.0" awscli
+              df -h /scratch | tail -1
+
+              echo "=== downloading $MODEL_REPO $(date -u) ==="
+              hf download "$MODEL_REPO" --local-dir "$STAGE_DIR"
+
+              echo "=== verifying the local stage before upload $(date -u) ==="
+              local_count=$(find "$STAGE_DIR" -name '*.safetensors' | wc -l)
+              partials=$(find "$STAGE_DIR" -name '*.incomplete' | wc -l)
+              total_gib=$(du -s --block-size=1G "$STAGE_DIR" | cut -f1)
+              echo "local shards: $local_count/$EXPECTED_SHARDS, partial files: $partials, total: ${total_gib} GiB"
+              test "$local_count" -eq "$EXPECTED_SHARDS" || { echo "FATAL: expected $EXPECTED_SHARDS shards, downloaded $local_count" >&2; exit 1; }
+              test "$partials" -eq 0 || { echo "FATAL: $partials partial files remain" >&2; exit 1; }
+              test "$total_gib" -ge "$MIN_TOTAL_GIB" || { echo "FATAL: expected >= ${MIN_TOTAL_GIB} GiB, got ${total_gib} GiB" >&2; exit 1; }
+
+              echo "=== uploading to s3://$WEIGHTS_BUCKET/$PREFIX/ $(date -u) ==="
+              aws configure set default.s3.max_concurrent_requests 64
+              aws s3 sync "$STAGE_DIR" "s3://$WEIGHTS_BUCKET/$PREFIX/" --region "$AWS_REGION" --only-show-errors
+
+              echo "=== verifying S3 against local $(date -u) ==="
+              # Anchored: a substring match also counts model.safetensors.index.json and fails a complete stage.
+              s3_count=$(aws s3 ls "s3://$WEIGHTS_BUCKET/$PREFIX/" --region "$AWS_REGION" | awk '{print $NF}' | grep -c '\.safetensors$')
+              echo "shards in S3: $s3_count"
+              test "$local_count" -eq "$s3_count" || { echo "FATAL: shard count mismatch after upload" >&2; exit 1; }
+              echo "=== staged $(date -u) ==="
+          volumeMounts:
+            - name: scratch
+              mountPath: /scratch
+          resources:
+            requests:
+              cpu: "16"
+              memory: 64Gi
+              ephemeral-storage: 350Gi
+            limits:
+              cpu: "32"
+              memory: 128Gi
+              ephemeral-storage: 390Gi
+      volumes:
+        - name: scratch
+          emptyDir:
+            sizeLimit: 390Gi

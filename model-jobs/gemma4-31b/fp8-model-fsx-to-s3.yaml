@@ -1,0 +1,55 @@
+#
+# Job that stages the locally quantized Gemma 4 31B FP8 checkpoint from the FSx claim into S3,
+# so a cluster without this filesystem can serve it. The Job fails on an empty source or a
+# shard-count mismatch after upload, so an incomplete stage can never exit 0.
+#
+# SUBSTITUTE: WEIGHTS_BUCKET, AWS_REGION, and fsx-pvc if your claim is named differently.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gemma4-31b-fp8-fsx-to-s3
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 14400
+  template:
+    metadata:
+      labels:
+        app: gemma4-31b-fp8-fsx-to-s3
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: stager
+          image: public.ecr.aws/aws-cli/aws-cli:latest
+          command: ["bash", "-c"]
+          env:
+            - name: SRC_DIR
+              value: /models/quantized/gemma-4-31b-it-fp8
+            - name: WEIGHTS_BUCKET
+              value: SUBSTITUTE-weights-bucket
+            - name: PREFIX
+              value: gemma4-31b-fp8-quantized
+            - name: AWS_REGION
+              value: us-east-1
+          args:
+            - |
+              set -euo pipefail
+              test -f "$SRC_DIR/config.json" || { echo "FATAL: no checkpoint at $SRC_DIR" >&2; exit 1; }
+              local_count=$(find "$SRC_DIR" -name '*.safetensors' | wc -l)
+              test "$local_count" -ge 1 || { echo "FATAL: no safetensors shards at $SRC_DIR" >&2; exit 1; }
+              echo "=== uploading $local_count shards to s3://$WEIGHTS_BUCKET/$PREFIX/ $(date -u) ==="
+              aws configure set default.s3.max_concurrent_requests 32
+              aws s3 sync "$SRC_DIR" "s3://$WEIGHTS_BUCKET/$PREFIX/" --region "$AWS_REGION" --only-show-errors
+              s3_count=$(aws s3 ls "s3://$WEIGHTS_BUCKET/$PREFIX/" --region "$AWS_REGION" | awk '{print $NF}' | grep -c '\.safetensors$')
+              echo "local shards: $local_count, in S3: $s3_count"
+              test "$local_count" -eq "$s3_count" || { echo "FATAL: shard count mismatch after upload" >&2; exit 1; }
+              echo "=== staged $(date -u) ==="
+          volumeMounts:
+            - name: models
+              mountPath: /models
+              readOnly: true
+          resources:
+            requests: { cpu: "4", memory: 8Gi }
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: fsx-pvc

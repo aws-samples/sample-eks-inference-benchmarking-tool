@@ -1,0 +1,178 @@
+#
+# Muse-Glimmer-30B at FP8 with an FP8 KV cache as EIGHT independent single-GPU replicas on one
+# g7e.48xlarge (8x RTX PRO 6000 Blackwell, sm_120, PCIe, no NVLink), 32,768-token context each,
+# behind one Service. Eight-copy sibling of fp8-g7e.24xlarge-fp8kv-32k-dp4-s3-flashinfer.yaml: same per-copy values,
+# and per-replica serving values identical to the single-card fp8-g7e.2xlarge-fp8kv-32k.yaml, so
+# it measures how independent copies scale where TP4 over PCIe scaled only 1.4x. Single node, no EFA.
+#
+# The Service spreads load per TCP connection, and the benchmark client keeps one persistent
+# connection per in-flight request, so at low concurrency the split across replicas can be
+# uneven. Record per-replica request counts alongside any result from this recipe.
+#
+# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION (the bucket's region) in the init container.
+#
+#
+# ATTENTION-BACKEND A/B ARM: identical to fp8-g7e.24xlarge-fp8kv-32k-dp4-s3.yaml except --attention-backend FLASHINFER
+# (and resource names), so the pair isolates the attention kernel. Treat results from this
+# file as their own labelled config; never fold them into the TRITON_ATTN baseline.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3-flashinfer
+  labels: { app: muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3-flashinfer }
+spec:
+  # Each replica syncs weights from S3 before vLLM starts; allow for it beyond the 600s default.
+  progressDeadlineSeconds: 3600
+  # Eight single-GPU pods fill the node's eight GPUs; Recreate so an update never waits on a ninth.
+  replicas: 8
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3-flashinfer }
+  template:
+    metadata:
+      labels: { app: muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3-flashinfer }
+    spec:
+      # Pod-scoped S3 read via EKS Pod Identity; node roles on these clusters block pod IMDS (hop limit 1).
+      serviceAccountName: muse-glimmer-30b-bench
+      nodeSelector:
+        node.kubernetes.io/instance-type: "g7e.48xlarge"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      initContainers:
+        - name: fetch-weights
+          image: public.ecr.aws/aws-cli/aws-cli:latest
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              aws configure set default.s3.max_concurrent_requests 32
+              D=/models/quantized/Muse-Glimmer-30B-fp8
+              echo "weights sync start $(date -u)"; df -h /models | tail -1
+              aws s3 sync "s3://${WEIGHTS_BUCKET}/${WEIGHTS_PREFIX}/" "$D/" --region "${AWS_REGION}" --only-show-errors
+              SHARDS=$(find "$D" -name '*.safetensors' | wc -l)
+              SZ=$(du -s --block-size=1G "$D" | cut -f1)
+              echo "weights staged ${SZ} GiB, ${SHARDS} shards  $(date -u)"
+              test -f "$D/config.json" || { echo "FATAL: no config.json" >&2; exit 1; }
+              test "$SHARDS" -eq 4 || { echo "FATAL: expected 4 shards, got ${SHARDS}" >&2; exit 1; }
+              test "$SZ" -ge 28 || { echo "FATAL: expected ~32 GiB, got ${SZ} GiB" >&2; exit 1; }
+          env:
+            - name: WEIGHTS_BUCKET
+              value: SUBSTITUTE-weights-bucket
+            - name: WEIGHTS_PREFIX
+              value: "muse-glimmer-30b-fp8-quantized"
+            - name: AWS_REGION
+              value: "us-east-1"
+          volumeMounts:
+            - { name: model-storage, mountPath: /models }
+          resources:
+            requests: { cpu: "4", memory: 8Gi }
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.29.0
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              echo "=== starting vLLM on ${INSTANCE_TYPE}: $(date -u) ==="
+              vllm serve ${MODEL_DIR} \
+                --quantization ${QUANTIZATION} \
+                --dtype ${DTYPE} \
+                --kv-cache-dtype ${KV_CACHE_DTYPE} \
+                --attention-backend ${ATTENTION_BACKEND} \
+                --gpu-memory-utilization ${GPU_MEM_UTIL} \
+                --max-model-len ${MAX_MODEL_LEN} \
+                --max-num-seqs ${MAX_NUM_SEQS} \
+                --max-num-batched-tokens ${MAX_NUM_BATCHED_TOKENS} \
+                --max-cudagraph-capture-size ${MAX_CUDAGRAPH} \
+                --async-scheduling \
+                --no-enable-prefix-caching \
+                --enable-chunked-prefill \
+                --port 8000
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MODEL_DIR
+              value: "/models/quantized/Muse-Glimmer-30B-fp8"
+            # Real ModelOpt export (float8_e4m3fn weights, hf_quant_config.json, static
+            # input_scale), produced by model-jobs/muse-glimmer-30b/fp8-model-quantize.yaml.
+            - name: QUANTIZATION
+              value: "modelopt"
+            - name: DTYPE
+              value: "bfloat16"
+            # The KV precision under test. Uncalibrated scales, as on every 0.29.0 FP8-KV recipe
+            # here: the engine rejects --calculate-kv-scales and logs "Using KV cache scaling
+            # factor 1.0 for fp8_e4m3" at startup, a caveat on any accuracy claim.
+            - name: KV_CACHE_DTYPE
+              value: "fp8"
+            # Pinned so the kernel that served is on record. TRITON_ATTN to match the gemma4-31b
+            # 32k recipe this one is read against; the model carries a perception encoder, and on
+            # that recipe the engine refused FLASHINFER for the multimodal token pattern and
+            # refuses FLASH_ATTN for FP8 KV on sm_120. The deploy script asserts what actually
+            # served and fails otherwise.
+            - name: ATTENTION_BACKEND
+              value: "FLASHINFER"
+            # Same window as the gemma4-31b 32k recipe: fits the coding_repo_context profile
+            # (20.3k wire median + 1,024 output) with room at the top of its range.
+            - name: MAX_MODEL_LEN
+              value: "32768"
+            # The pool holds roughly 60 full-length sequences at this model's KV geometry
+            # (~0.74 GiB per 32k sequence at FP8 across all 52 layers), so 64 is reachable
+            # here, unlike on gemma4-31b. Held at 64 to match that recipe and the graph
+            # capture ceiling below.
+            - name: MAX_NUM_SEQS
+              value: "64"
+            # A full 21k-token prompt prefills in one chunk. Held at the gemma4-31b value.
+            - name: MAX_NUM_BATCHED_TOKENS
+              value: "32768"
+            - name: MAX_CUDAGRAPH
+              value: "64"
+            # Held at the gemma4-31b 32k value so memory fraction is not a variable between them.
+            - name: GPU_MEM_UTIL
+              value: "0.95"
+            - name: INSTANCE_TYPE
+              value: "g7e.48xlarge"
+            - name: HF_HOME
+              value: "/models"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            # INFO so the backend selection and KV-scale lines land in the server log; the deploy
+            # script reads both.
+            - name: VLLM_LOGGING_LEVEL
+              value: "INFO"
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 15
+            failureThreshold: 120
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 30
+            failureThreshold: 6
+          volumeMounts:
+            - { name: dshm, mountPath: /dev/shm }
+            - { name: model-storage, mountPath: /models }
+      volumes:
+        # One GPU per pod, no NCCL; bounded so four replicas cannot exhaust node memory.
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 16Gi }
+        - name: model-storage
+          emptyDir: { sizeLimit: 80Gi }
+      terminationGracePeriodSeconds: 120
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3-flashinfer
+spec:
+  selector: { app: muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3-flashinfer }
+  ports:
+    - { protocol: TCP, port: 8000, targetPort: 8000 }
