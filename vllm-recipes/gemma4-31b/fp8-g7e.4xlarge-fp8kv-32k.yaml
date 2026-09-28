@@ -1,0 +1,142 @@
+#
+# Gemma 4 31B at FP8 with an FP8 KV cache on one g7e.4xlarge, a single GPU, serving a 32,768-token context. Use this to size a single-replica fleet for long-context agentic traffic; the open-loop protocol in its runbook yields SLA-safe requests per second per card.
+#
+# Differs from fp8-g7e.4xlarge.yaml in four ways, each recorded under Settings in the runbook:
+# the vLLM image (v0.29.0, because FP8 KV on Gemma 4 fails the q_scale assertion on 0.21.0),
+# --kv-cache-dtype fp8, --max-model-len 32768, and --no-enable-prefix-caching. Every other
+# serving value is held so that context and KV precision are the variables.
+#
+# SUBSTITUTE: fsx-pvc, if your claim holding /models/quantized/gemma-4-31b-it-fp8 is named differently.
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gemma4-31b-vllm-g7e-fp8kv-32k
+  labels: { app: gemma4-31b-vllm-g7e-fp8kv-32k }
+spec:
+  replicas: 1
+  # One GPU per node: a rolling update would wait forever on a second pod that cannot schedule.
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: gemma4-31b-vllm-g7e-fp8kv-32k }
+  template:
+    metadata:
+      labels: { app: gemma4-31b-vllm-g7e-fp8kv-32k }
+    spec:
+      nodeSelector:
+        node.kubernetes.io/instance-type: "g7e.4xlarge"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.29.0
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              echo "=== starting vLLM on ${INSTANCE_TYPE}: $(date -u) ==="
+              vllm serve ${MODEL_DIR} \
+                --quantization ${QUANTIZATION} \
+                --dtype ${DTYPE} \
+                --kv-cache-dtype ${KV_CACHE_DTYPE} \
+                --attention-backend ${ATTENTION_BACKEND} \
+                --gpu-memory-utilization ${GPU_MEM_UTIL} \
+                --max-model-len ${MAX_MODEL_LEN} \
+                --max-num-seqs ${MAX_NUM_SEQS} \
+                --max-num-batched-tokens ${MAX_NUM_BATCHED_TOKENS} \
+                --max-cudagraph-capture-size ${MAX_CUDAGRAPH} \
+                --async-scheduling \
+                --no-enable-prefix-caching \
+                --enable-chunked-prefill \
+                --port 8000
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MODEL_DIR
+              value: "/models/quantized/gemma-4-31b-it-fp8"
+            # The checkpoint is a real ModelOpt export (float8_e4m3fn weights, hf_quant_config.json,
+            # static input_scale). The vanilla "fp8" loader mis-reads it and produces garbage.
+            - name: QUANTIZATION
+              value: "modelopt"
+            - name: DTYPE
+              value: "bfloat16"
+            # The KV precision under test. "auto" resolves through DTYPE to BF16, which is what the
+            # 8k sibling serves. No --calculate-kv-scales: v0.29.0 rejects the flag, so the server
+            # runs uncalibrated and logs "Using KV cache scaling factor 1.0 for fp8_e4m3" at
+            # startup. That is a caveat on any accuracy claim taken from this recipe.
+            - name: KV_CACHE_DTYPE
+              value: "fp8"
+            # Pinned rather than auto-selected so the kernel that served is on record; no result
+            # file captures it otherwise. TRITON_ATTN is the only backend this configuration can
+            # run, so the pin documents rather than chooses: the engine refuses FLASHINFER for
+            # this model ("partial multimodal token full attention not supported"; Gemma 4 31B
+            # carries a vision tower), and refuses FLASH_ATTN for the FP8 KV cache on sm_120
+            # ("FP8 KV cache requires FA3 on SM90 or FA4 on SM100"). Both refusals observed on
+            # this image at deploy time.
+            - name: ATTENTION_BACKEND
+              value: "TRITON_ATTN"
+            # The context under test. The 8k sibling caps at 8192; this serves the largest window
+            # the coding_repo_context profile needs (20.3k wire input + 1024 output on this
+            # tokenizer) with room for prompts at the top of its range.
+            - name: MAX_MODEL_LEN
+              value: "32768"
+            # At 30k tokens per sequence the 47 GiB pool holds about 16 sequences at FP8 KV, so
+            # 512 is unreachable and graph capture at 512 only spends memory. 64 covers the pool
+            # with margin for shorter requests and is the graph capture ceiling below.
+            - name: MAX_NUM_SEQS
+              value: "64"
+            # Large enough that a full 21k-token prompt prefills in one chunk. Held at the 8k
+            # sibling's value.
+            - name: MAX_NUM_BATCHED_TOKENS
+              value: "32768"
+            - name: MAX_CUDAGRAPH
+              value: "64"
+            # Held at the 8k sibling's value so memory fraction is not a variable between them.
+            - name: GPU_MEM_UTIL
+              value: "0.95"
+            - name: INSTANCE_TYPE
+              value: "g7e.4xlarge"
+            - name: HF_HOME
+              value: "/models"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            # INFO so the backend selection and KV-scale lines land in the server log; the deploy
+            # script reads both.
+            - name: VLLM_LOGGING_LEVEL
+              value: "INFO"
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 15
+            failureThreshold: 120
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 30
+            failureThreshold: 6
+          volumeMounts:
+            - { name: dshm, mountPath: /dev/shm }
+            - { name: model-storage, mountPath: /models }
+      volumes:
+        - name: dshm
+          emptyDir: { medium: Memory }
+        - name: model-storage
+          persistentVolumeClaim: { claimName: fsx-pvc }
+      terminationGracePeriodSeconds: 120
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gemma4-31b-vllm-g7e-fp8kv-32k
+spec:
+  selector: { app: gemma4-31b-vllm-g7e-fp8kv-32k }
+  ports:
+    - { protocol: TCP, port: 8000, targetPort: 8000 }

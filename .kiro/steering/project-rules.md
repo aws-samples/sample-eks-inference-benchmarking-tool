@@ -24,6 +24,7 @@
 * Write each `Before you begin` bullet as one line: a bulleted markdown link whose text is an imperative phrase and whose target is the relative path, with at most a short parenthetical caveat. The linked file carries the explanation; the bullet does not.
 * Split a function once it needs a second `try`/`except` or a second conditional variable, and compose small named helpers instead. Each check in `verify_checkpoint.py` is its own function returning `(problems, notes)`, and `verify()` only concatenates them, so a new check is a new function rather than another branch.
 * Tear down GPU deployments and scale the nodegroup to zero as soon as measurement stops.
+* Stage model weights on the node's local NVMe instance store, never on the EBS root volume or FSx. Four Muse-Glimmer copies writing 132 GiB to a 125 MB/s gp3 root disk took ~18 minutes to land and stalled `kubectl exec` for the whole window. Serve from FSx or S3 only for checkpoints the size of GLM 5.2 or Kimi K3. On AL2023 managed nodegroups the instance store stays unmounted unless the launch template sets nodeadm `localStorage.strategy: RAID0`; Karpenter's `instanceStorePolicy: RAID0` does the same. Confirm `df /models` shows the NVMe array before trusting a staging step.
 
 ## Never
 

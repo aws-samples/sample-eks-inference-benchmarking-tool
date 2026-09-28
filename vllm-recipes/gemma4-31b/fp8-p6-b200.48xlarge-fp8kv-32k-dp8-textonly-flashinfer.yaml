@@ -1,0 +1,161 @@
+#
+# Gemma 4 31B at FP8 with an FP8 KV cache as EIGHT independent single-GPU replicas on one
+# p6-b200.48xlarge (8x B200 180 GB, sm_100), 32,768-token context each. No tensor parallelism:
+# each replica owns one GPU, so there is no interconnect tax at all, and each 180 GB card holds
+# ~14 full-length coding_repo_context sequences against ~4 on a 96 GB g7e card. Single node,
+# no EFA. Serves the checkpoint from S3 (this cluster has no FSx claim).
+#
+# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION, in both containers.
+---
+#
+# TEXT-ONLY ARM of fp8-p6-b200.48xlarge-fp8kv-32k-dp8.yaml.
+# --language-model-only sets every image/video limit to 0, which turns off vLLM's mm_prefix
+# attention mode (config/model.py) and so lifts the 'partial multimodal token full attention'
+# refusal that blocks FLASHINFER for this model. The coding workload is text-only, so this is a
+# production-valid setting. It also skips the vision encoder, which frees memory for KV cache:
+# compare text-only arms with each other, not with the multimodal TRITON_ATTN baseline.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gemma4-31b-vllm-b200-fp8kv-32k-dp8-textonly-flashinfer
+  labels: { app: gemma4-31b-vllm-b200-fp8kv-32k-dp8-textonly-flashinfer }
+spec:
+  # The S3 weight sync outlasts the 600s default; without this, rollout status reports failure on a healthy load.
+  progressDeadlineSeconds: 3600
+  # Eight single-GPU pods on the one 8-GPU node; the Service load-balances across them.
+  replicas: 8
+  selector:
+    matchLabels: { app: gemma4-31b-vllm-b200-fp8kv-32k-dp8-textonly-flashinfer }
+  template:
+    metadata:
+      labels: { app: gemma4-31b-vllm-b200-fp8kv-32k-dp8-textonly-flashinfer }
+    spec:
+      serviceAccountName: gemma4-31b-bench
+      nodeSelector:
+        node.kubernetes.io/instance-type: p6-b200.48xlarge
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      initContainers:
+        - name: fetch-weights
+          image: public.ecr.aws/aws-cli/aws-cli:latest
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              aws configure set default.s3.max_concurrent_requests 32
+              echo "weights sync start $(date -u)"; df -h /models | tail -1
+              aws s3 sync "s3://${WEIGHTS_BUCKET}/${WEIGHTS_PREFIX}/" /models/gemma4-31b-fp8/ \
+                --region "${AWS_REGION}" --only-show-errors
+              SZ=$(du -s --block-size=1G /models/gemma4-31b-fp8 | cut -f1)
+              echo "weights staged ${SZ} GiB  $(date -u)"
+              test "$SZ" -ge 25 || { echo "FATAL: expected ~30 GiB, got ${SZ} GiB" >&2; exit 1; }
+              test -f /models/gemma4-31b-fp8/config.json || { echo "FATAL: no config.json" >&2; exit 1; }
+          env:
+            - name: WEIGHTS_BUCKET
+              value: SUBSTITUTE-weights-bucket
+            - name: WEIGHTS_PREFIX
+              value: "gemma4-31b-fp8-quantized"
+            - name: AWS_REGION
+              value: "us-east-1"
+          volumeMounts:
+            - { name: models, mountPath: /models }
+          resources:
+            requests: { cpu: "4", memory: 8Gi }
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.29.0
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              echo "=== starting vLLM replica on ${INSTANCE_TYPE}: $(date -u) ==="
+              vllm serve /models/gemma4-31b-fp8 \
+                --language-model-only \
+                --served-model-name gemma4-31b \
+                --quantization ${QUANTIZATION} \
+                --dtype bfloat16 \
+                --kv-cache-dtype ${KV_CACHE_DTYPE} \
+                --attention-backend ${ATTENTION_BACKEND} \
+                --gpu-memory-utilization ${GPU_MEM_UTIL} \
+                --max-model-len ${MAX_MODEL_LEN} \
+                --max-num-seqs ${MAX_NUM_SEQS} \
+                --max-num-batched-tokens ${MAX_NUM_BATCHED_TOKENS} \
+                --stream-interval ${STREAM_INTERVAL} \
+                --max-cudagraph-capture-size ${MAX_CUDAGRAPH} \
+                --async-scheduling \
+                --no-enable-prefix-caching \
+                --enable-chunked-prefill \
+                --port 8000
+          ports:
+            - containerPort: 8000
+          env:
+            # ModelOpt export; the vanilla fp8 loader mis-reads it (gemma incident).
+            - name: QUANTIZATION
+              value: "modelopt"
+            - name: KV_CACHE_DTYPE
+              value: "fp8"
+            # Pinned for parity with every other measured config tonight; the deploy checks
+            # assert what actually served.
+            - name: ATTENTION_BACKEND
+              value: "FLASHINFER"
+            - name: MAX_MODEL_LEN
+              value: "32768"
+            # ~14 full-length sequences fit per 180 GB card at 480 KiB/token; 16 caps just above.
+            - name: MAX_NUM_SEQS
+              value: "16"
+            - name: MAX_NUM_BATCHED_TOKENS
+              value: "32768"
+            - name: STREAM_INTERVAL
+              value: "10"
+            - name: MAX_CUDAGRAPH
+              value: "16"
+            - name: GPU_MEM_UTIL
+              value: "0.90"
+            - name: INSTANCE_TYPE
+              value: "p6-b200.48xlarge"
+            - name: BENCH_CONFIG
+              value: "b200-fp8kv-32k-dp8-textonly-flashinfer"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: VLLM_LOGGING_LEVEL
+              value: "INFO"
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+              memory: 200Gi
+            requests:
+              cpu: "10"
+              memory: 64Gi
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 15
+            failureThreshold: 120
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 30
+            failureThreshold: 6
+          volumeMounts:
+            - { name: models, mountPath: /models }
+            - { name: dshm, mountPath: /dev/shm }
+      volumes:
+        - name: models
+          emptyDir: { sizeLimit: 60Gi }
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 16Gi }
+      terminationGracePeriodSeconds: 120
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gemma4-31b-vllm-b200-fp8kv-32k-dp8-textonly-flashinfer
+spec:
+  selector: { app: gemma4-31b-vllm-b200-fp8kv-32k-dp8-textonly-flashinfer }
+  ports:
+    - { protocol: TCP, port: 8000, targetPort: 8000 }
