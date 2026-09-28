@@ -1,0 +1,56 @@
+#
+# Karpenter NodePool and EC2NodeClass that launch GPU nodes only into one EC2 Capacity Block (or
+# On-Demand Capacity Reservation), with the local NVMe instance store RAID0-mounted as ephemeral
+# storage so model weights stage onto NVMe rather than the EBS root volume.
+#
+# SUBSTITUTE: CLUSTER_NAME (the Karpenter discovery tag and node role), the reservation ID
+# (cr-00000000000000000), and the instance type the reservation holds. One reservation per node
+# class; point it at a new reservation by editing capacityReservationSelectorTerms and re-applying.
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: bench-capacity-block
+spec:
+  amiSelectorTerms:
+    - alias: al2023@latest
+  role: KarpenterNode-CLUSTER_NAME
+  subnetSelectorTerms:
+    - tags: { karpenter.sh/discovery: CLUSTER_NAME }
+    - tags: { "karpenter.sh/discovery/CLUSTER_NAME": "true" }
+  securityGroupSelectorTerms:
+    - tags: { karpenter.sh/discovery: CLUSTER_NAME }
+  capacityReservationSelectorTerms:
+    - id: cr-00000000000000000
+  # Mounts every instance-store NVMe device as one RAID0 array for kubelet ephemeral storage.
+  instanceStorePolicy: RAID0
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs: { volumeSize: 500Gi, volumeType: gp3, iops: 10000, throughput: 500, encrypted: true }
+  metadataOptions:
+    httpEndpoint: enabled
+    httpProtocolIPv6: disabled
+    httpPutResponseHopLimit: 1
+    httpTokens: required
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: bench-capacity-block
+spec:
+  template:
+    spec:
+      nodeClassRef: { group: karpenter.k8s.aws, kind: EC2NodeClass, name: bench-capacity-block }
+      requirements:
+        # "reserved" only: nothing launches outside the reservation, so no on-demand spill.
+        - { key: karpenter.sh/capacity-type, operator: In, values: [reserved] }
+        - { key: node.kubernetes.io/instance-type, operator: In, values: [p5.4xlarge] }
+      taints:
+        - { key: nvidia.com/gpu, effect: NoSchedule }
+      expireAfter: 720h
+  limits:
+    nvidia.com/gpu: 8
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 0s
+    budgets:
+      - nodes: 10%
