@@ -8,9 +8,7 @@ Runbooks are grouped by model under `docs/runbooks/<model>/`; each directory's `
 
 | Model | Configuration | Runbook | Weights come from | Also needs |
 |---|---|---|---|---|
-| GLM-5.2 | p5en.48xlarge — FP8 | [`fp8-p5en.48xlarge-runbook.md`](./glm-5.2/fp8-p5en.48xlarge-runbook.md) | node directory | none |
 | GLM-5.2 | p6-b200.48xlarge — FP8 | [`fp8-p6-b200.48xlarge-runbook.md`](./glm-5.2/fp8-p6-b200.48xlarge-runbook.md) | published FP8 staged to FSx | none |
-| GLM-5.2 | p6-b200.48xlarge — NVFP4 | [`nvfp4-p6-b200.48xlarge-runbook.md`](./glm-5.2/nvfp4-p6-b200.48xlarge-runbook.md) | published NVFP4 on FSx | none |
 | GLM-5.2 | p6-b300.48xlarge — NVFP4 | [`nvfp4-p6-b300.48xlarge-runbook.md`](./glm-5.2/nvfp4-p6-b300.48xlarge-runbook.md) | Hugging Face to emptyDir | none |
 | Gemma 4 E4B | g7e.2xlarge — FP8, FP8 KV, Triton attention | [`fp8-g7e.2xlarge-fp8kv-attn-triton-runbook.md`](./gemma4-e4b/fp8-g7e.2xlarge-fp8kv-attn-triton-runbook.md) | locally quantized FP8 on FSx | TRITON_ATTN pinned; memory fraction 0.90 |
 | Gemma 4 31B | g7.24xlarge — FP8 | [`fp8-g7.24xlarge-runbook.md`](./gemma4-31b/fp8-g7.24xlarge-runbook.md) | locally quantized FP8 on FSx | none |

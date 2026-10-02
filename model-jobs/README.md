@@ -10,7 +10,6 @@ A download stages weights that are already published. A quantize job produces a 
 |---|---|---|---|
 | [`gemma4-e4b/fp8-model-quantize.yaml`](gemma4-e4b/fp8-model-quantize.yaml) | `google/gemma-4-E4B-it` | `/models/quantized/gemma-4-E4B-it-fp8` | 4 |
 | [`glm-5.2/fp8-model-download.yaml`](glm-5.2/fp8-model-download.yaml) | `zai-org/GLM-5.2-FP8` | `/models/glm-5.2-fp8` | 1 |
-| [`glm-5.2/nvfp4-model-download.yaml`](glm-5.2/nvfp4-model-download.yaml) | `nvidia/GLM-5.2-NVFP4` | `/models/glm-5.2-nvfp4` | 1 |
 | [`qwen2.5-7b/bf16-model-download.yaml`](qwen2.5-7b/bf16-model-download.yaml) | `Qwen/Qwen2.5-7B-Instruct` | `/models/Qwen2.5-7B-Instruct` | 4 |
 | [`qwen2.5-7b/fp8-model-download.yaml`](qwen2.5-7b/fp8-model-download.yaml) | `Qwen/Qwen2.5-7B-Instruct-FP8` | `/models/quantized/Qwen2.5-7B-Instruct-fp8` | 5 |
 | [`qwen3-235b/fp8-model-download.yaml`](qwen3-235b/fp8-model-download.yaml) | `Qwen/Qwen3-235B-A22B-FP8` | `/models/qwen3-235b-a22b-fp8` | 1 |
@@ -128,8 +127,6 @@ Those seven do keep a pre-flight space check, because an `emptyDir` lands wherev
 One path has no download Job here because no published FP8 repository matches it, so a quantize job is the only producer: `/models/quantized/gemma-4-31b-it-fp8`. It returns HTTP 401 from the Hugging Face API under the repository names checked, which indicates gated, private, or absent. The API returns 401 rather than 404 because it does not confirm whether a private repository exists.
 
 `Qwen/Qwen2.5-7B-Instruct-FP8` returns 401 the same way, so [`qwen2.5-7b/fp8-model-download.yaml`](qwen2.5-7b/fp8-model-download.yaml) has not been run end to end. Accept the gating on your Hugging Face account, or use a quantize job instead.
-
-One recipe expects a path no Job can fill. `glm-5.2-fp8-p5en.48xlarge.yaml` reads `/weights/glm-5.2-fp8` from a `hostPath` at `/mnt/glm-weights` rather than a PVC, so the weights must already be on that node. The p6-b200 variant of the same model mounts the PVC and is covered by [`glm-5.2/fp8-model-download.yaml`](glm-5.2/fp8-model-download.yaml).
 
 ## Adding a model
 

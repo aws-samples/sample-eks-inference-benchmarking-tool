@@ -79,7 +79,7 @@ The recipes in this section tune the server for throughput and real-time latency
 
 | Model | Precisions | Instance types | Model guide |
 | ----- | ---------- | -------------- | ----------- |
-| GLM-5.2 | FP8, NVFP4 | `p5en.48xlarge`, `p6-b200.48xlarge`, `p6-b300.48xlarge` | [README](./docs/runbooks/glm-5.2/README.md) |
+| GLM-5.2 | FP8, NVFP4 | `p6-b200.48xlarge`, `p6-b300.48xlarge` | [README](./docs/runbooks/glm-5.2/README.md) |
 | Kimi K3 | MXFP4 | `p6-b200.48xlarge`, `p6-b300.48xlarge`, `u-p6e-gb200x72` | [README](./docs/runbooks/kimi-k3/README.md) |
 | Qwen2.5-7B-Instruct | BF16, FP8 | `g7e.12xlarge`, `p5en.48xlarge` | [README](./docs/runbooks/qwen2.5-7b/README.md) |
 | Gemma 4 31B | FP8 | `g7.24xlarge`, `p6-b200.48xlarge` | [README](./docs/runbooks/gemma4-31b/README.md) |
