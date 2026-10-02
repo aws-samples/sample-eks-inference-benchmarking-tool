@@ -46,6 +46,7 @@ docs/results/*.txt
 # quoting numbers measured on a particular customer's cluster. Each directory's README.md stays
 # tracked and documents the format, so the conventions are public and the measurements are not.
 docs/reports/*.md
+docs/reports/*.docx
 docs/reports/reruns
 docs/reports/aiperf-calibration
 docs/reports/validation
