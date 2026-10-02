@@ -1,9 +1,9 @@
 #
 # Muse-Glimmer-30B at FP8 with an FP8 KV cache as EIGHT independent single-GPU replicas on one
 # g7e.48xlarge (8x RTX PRO 6000 Blackwell, sm_120, PCIe, no NVLink), 32,768-token context each,
-# behind one Service. Eight-copy sibling of fp8-g7e.24xlarge-fp8kv-32k-dp4-s3.yaml: same per-copy values,
-# and per-replica serving values identical to the single-card fp8-g7e.2xlarge-fp8kv-32k.yaml, so
-# it measures how independent copies scale where TP4 over PCIe scaled only 1.4x. Single node, no EFA.
+# behind one Service. Each replica uses the same single-GPU serving values, so the recipe measures
+# how independent copies scale, where one copy split over four PCIe GPUs (TP4) scaled only 1.4x.
+# Single node, no EFA.
 #
 # The Service spreads load per TCP connection, and the benchmark client keeps one persistent
 # connection per in-flight request, so at low concurrency the split across replicas can be

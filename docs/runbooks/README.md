@@ -27,7 +27,6 @@ Runbooks are grouped by model under `docs/runbooks/<model>/`; each directory's `
 | Gemma 4 31B | g7e.4xlarge — FP8 | [`fp8-g7e.4xlarge-runbook.md`](./gemma4-31b/fp8-g7e.4xlarge-runbook.md) | locally quantized FP8 on FSx | none |
 | Gemma 4 31B | g7e.4xlarge — FP8, FP8 KV, 32k context | [`fp8-g7e.4xlarge-fp8kv-32k-runbook.md`](./gemma4-31b/fp8-g7e.4xlarge-fp8kv-32k-runbook.md) | locally quantized FP8 on FSx | benchmark-client node |
 | Gemma 4 31B | g7e.2xlarge — FP8, FP8 KV, 32k context | [`fp8-g7e.2xlarge-fp8kv-32k-runbook.md`](./gemma4-31b/fp8-g7e.2xlarge-fp8kv-32k-runbook.md) | locally quantized FP8 on FSx | benchmark-client node |
-| Muse-Glimmer-30B | g7e.2xlarge — FP8, FP8 KV, 32k context | [`fp8-g7e.2xlarge-fp8kv-32k-runbook.md`](./muse-glimmer-30b/fp8-g7e.2xlarge-fp8kv-32k-runbook.md) | locally quantized FP8 on FSx | benchmark-client node |
 | Kimi K3 (2.8T MoE) | p6-b200.48xlarge — MXFP4, lws | [`mxfp4-p6-b200.48xlarge-lws-runbook.md`](./kimi-k3/mxfp4-p6-b200.48xlarge-lws-runbook.md) | S3 to node-local NVMe | LWS, EFA, custom image |
 | Kimi K3 (2.8T MoE) | p6-b200.48xlarge — MXFP4, lws-dspark | [`mxfp4-p6-b200.48xlarge-lws-dspark-runbook.md`](./kimi-k3/mxfp4-p6-b200.48xlarge-lws-dspark-runbook.md) | FSx PVC, weights must be staged | LWS, EFA |
 | Kimi K3 (2.8T MoE) | p6-b200.48xlarge — MXFP4, sts | [`mxfp4-p6-b200.48xlarge-sts-runbook.md`](./kimi-k3/mxfp4-p6-b200.48xlarge-sts-runbook.md) | S3 to node-local NVMe | EFA, custom image |
