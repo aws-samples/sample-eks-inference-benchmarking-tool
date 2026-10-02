@@ -8,7 +8,6 @@ A download stages weights that are already published. A quantize job produces a 
 
 | Job | Source weights | Lands on the PVC at | Recipes waiting on it |
 |---|---|---|---|
-| [`gemma4-31b/bf16-model-download.yaml`](gemma4-31b/bf16-model-download.yaml) | `google/gemma-4-31b-it` | `/models/gemma-4-31b-it` | 3 |
 | [`gemma4-e4b/fp8-model-quantize.yaml`](gemma4-e4b/fp8-model-quantize.yaml) | `google/gemma-4-E4B-it` | `/models/quantized/gemma-4-E4B-it-fp8` | 4 |
 | [`glm-5.2/fp8-model-download.yaml`](glm-5.2/fp8-model-download.yaml) | `zai-org/GLM-5.2-FP8` | `/models/glm-5.2-fp8` | 1 |
 | [`glm-5.2/nvfp4-model-download.yaml`](glm-5.2/nvfp4-model-download.yaml) | `nvidia/GLM-5.2-NVFP4` | `/models/glm-5.2-nvfp4` | 1 |

@@ -8,12 +8,12 @@
 # SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION, in both containers.
 ---
 #
-# TEXT-ONLY ARM of fp8-p6-b200.48xlarge-fp8kv-32k-dp8.yaml.
+# TEXT-ONLY, FLASHINFER.
 # --language-model-only sets every image/video limit to 0, which turns off vLLM's mm_prefix
 # attention mode (config/model.py) and so lifts the 'partial multimodal token full attention'
 # refusal that blocks FLASHINFER for this model. The coding workload is text-only, so this is a
 # production-valid setting. It also skips the vision encoder, which frees memory for KV cache:
-# compare text-only arms with each other, not with the multimodal TRITON_ATTN baseline.
+# do not compare its results with a multimodal configuration.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

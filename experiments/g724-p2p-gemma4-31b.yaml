@@ -1,18 +1,19 @@
 #
-# Gemma 4 31B at BF16 on one g7.24xlarge, 4 GPUs, tensor parallel 4. Use this as the BF16 half of the g7 precision comparison.
+# Gemma 4 31B at FP8 on one g7.24xlarge, 4 GPUs, tensor parallel 4, instrumented for the NCCL peer-to-peer study. Study record, not a
+# serving recipe (see experiments/README.md): use it only to compare NCCL_P2P_LEVEL settings, not as a serving baseline.
 #
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: gemma4-31b-vllm-g7-bf16
-  labels: { app: gemma4-31b-vllm-g7-bf16 }
+  name: vllm-g7-tp4-p2p
+  labels: { app: vllm-g7-tp4-p2p }
 spec:
   replicas: 1
   selector:
-    matchLabels: { app: gemma4-31b-vllm-g7-bf16 }
+    matchLabels: { app: vllm-g7-tp4-p2p }
   template:
     metadata:
-      labels: { app: gemma4-31b-vllm-g7-bf16 }
+      labels: { app: vllm-g7-tp4-p2p }
     spec:
       nodeSelector:
         node.kubernetes.io/instance-type: "g7.24xlarge"
@@ -30,6 +31,7 @@ spec:
               set -euo pipefail
               echo "=== starting vLLM on ${INSTANCE_TYPE}: $(date -u) ==="
               vllm serve ${MODEL_DIR} \
+                --quantization ${QUANTIZATION} \
                 --tensor-parallel-size ${TP_SIZE} \
                 --gpu-memory-utilization ${GPU_MEM_UTIL} \
                 --max-model-len ${MAX_MODEL_LEN} \
@@ -42,7 +44,7 @@ spec:
             - containerPort: 8000
           env:
             - name: MODEL_DIR
-              value: "/models/gemma-4-31b-it"
+              value: "/models/quantized/gemma-4-31b-it-fp8"
             - name: TP_SIZE
               value: "4"
             - name: MAX_MODEL_LEN
@@ -53,8 +55,16 @@ spec:
               value: "32768"
             - name: GPU_MEM_UTIL
               value: "0.90"
+            - name: QUANTIZATION
+              value: "modelopt"
             - name: INSTANCE_TYPE
               value: "g7.24xlarge"
+            - name: NCCL_P2P_LEVEL
+              value: "PIX"
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: NCCL_DEBUG_SUBSYS
+              value: "GRAPH,P2P,NET"
             - name: HUGGING_FACE_HUB_TOKEN
               valueFrom:
                 secretKeyRef: { name: hf-token, key: token }
@@ -65,7 +75,7 @@ spec:
             - name: VLLM_ATTENTION_BACKEND
               value: "FLASHINFER"
             - name: VLLM_LOGGING_LEVEL
-              value: "WARNING"
+              value: "INFO"
           resources:
             limits:
               nvidia.com/gpu: 4
@@ -97,8 +107,8 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: gemma4-31b-vllm-g7-bf16
+  name: vllm-g7-tp4-p2p
 spec:
-  selector: { app: gemma4-31b-vllm-g7-bf16 }
+  selector: { app: vllm-g7-tp4-p2p }
   ports:
     - { protocol: TCP, port: 8000, targetPort: 8000 }

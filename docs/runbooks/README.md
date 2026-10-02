@@ -13,14 +13,7 @@ Runbooks are grouped by model under `docs/runbooks/<model>/`; each directory's `
 | GLM-5.2 | p6-b200.48xlarge — NVFP4 | [`nvfp4-p6-b200.48xlarge-runbook.md`](./glm-5.2/nvfp4-p6-b200.48xlarge-runbook.md) | published NVFP4 on FSx | none |
 | GLM-5.2 | p6-b300.48xlarge — NVFP4 | [`nvfp4-p6-b300.48xlarge-runbook.md`](./glm-5.2/nvfp4-p6-b300.48xlarge-runbook.md) | Hugging Face to emptyDir | none |
 | Gemma 4 E4B | g7e.2xlarge — FP8, FP8 KV, Triton attention | [`fp8-g7e.2xlarge-fp8kv-attn-triton-runbook.md`](./gemma4-e4b/fp8-g7e.2xlarge-fp8kv-attn-triton-runbook.md) | locally quantized FP8 on FSx | TRITON_ATTN pinned; memory fraction 0.90 |
-| Gemma 4 31B | g7.24xlarge — BF16 | [`bf16-g7.24xlarge-runbook.md`](./gemma4-31b/bf16-g7.24xlarge-runbook.md) | published BF16 staged to FSx | none |
-| Gemma 4 31B | g7e.2xlarge — BF16 | [`bf16-g7e.2xlarge-runbook.md`](./gemma4-31b/bf16-g7e.2xlarge-runbook.md) | published BF16 downloaded in pod | none |
-| Gemma 4 31B | g7e.4xlarge — BF16 | [`bf16-g7e.4xlarge-runbook.md`](./gemma4-31b/bf16-g7e.4xlarge-runbook.md) | published BF16 staged to FSx | none |
 | Gemma 4 31B | g7.24xlarge — FP8 | [`fp8-g7.24xlarge-runbook.md`](./gemma4-31b/fp8-g7.24xlarge-runbook.md) | locally quantized FP8 on FSx | none |
-| Gemma 4 31B | g7.24xlarge — FP8, TP=4, NCCL P2P study | [`fp8-g7.24xlarge-p2p-runbook.md`](./gemma4-31b/fp8-g7.24xlarge-p2p-runbook.md) | locally quantized FP8 staged on FSx | none |
-| Gemma 4 31B | g7e.4xlarge — FP8 | [`fp8-g7e.4xlarge-runbook.md`](./gemma4-31b/fp8-g7e.4xlarge-runbook.md) | locally quantized FP8 on FSx | none |
-| Gemma 4 31B | g7e.4xlarge — FP8, FP8 KV, 32k context | [`fp8-g7e.4xlarge-fp8kv-32k-runbook.md`](./gemma4-31b/fp8-g7e.4xlarge-fp8kv-32k-runbook.md) | locally quantized FP8 on FSx | benchmark-client node |
-| Gemma 4 31B | g7e.2xlarge — FP8, FP8 KV, 32k context | [`fp8-g7e.2xlarge-fp8kv-32k-runbook.md`](./gemma4-31b/fp8-g7e.2xlarge-fp8kv-32k-runbook.md) | locally quantized FP8 on FSx | benchmark-client node |
 | Kimi K3 (2.8T MoE) | p6-b200.48xlarge — MXFP4, lws | [`mxfp4-p6-b200.48xlarge-lws-runbook.md`](./kimi-k3/mxfp4-p6-b200.48xlarge-lws-runbook.md) | S3 to node-local NVMe | LWS, EFA, custom image |
 | Kimi K3 (2.8T MoE) | p6-b200.48xlarge — MXFP4, lws-dspark | [`mxfp4-p6-b200.48xlarge-lws-dspark-runbook.md`](./kimi-k3/mxfp4-p6-b200.48xlarge-lws-dspark-runbook.md) | FSx PVC, weights must be staged | LWS, EFA |
 | Kimi K3 (2.8T MoE) | p6-b200.48xlarge — MXFP4, sts | [`mxfp4-p6-b200.48xlarge-sts-runbook.md`](./kimi-k3/mxfp4-p6-b200.48xlarge-sts-runbook.md) | S3 to node-local NVMe | EFA, custom image |
