@@ -167,7 +167,7 @@ The checkpoint on `fsx-pvc` survives, so a later run needs no requantization.
 
 - **`--no-enable-prefix-caching`, as in every measured recipe here.** The 8k `fp8-g7e.4xlarge.yaml` sibling still serves with caching on, which is a second reason its numbers are not comparable. Confirm `Prefix cache hit` reads 0.0% in the provenance block. Production agentic traffic at 30k carries a large shared repository prefix, so a caching server would need materially less prefill; the fleet size this run produces is therefore a ceiling on what the workload needs, not a target.
 
-- **`--async-scheduling`.** Overlaps scheduling with the forward pass. Fine on 0.29.0; the llama3.3-70b note about it conflicting with speculation does not apply here because nothing speculates.
+- **`--async-scheduling`.** Overlaps scheduling with the forward pass. Fine on 0.29.0, and nothing here speculates.
 
 - **Open-loop `server_qps`, not the closed-loop `corpus` sweep.** The question is fleet size for an arrival rate, and closed-loop concurrency understated SLA-safe capacity by 26% on this model. `server_qps` issues Poisson arrivals at each target rate and reports whether TTFT and TPOT p99 hold. Fleet size is then `arrival rate ÷ SLA-safe rate per card`, rounded up, times a peak factor. At the customer's 1.4M input tokens per minute and ~30k tokens per request that arrival rate is 0.78 requests per second.
 

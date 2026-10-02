@@ -7,7 +7,7 @@ set -euo pipefail
 # Deploy the Llama 3.3 70B server.
 echo "==> Deploying Llama 3.3 70B"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply \
-  -f vllm-recipes/llama3.3-70b/fp8-g7e.12xlarge.yaml
+  -f experiments/g7e12-llama3.3-70b-tp2.yaml
 
 # Wait for model download and server startup.
 echo "==> Waiting for the Llama server"
@@ -29,7 +29,4 @@ kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \
   --container vllm \
   -- sh -c "curl -s localhost:8000/metrics | grep 'vllm:cache_config_info'"
 
-# Validate the serving manifest.
-echo "==> Validating the Llama serving manifest"
-eks-bench validate-manifests \
-  llama3.3-70b/fp8-g7e.12xlarge.yaml
+# No validate-manifests step: it only covers vllm-recipes/, and this manifest is a study record.

@@ -77,9 +77,9 @@ git rev-parse HEAD > "$ARTIFACT_ROOT/git-revision.txt"
 MANIFESTS=(
   experiments/g7e12-switch-study-storage-and-model-stage.yaml
   experiments/g7e12-nccl-p2p-shm-matrix.yaml
-  vllm-recipes/llama3.3-70b/fp8-g7e.12xlarge-switch-default.yaml
-  vllm-recipes/llama3.3-70b/fp8-g7e.12xlarge-switch-pix.yaml
-  vllm-recipes/llama3.3-70b/fp8-g7e.12xlarge-switch-shm.yaml
+  experiments/g7e12-switch-llama3.3-70b-default.yaml
+  experiments/g7e12-switch-llama3.3-70b-pix.yaml
+  experiments/g7e12-switch-llama3.3-70b-shm.yaml
   vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml
   vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml
   vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-shm.yaml
@@ -245,25 +245,27 @@ Run one deployment at a time in this recorded order. The default arm is a negati
 
 2. Deploy and measure the six arms in this order.
 
-| Order | Recipe | Deployment / Service | Model tag | Config | Model ID | Tokenizer | Extra |
+| Order | Manifest | Deployment / Service | Model tag | Config | Model ID | Tokenizer | Extra |
 |---:|---|---|---|---|---|---|---|
-| 1 | `llama3.3-70b/fp8-g7e.12xlarge-switch-default.yaml` | `llama33-70b-g7e12-switch-default` | `llama3.3-70b` | `fp8-switch-default` | `llama3.3-70b-fp8` | `nvidia/Llama-3.3-70B-Instruct-FP8` | none |
-| 2 | `llama3.3-70b/fp8-g7e.12xlarge-switch-pix.yaml` | `llama33-70b-g7e12-switch-pix` | `llama3.3-70b` | `fp8-switch-pix` | `llama3.3-70b-fp8` | same | none |
-| 3 | `llama3.3-70b/fp8-g7e.12xlarge-switch-shm.yaml` | `llama33-70b-g7e12-switch-shm` | `llama3.3-70b` | `fp8-switch-shm` | `llama3.3-70b-fp8` | same | none |
-| 4 | `qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml` | `qwen3-30b-a3b-g7e12-switch-default` | `qwen3-30b-a3b` | `fp8-switch-default` | `qwen3-30b-a3b-fp8` | `Qwen/Qwen3-30B-A3B-FP8` | `--thinking off` |
-| 5 | `qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml` | `qwen3-30b-a3b-g7e12-switch-pix` | `qwen3-30b-a3b` | `fp8-switch-pix` | `qwen3-30b-a3b-fp8` | same | `--thinking off` |
-| 6 | `qwen3-30b-a3b/fp8-g7e.12xlarge-switch-shm.yaml` | `qwen3-30b-a3b-g7e12-switch-shm` | `qwen3-30b-a3b` | `fp8-switch-shm` | `qwen3-30b-a3b-fp8` | same | `--thinking off` |
+| 1 | `experiments/g7e12-switch-llama3.3-70b-default.yaml` | `llama33-70b-g7e12-switch-default` | `llama3.3-70b` | `fp8-switch-default` | `llama3.3-70b-fp8` | `nvidia/Llama-3.3-70B-Instruct-FP8` | none |
+| 2 | `experiments/g7e12-switch-llama3.3-70b-pix.yaml` | `llama33-70b-g7e12-switch-pix` | `llama3.3-70b` | `fp8-switch-pix` | `llama3.3-70b-fp8` | same | none |
+| 3 | `experiments/g7e12-switch-llama3.3-70b-shm.yaml` | `llama33-70b-g7e12-switch-shm` | `llama3.3-70b` | `fp8-switch-shm` | `llama3.3-70b-fp8` | same | none |
+| 4 | `vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml` | `qwen3-30b-a3b-g7e12-switch-default` | `qwen3-30b-a3b` | `fp8-switch-default` | `qwen3-30b-a3b-fp8` | `Qwen/Qwen3-30B-A3B-FP8` | `--thinking off` |
+| 5 | `vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml` | `qwen3-30b-a3b-g7e12-switch-pix` | `qwen3-30b-a3b` | `fp8-switch-pix` | `qwen3-30b-a3b-fp8` | same | `--thinking off` |
+| 6 | `vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-shm.yaml` | `qwen3-30b-a3b-g7e12-switch-shm` | `qwen3-30b-a3b` | `fp8-switch-shm` | `qwen3-30b-a3b-fp8` | same | `--thinking off` |
 
-For each row, set the variables and run the function below. `RECIPE` is relative to `vllm-recipes/`. Use `THINKING_ARGS=()` for Llama and `THINKING_ARGS=(--thinking off)` for Qwen.
+For each row, set the variables and run the function below. `RECIPE` is the manifest path from the repository root; only the arms under `vllm-recipes/` go through `validate-manifests`. Use `THINKING_ARGS=()` for Llama and `THINKING_ARGS=(--thinking off)` for Qwen.
 
 ```bash
 run_arm() {
-  local recipe_path="vllm-recipes/$RECIPE"
+  local recipe_path="$RECIPE"
   local arm_artifacts="$ARTIFACT_ROOT/$MODEL_TAG/$CONFIG"
   local warmup_dir="/tmp/g7e12-switch-warmup/$MODEL_TAG/$CONFIG"
   mkdir -p "$arm_artifacts" "$warmup_dir"
 
-  .venv/bin/eks-bench validate-manifests "$RECIPE"
+  case "$RECIPE" in
+    vllm-recipes/*) .venv/bin/eks-bench validate-manifests "${RECIPE#vllm-recipes/}" ;;
+  esac
   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f "$recipe_path"
   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" rollout status \
     "deployment/$DEPLOYMENT" --timeout=3600s
@@ -324,7 +326,7 @@ run_arm() {
 Example for the first row:
 
 ```bash
-export RECIPE=llama3.3-70b/fp8-g7e.12xlarge-switch-default.yaml
+export RECIPE=experiments/g7e12-switch-llama3.3-70b-default.yaml
 export DEPLOYMENT=llama33-70b-g7e12-switch-default
 export SERVICE=llama33-70b-g7e12-switch-default
 export MODEL_TAG=llama3.3-70b
@@ -357,9 +359,9 @@ Delete any remaining study Deployments/Services and Jobs by their explicit names
 
 ```bash
 for recipe in \
-  vllm-recipes/llama3.3-70b/fp8-g7e.12xlarge-switch-default.yaml \
-  vllm-recipes/llama3.3-70b/fp8-g7e.12xlarge-switch-pix.yaml \
-  vllm-recipes/llama3.3-70b/fp8-g7e.12xlarge-switch-shm.yaml \
+  experiments/g7e12-switch-llama3.3-70b-default.yaml \
+  experiments/g7e12-switch-llama3.3-70b-pix.yaml \
+  experiments/g7e12-switch-llama3.3-70b-shm.yaml \
   vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml \
   vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml \
   vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-shm.yaml; do

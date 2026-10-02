@@ -1,5 +1,7 @@
 #
-# Qwen3-235B-A22B at FP8 across two g7e.12xlarge nodes as a LeaderWorkerSet, 4 GPUs, tensor parallel 2 inside each node and pipeline parallel 2 between them. Use this when the model does not fit one node.
+# Qwen3-235B-A22B at FP8 across two g7e.12xlarge nodes as a LeaderWorkerSet, 4 GPUs, tensor parallel 2 inside each node and pipeline parallel 2 between them.
+# Serving arm of the two-node NCCL_P2P_LEVEL study over EFA (see experiments/README.md). It is a study record, not a
+# serving recipe: change only NCCL_P2P_LEVEL between runs, and do not quote its results as serving benchmarks.
 #
 ---
 apiVersion: leaderworkerset.x-k8s.io/v1

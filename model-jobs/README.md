@@ -126,7 +126,7 @@ Those seven do keep a pre-flight space check, because an `emptyDir` lands wherev
 
 `/models/quantized/Qwen2.5-7B-Instruct-fp8` can be produced two ways: [`qwen2.5-7b/fp8-model-download.yaml`](qwen2.5-7b/fp8-model-download.yaml) fetches ready-made FP8 weights from Hugging Face, and [`job-quantize-model.yaml`](../k8s/examples/job-quantize-model.yaml) produces them from the BF16 weights. Use one or the other, not both.
 
-Two paths have no Job here because no published FP8 repository matches them, so a quantize job is the only producer: `/models/quantized/gemma-4-31b-it-fp8` and `/models/quantized/Qwen2.5-32B-Instruct-fp8`. Both return HTTP 401 from the Hugging Face API under the repository names checked, which indicates gated, private, or absent. The API returns 401 rather than 404 because it does not confirm whether a private repository exists.
+One path has no download Job here because no published FP8 repository matches it, so a quantize job is the only producer: `/models/quantized/gemma-4-31b-it-fp8`. It returns HTTP 401 from the Hugging Face API under the repository names checked, which indicates gated, private, or absent. The API returns 401 rather than 404 because it does not confirm whether a private repository exists.
 
 `Qwen/Qwen2.5-7B-Instruct-FP8` returns 401 the same way, so [`qwen2.5-7b/fp8-model-download.yaml`](qwen2.5-7b/fp8-model-download.yaml) has not been run end to end. Accept the gating on your Hugging Face account, or use a quantize job instead.
 

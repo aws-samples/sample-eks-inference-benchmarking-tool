@@ -13,7 +13,7 @@
 * Prove a feature is active before attributing a result to it. The n-gram deploy scripts fail if no `vllm:spec_decode` metrics appear, because a silently ignored config reads as "the feature didn't help".
 * Run speculative decoding as its own labelled config, never folded into a baseline.
 * Capture speculation acceptance as a delta between two counter snapshots. `vllm:spec_decode_*` are cumulative and never reset.
-* Verify version-specific claims against the running image rather than inheriting them from another model's runbook. Async scheduling and speculation combine fine on 0.29 despite the llama3.3-70b note.
+* Verify version-specific claims against the running image rather than inheriting them from another model's runbook. Async scheduling and speculation combine fine on 0.29, even though an earlier runbook said they conflict.
 * Prefer a flag over an environment variable for anything that must reach an in-cluster Job. Exported variables do not survive the trip.
 * Re-read the KV pool size after changing engine features. Enabling speculation cut it from ~135k to ~72k tokens.
 * Pass `--pod` explicitly whenever more than one vLLM pod shares the namespace.

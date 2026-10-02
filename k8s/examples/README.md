@@ -102,7 +102,7 @@ All nodes must sit in one availability zone, which is why there is a single subn
 eksctl create nodegroup -f my-efa-nodegroup.yaml   # copy of k8s/examples/eksctl-nodegroup-gpu-efa.yaml
 ```
 
-For multi-node EFA installation, allocatable-resource checks, and transport verification, follow the [Qwen3 multi-node EFA runbook](../../docs/runbooks/qwen3-235b/fp8-g7e.12xlarge-multi-node-efa-runbook.md#quickstart).
+For multi-node EFA installation, allocatable-resource checks, and transport verification, follow the [Kimi K3 two-node StatefulSet runbook](../../docs/runbooks/kimi-k3/mxfp4-p6-b200.48xlarge-sts-runbook.md#quickstart).
 
 ### `eksctl-nodegroup-gpu-spot.yaml`
 

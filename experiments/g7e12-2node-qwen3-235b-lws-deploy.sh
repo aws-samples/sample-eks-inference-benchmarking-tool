@@ -9,7 +9,7 @@ selector='app=qwen3-235b-lws,role=leader'
 # Deploy the Qwen3 235B LeaderWorkerSet and its leader-only Service.
 echo "==> Deploying Qwen3 235B"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply \
-  -f vllm-recipes/qwen3-235b/fp8-g7e.12xlarge-lws.yaml
+  -f experiments/g7e12-2node-qwen3-235b-lws.yaml
 
 # Discover the controller-created leader pod by stable workload labels.
 echo "==> Waiting for the Qwen3 leader pod to be created"
@@ -53,7 +53,4 @@ kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \
   "$leader_pod" --container vllm-leader -- \
   sh -c "curl -fsS localhost:8000/metrics | grep 'vllm:cache_config_info'"
 
-# Validate the serving manifest.
-echo "==> Validating the Qwen3 serving manifest"
-eks-bench validate-manifests \
-  qwen3-235b/fp8-g7e.12xlarge-lws.yaml
+# No validate-manifests step: it only covers vllm-recipes/, and this manifest is a study record.
