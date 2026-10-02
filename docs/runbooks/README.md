@@ -35,13 +35,8 @@ Runbooks are grouped by model under `docs/runbooks/<model>/`; each directory's `
 | Kimi K3 (2.8T MoE) | p6-b300.48xlarge — MXFP4, dspark | [`mxfp4-p6-b300.48xlarge-dspark-runbook.md`](./kimi-k3/mxfp4-p6-b300.48xlarge-dspark-runbook.md) | S3 to node-local NVMe | custom image |
 | Kimi K3 (2.8T MoE) | p6-b300.48xlarge — MXFP4, ep | [`mxfp4-p6-b300.48xlarge-ep-runbook.md`](./kimi-k3/mxfp4-p6-b300.48xlarge-ep-runbook.md) | S3 to node-local NVMe | custom image |
 | Kimi K3 (2.8T MoE) | u-p6e-gb200x72 — MXFP4 | [`mxfp4-u-p6e-gb200x72-runbook.md`](./kimi-k3/mxfp4-u-p6e-gb200x72-runbook.md) | FSx PVC, weights must be staged | none |
-| Qwen2.5-7B-Instruct | g6e.4xlarge — BF16 | [`bf16-g6e.4xlarge-runbook.md`](./qwen2.5-7b/bf16-g6e.4xlarge-runbook.md) | published BF16 staged to FSx | none |
-| Qwen2.5-7B-Instruct | g7e.12xlarge — BF16 | [`bf16-g7e.12xlarge-runbook.md`](./qwen2.5-7b/bf16-g7e.12xlarge-runbook.md) | published BF16 staged to FSx | none |
 | Qwen2.5-7B-Instruct | p5en.48xlarge — BF16 | [`bf16-p5en.48xlarge-runbook.md`](./qwen2.5-7b/bf16-p5en.48xlarge-runbook.md) | published BF16 staged to FSx | none |
-| Qwen2.5-7B-Instruct | g6e.4xlarge — FP8 | [`fp8-g6e.4xlarge-runbook.md`](./qwen2.5-7b/fp8-g6e.4xlarge-runbook.md) | published or locally quantized FP8 pre-staged on FSx | none |
 | Qwen2.5-7B-Instruct | g7e.12xlarge — FP8 | [`fp8-g7e.12xlarge-runbook.md`](./qwen2.5-7b/fp8-g7e.12xlarge-runbook.md) | published FP8 staged to FSx; local output also accepted | none |
-| Qwen2.5-7B-Instruct | g7e.12xlarge — FP8, kvscales | [`fp8-g7e.12xlarge-kvscales-runbook.md`](./qwen2.5-7b/fp8-g7e.12xlarge-kvscales-runbook.md) | published FP8 staged to FSx; local output also accepted | none |
-| Qwen2.5-7B-Instruct | p5en.48xlarge — FP8 | [`fp8-p5en.48xlarge-runbook.md`](./qwen2.5-7b/fp8-p5en.48xlarge-runbook.md) | published FP8 staged to FSx; local output also accepted | none |
 
 ## Quantization
 
