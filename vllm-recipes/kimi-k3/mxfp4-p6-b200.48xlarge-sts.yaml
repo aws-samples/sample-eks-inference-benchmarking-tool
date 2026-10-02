@@ -1,5 +1,5 @@
 #
-# Kimi K3 at MXFP4 across two p6-b200.48xlarge nodes as a StatefulSet, 16 GPUs, tensor parallel 8 inside each node and pipeline parallel 2 between them. Use this to compare the pipeline split against the flat tensor-parallel lws recipe.
+# Kimi K3 at MXFP4 across two p6-b200.48xlarge nodes as a StatefulSet, 16 GPUs, tensor parallel 8 inside each node and pipeline parallel 2 between them. Use this when the model has to span two nodes.
 #
 # SUBSTITUTE: 012345678901 and us-east-1 in the image reference, and WEIGHTS_BUCKET.
 ---

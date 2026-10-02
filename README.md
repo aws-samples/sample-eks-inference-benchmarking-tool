@@ -20,9 +20,9 @@ Each capability names the tool it is built on. This repo does not reimplement wh
 | 🔀 [**Cross-client calibration**](./docs/guides/REFERENCE.md#what-may-be-compared-with-what) | Reruns the same workload through [NVIDIA AIPerf](https://github.com/ai-dynamo/aiperf) behind the same protocol seam, and replays committed agentic traces with real think-time gaps | Two independent clients on one server show whether a figure belongs to the server or to the client that measured it |
 | 📦 [**Weight staging**](./model-jobs/README.md) | One Job per model and precision, applied once per filesystem, that downloads the checkpoint to the shared claim | Recipes wait for weights rather than fetching them, so a serving run is not also a download, and a partial checkpoint fails before the GPU is booked |
 | 🗜️ [**Quantization pipeline**](#quantization) | Produces FP8, INT8 and INT4-AWQ checkpoints with [NVIDIA Model Optimizer](https://github.com/NVIDIA/Model-Optimizer), as a GPU Job in your own cluster | Public quantized checkpoints do not exist for every model, and converting one needs more memory than serving the result afterwards |
-| ⚙️ [**Serving-stack coverage**](#vllm-recipes) | Covers prefix caching, KV-cache scale configs, [FlashInfer](https://github.com/flashinfer-ai/flashinfer) attention, and multi-node tensor and pipeline parallelism over EFA, across Deployment, StatefulSet and [LeaderWorkerSet](https://github.com/kubernetes-sigs/lws) | The serving configuration is the object of study, so the knobs that move a number are already wired up |
+| ⚙️ [**Serving-stack coverage**](#vllm-recipes) | Covers prefix caching, KV-cache scale configs, [FlashInfer](https://github.com/flashinfer-ai/flashinfer) attention, and multi-node pipeline parallelism over EFA, across Deployment and StatefulSet | The serving configuration is the object of study, so the knobs that move a number are already wired up |
 | 🔬 [**Profiling and interconnect studies**](#profile-gpus-with-nsight-systems) | Captures [Nsight Systems](https://developer.nvidia.com/nsight-systems) traces, and isolates the interconnect with [nccl-tests](https://github.com/NVIDIA/nccl-tests) | Explains a ceiling that a sweep can only locate. A trace has already overturned a conclusion this repo had published |
-| 📚 [**Runbooks, not snippets**](#vllm-recipes) | Pairs every serving recipe with capacity sizing, prerequisites, verified steps and tear-down, from single-GPU `g6e` to `u-p6e-gb200x72` | The starting point is a working deployment rather than a blank manifest |
+| 📚 [**Runbooks, not snippets**](#vllm-recipes) | Pairs every serving recipe with capacity sizing, prerequisites, verified steps and tear-down, from single-GPU `g7e.2xlarge` to multi-node `p6-b200.48xlarge` | The starting point is a working deployment rather than a blank manifest |
 
 ## Prerequisites
 
@@ -80,7 +80,7 @@ The recipes in this section tune the server for throughput and real-time latency
 | Model | Precisions | Instance types | Model guide |
 | ----- | ---------- | -------------- | ----------- |
 | GLM-5.2 | FP8, NVFP4 | `p6-b200.48xlarge`, `p6-b300.48xlarge` | [README](./docs/runbooks/glm-5.2/README.md) |
-| Kimi K3 | MXFP4 | `p6-b200.48xlarge`, `p6-b300.48xlarge`, `u-p6e-gb200x72` | [README](./docs/runbooks/kimi-k3/README.md) |
+| Kimi K3 | MXFP4 | `p6-b200.48xlarge`, `p6-b300.48xlarge` | [README](./docs/runbooks/kimi-k3/README.md) |
 | Qwen2.5-7B-Instruct | BF16, FP8 | `g7e.12xlarge`, `p5en.48xlarge` | [README](./docs/runbooks/qwen2.5-7b/README.md) |
 | Gemma 4 31B | FP8 | `g7.24xlarge`, `p6-b200.48xlarge` | [README](./docs/runbooks/gemma4-31b/README.md) |
 | Gemma 4 E4B | FP8 | `g7e.2xlarge`, `p5.4xlarge` | [README](./docs/runbooks/gemma4-e4b/README.md) |

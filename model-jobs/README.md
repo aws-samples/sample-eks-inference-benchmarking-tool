@@ -6,13 +6,13 @@ A download stages weights that are already published. A quantize job produces a 
 
 ## Contents
 
-| Job | Source weights | Lands on the PVC at | Recipes waiting on it |
-|---|---|---|---|
-| [`gemma4-e4b/fp8-model-quantize.yaml`](gemma4-e4b/fp8-model-quantize.yaml) | `google/gemma-4-E4B-it` | `/models/quantized/gemma-4-E4B-it-fp8` | 4 |
-| [`glm-5.2/fp8-model-download.yaml`](glm-5.2/fp8-model-download.yaml) | `zai-org/GLM-5.2-FP8` | `/models/glm-5.2-fp8` | 1 |
-| [`qwen2.5-7b/bf16-model-download.yaml`](qwen2.5-7b/bf16-model-download.yaml) | `Qwen/Qwen2.5-7B-Instruct` | `/models/Qwen2.5-7B-Instruct` | 4 |
-| [`qwen2.5-7b/fp8-model-download.yaml`](qwen2.5-7b/fp8-model-download.yaml) | `Qwen/Qwen2.5-7B-Instruct-FP8` | `/models/quantized/Qwen2.5-7B-Instruct-fp8` | 5 |
-| [`qwen3-235b/fp8-model-download.yaml`](qwen3-235b/fp8-model-download.yaml) | `Qwen/Qwen3-235B-A22B-FP8` | `/models/qwen3-235b-a22b-fp8` | 1 |
+| Job | Source weights | Lands on the PVC at |
+|---|---|---|
+| [`gemma4-e4b/fp8-model-quantize.yaml`](gemma4-e4b/fp8-model-quantize.yaml) | `google/gemma-4-E4B-it` | `/models/quantized/gemma-4-E4B-it-fp8` |
+| [`glm-5.2/fp8-model-download.yaml`](glm-5.2/fp8-model-download.yaml) | `zai-org/GLM-5.2-FP8` | `/models/glm-5.2-fp8` |
+| [`qwen2.5-7b/bf16-model-download.yaml`](qwen2.5-7b/bf16-model-download.yaml) | `Qwen/Qwen2.5-7B-Instruct` | `/models/Qwen2.5-7B-Instruct` |
+| [`qwen2.5-7b/fp8-model-download.yaml`](qwen2.5-7b/fp8-model-download.yaml) | `Qwen/Qwen2.5-7B-Instruct-FP8` | `/models/quantized/Qwen2.5-7B-Instruct-fp8` |
+| [`qwen3-235b/fp8-model-download.yaml`](qwen3-235b/fp8-model-download.yaml) | `Qwen/Qwen3-235B-A22B-FP8` | `/models/qwen3-235b-a22b-fp8` |
 
 | Utility | Purpose |
 |---|---|
@@ -102,11 +102,11 @@ That is a workaround, not the design. Drop the `src` volume and its mount once t
 
 ## Recipes that stage their own weights
 
-Seven recipes fetch weights inside the serving pod and are intentionally not represented here.
+Some recipes fetch weights inside the serving pod and are intentionally not represented here.
 
 The Kimi K3 recipes sync from S3 onto node-local NVMe, which exists only on the node that will serve, so a separate Job could stage onto the wrong node.
 
-`glm-5.2-nvfp4-p6-b300.48xlarge.yaml` downloads into an `emptyDir` in a pod that already requests its full GPU allocation, which holds the node from the moment it schedules. On a Capacity Block that is the intent, so splitting the download out would release the node.
+`glm-5.2/nvfp4-p6-b300.48xlarge.yaml` downloads into an `emptyDir` in a pod that already requests its full GPU allocation, which holds the node from the moment it schedules. On a Capacity Block that is the intent, so splitting the download out would release the node.
 
 ### Why they have not been moved to FSx
 
@@ -114,11 +114,11 @@ The first constraint is size. The Kimi checkpoint is about 1454 GiB and the GLM 
 
 The second constraint is the availability zone. FSx for Lustre is single-AZ, so a filesystem sized for these checkpoints commits to one zone, and p6-b200 and p6-b300 capacity determines which zone is available. Node-local storage avoids that dependency, which matters most inside a bounded Capacity Block window where provisioning a filesystem first consumes booked GPU time.
 
-There is one case where the move has a clear benefit. `kimi-k3-mxfp4-p6-b200.48xlarge-lws.yaml` fetches the checkpoint twice, once in the leader and once in the worker, because an `emptyDir` is per-pod and those are different nodes. That is double the S3 egress and double the wall clock on every start, where a `ReadWriteMany` filesystem would stage once. If any of these are moved, this is the candidate.
+There is one case where the move has a clear benefit. `kimi-k3/mxfp4-p6-b200.48xlarge-sts.yaml` fetches the checkpoint twice, once in each of its two pods, because an `emptyDir` is per-pod and those are different nodes. That is double the S3 egress and double the wall clock on every start, where a `ReadWriteMany` filesystem would stage once. If any of these are moved, this is the candidate.
 
 The read cost is not known. A 62 GiB checkpoint loaded from FSx at roughly 490 MB/s in this repo's own measurements, which extrapolates to roughly an hour for 1454 GiB against node-local NVMe. That figure is an extrapolation rather than a measurement, and a decision should be based on a direct measurement instead.
 
-Those seven do keep a pre-flight space check, because an `emptyDir` lands wherever kubelet's root is rather than on the instance store by default, and a 1454 GiB sync onto a root disk fills the node.
+These recipes do keep a pre-flight space check, because an `emptyDir` lands wherever kubelet's root is rather than on the instance store by default, and a 1454 GiB sync onto a root disk fills the node.
 
 ## FP8 weights, downloaded or quantized
 

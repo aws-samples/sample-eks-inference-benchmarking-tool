@@ -13,7 +13,7 @@ Use any one of the following runbook recipes to get started. For additional flag
 
 ## Results
 
-Each benchmark run saves a gitignored results file to `docs/results/`. The filename follows the recipe name of `glm-5.2-<quant>-<instance>[-<config>]-<protocol>[-<profile>]` to ensure results sort next to the recipe that produced them. The `<config>` segment is only included when it differs from `<quant>`, which it does not for these two recipes. Open-loop runs add an `openloop` suffix.
+Each benchmark run saves a gitignored results file to `docs/results/`. The filename follows the recipe name of `glm-5.2-<quant>-<instance>[-<config>]-<protocol>[-<profile>]` to ensure results sort next to the recipe that produced them. The `<config>` segment is only included when it differs from `<quant>`, which it does not for these recipes. Open-loop runs add an `openloop` suffix.
 
 ## Known issues
 
