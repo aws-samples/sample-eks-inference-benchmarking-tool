@@ -1,0 +1,170 @@
+#
+# Gemma 4 E4B at FP8 with an FP8 KV cache on one p5.4xlarge (1x H100 80 GB, sm_90), attention backend
+# pinned to TRITON_ATTN. H100 sibling of fp8-g7e.2xlarge-fp8kv-attn-triton.yaml, the fastest Gemma 4 E4B
+# run measured: every serving flag is identical, so the pair isolates the GPU. The one other difference
+# is where the weights come from: the same FP8 checkpoint, synced from S3 onto the node's local NVMe
+# instance store by an init container instead of read from the FSx claim.
+#
+# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION in the init container, and serviceAccountName for any
+# service account with S3 read on the bucket (EKS Pod Identity).
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gemma4-e4b-vllm-p5-4xl-fp8kv-triton
+  labels: { app: gemma4-e4b-vllm-p5-4xl-fp8kv-triton }
+spec:
+  # The S3 weight sync can outlast the 600s default; without this, rollout status fails a healthy load.
+  progressDeadlineSeconds: 3600
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: gemma4-e4b-vllm-p5-4xl-fp8kv-triton }
+  template:
+    metadata:
+      labels: { app: gemma4-e4b-vllm-p5-4xl-fp8kv-triton }
+    spec:
+      serviceAccountName: gemma4-31b-bench
+      nodeSelector:
+        node.kubernetes.io/instance-type: "p5.4xlarge"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      initContainers:
+        - name: fetch-weights
+          image: public.ecr.aws/aws-cli/aws-cli:latest
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              D=/models/quantized/gemma-4-E4B-it-fp8
+              echo "weights sync start $(date -u)"; df -h /models | tail -1
+              aws s3 sync "s3://${WEIGHTS_BUCKET}/${WEIGHTS_PREFIX}/" "$D/" --region "${AWS_REGION}" --only-show-errors
+              SHARDS=$(find "$D" -name '*.safetensors' | wc -l)
+              SZ=$(du -s --block-size=1G "$D" | cut -f1)
+              echo "weights staged ${SZ} GiB, ${SHARDS} shards  $(date -u)"
+              test -f "$D/hf_quant_config.json" || { echo "FATAL: no hf_quant_config.json; not the ModelOpt FP8 export" >&2; exit 1; }
+              test "$SHARDS" -eq 1 || { echo "FATAL: expected 1 shard, got ${SHARDS}" >&2; exit 1; }
+              test "$SZ" -ge 10 || { echo "FATAL: expected ~11 GiB, got ${SZ} GiB" >&2; exit 1; }
+          env:
+            - name: WEIGHTS_BUCKET
+              value: SUBSTITUTE-weights-bucket
+            - name: WEIGHTS_PREFIX
+              value: "gemma4-e4b-fp8-quantized"
+            - name: AWS_REGION
+              value: "us-east-1"
+          volumeMounts:
+            - { name: model-storage, mountPath: /models }
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.29.0
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              echo "=== starting vLLM on ${INSTANCE_TYPE}: $(date -u) ==="
+              vllm serve ${MODEL_DIR} \
+                --quantization ${QUANTIZATION} \
+                --dtype ${DTYPE} \
+                --kv-cache-dtype ${KV_CACHE_DTYPE} \
+                --attention-backend ${ATTENTION_BACKEND} \
+                --gpu-memory-utilization ${GPU_MEM_UTIL} \
+                --max-model-len ${MAX_MODEL_LEN} \
+                --max-num-seqs ${MAX_NUM_SEQS} \
+                --max-num-batched-tokens ${MAX_NUM_BATCHED_TOKENS} \
+                --stream-interval ${STREAM_INTERVAL} \
+                --scheduling-policy ${SCHEDULING_POLICY} \
+                --max-cudagraph-capture-size ${MAX_CUDAGRAPH} \
+                --async-scheduling \
+                --no-enable-prefix-caching \
+                --enable-chunked-prefill \
+                --port 8000
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MODEL_DIR
+              value: "/models/quantized/gemma-4-E4B-it-fp8"
+            - name: QUANTIZATION
+              value: "modelopt"
+            - name: DTYPE
+              value: "bfloat16"
+            # The one difference from the BF16-KV sibling. "bfloat16" is rejected by the engine
+            # and "auto" resolves through DTYPE to BF16, which is what the sibling serves.
+            # No --calculate-kv-scales here: v0.29.0 rejects it with "unrecognized arguments" and
+            # the engine will not start. The Qwen kvscales recipes pass it on vLLM 0.21.0. This
+            # server therefore runs uncalibrated and logs "Using KV cache scaling factor 1.0 for
+            # fp8_e4m3" at startup, which is a caveat on any accuracy claim taken from it.
+            - name: KV_CACHE_DTYPE
+              value: "fp8"
+            - name: MAX_MODEL_LEN
+              value: "8192"
+            - name: MAX_NUM_SEQS
+              value: "1024"
+            - name: MAX_NUM_BATCHED_TOKENS
+              value: "16384"
+            - name: STREAM_INTERVAL
+              value: "10"
+            - name: SCHEDULING_POLICY
+              value: "fcfs"
+            # Matches the canonical sweep's top level, so every measured batch size is
+            # graph-captured and nothing is captured above it.
+            - name: MAX_CUDAGRAPH
+              value: "512"
+            # Held at the g7e.2xlarge A/B value so the GPU is the only variable; this card has 80 GiB.
+            - name: GPU_MEM_UTIL
+              value: "0.90"
+            # Pinned rather than auto-selected, to match the g7e.2xlarge run this one is read
+            # against; on sm_90 vLLM would otherwise auto-select a different kernel. Passed to the server as --attention-backend, not as
+            # VLLM_ATTENTION_BACKEND: v0.29.0 does not read that variable, logs "Unknown vLLM
+            # environment variable detected" for it, and carries no such name in vllm.envs, so
+            # setting it leaves the engine on whatever it auto-selects. Values are the names in
+            # vllm.v1.attention.backends.registry.AttentionBackendEnum.
+            - name: ATTENTION_BACKEND
+              value: "TRITON_ATTN"
+            - name: INSTANCE_TYPE
+              value: "p5.4xlarge"
+            - name: HF_HOME
+              value: "/models"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            # INFO rather than WARNING so the chosen backend is visible in the server log.
+            # Which kernel served is the entire question these arms ask, and no result file
+            # records it. Set identically in all three arms, so it is not a variable.
+            - name: VLLM_LOGGING_LEVEL
+              value: "INFO"
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 15
+            failureThreshold: 120
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 30
+            failureThreshold: 6
+          volumeMounts:
+            - { name: dshm, mountPath: /dev/shm }
+            - { name: model-storage, mountPath: /models }
+      volumes:
+        - name: dshm
+          emptyDir: { medium: Memory }
+        # Node-local: lands on the NVMe instance store when the node class sets instanceStorePolicy RAID0.
+        - name: model-storage
+          emptyDir: { sizeLimit: 40Gi }
+      terminationGracePeriodSeconds: 120
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gemma4-e4b-vllm-p5-4xl-fp8kv-triton
+spec:
+  selector: { app: gemma4-e4b-vllm-p5-4xl-fp8kv-triton }
+  ports:
+    - { protocol: TCP, port: 8000, targetPort: 8000 }
