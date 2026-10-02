@@ -13,11 +13,9 @@ Runbooks are grouped by model under `docs/runbooks/<model>/`; each directory's `
 | GLM-5.2 | p6-b200.48xlarge — NVFP4 | [`nvfp4-p6-b200.48xlarge-runbook.md`](./glm-5.2/nvfp4-p6-b200.48xlarge-runbook.md) | published NVFP4 on FSx | none |
 | GLM-5.2 | p6-b300.48xlarge — NVFP4 | [`nvfp4-p6-b300.48xlarge-runbook.md`](./glm-5.2/nvfp4-p6-b300.48xlarge-runbook.md) | Hugging Face to emptyDir | none |
 | Gemma 4 E4B | g7e.2xlarge — FP8, FP8 KV, Triton attention | [`fp8-g7e.2xlarge-fp8kv-attn-triton-runbook.md`](./gemma4-e4b/fp8-g7e.2xlarge-fp8kv-attn-triton-runbook.md) | locally quantized FP8 on FSx | TRITON_ATTN pinned; memory fraction 0.90 |
-| Gemma 4 31B | g6e.12xlarge — BF16 | [`bf16-g6e.12xlarge-runbook.md`](./gemma4-31b/bf16-g6e.12xlarge-runbook.md) | published BF16 staged to FSx | none |
 | Gemma 4 31B | g7.24xlarge — BF16 | [`bf16-g7.24xlarge-runbook.md`](./gemma4-31b/bf16-g7.24xlarge-runbook.md) | published BF16 staged to FSx | none |
 | Gemma 4 31B | g7e.2xlarge — BF16 | [`bf16-g7e.2xlarge-runbook.md`](./gemma4-31b/bf16-g7e.2xlarge-runbook.md) | published BF16 downloaded in pod | none |
 | Gemma 4 31B | g7e.4xlarge — BF16 | [`bf16-g7e.4xlarge-runbook.md`](./gemma4-31b/bf16-g7e.4xlarge-runbook.md) | published BF16 staged to FSx | none |
-| Gemma 4 31B | g6e.12xlarge — FP8 | [`fp8-g6e.12xlarge-runbook.md`](./gemma4-31b/fp8-g6e.12xlarge-runbook.md) | locally quantized FP8 on FSx | none |
 | Gemma 4 31B | g7.24xlarge — FP8 | [`fp8-g7.24xlarge-runbook.md`](./gemma4-31b/fp8-g7.24xlarge-runbook.md) | locally quantized FP8 on FSx | none |
 | Gemma 4 31B | g7.24xlarge — FP8, TP=4, NCCL P2P study | [`fp8-g7.24xlarge-p2p-runbook.md`](./gemma4-31b/fp8-g7.24xlarge-p2p-runbook.md) | locally quantized FP8 staged on FSx | none |
 | Gemma 4 31B | g7e.4xlarge — FP8 | [`fp8-g7e.4xlarge-runbook.md`](./gemma4-31b/fp8-g7e.4xlarge-runbook.md) | locally quantized FP8 on FSx | none |

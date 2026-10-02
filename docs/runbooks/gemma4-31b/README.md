@@ -8,10 +8,8 @@ Use any one of the following runbook recipes to get started. For additional flag
 
 | Instance | Precision | Node | GPUs | TP | Runbook |
 | -------- | --------- | ---- | ---- | -- | ------- |
-| `g6e.12xlarge` | BF16 | Single node inference | 4 | 4 | [Runbook](./bf16-g6e.12xlarge-runbook.md) |
 | `g7.24xlarge` | BF16 | Single node inference | 4 | 4 | [Runbook](./bf16-g7.24xlarge-runbook.md) |
 | `g7e.4xlarge` | BF16 | Single node inference | 1 | unset | [Runbook](./bf16-g7e.4xlarge-runbook.md) |
-| `g6e.12xlarge` | FP8 | Single node inference | 4 | 4 | [Runbook](./fp8-g6e.12xlarge-runbook.md) |
 | `g7.24xlarge` | FP8 | Single node inference | 4 | 4 | [Runbook](./fp8-g7.24xlarge-runbook.md) |
 | `g7e.4xlarge` | FP8 | Single node inference | 1 | unset | [Runbook](./fp8-g7e.4xlarge-runbook.md) |
 | `g7e.4xlarge` | FP8, FP8 KV, 32k context | Single node inference | 1 | unset | [Runbook](./fp8-g7e.4xlarge-fp8kv-32k-runbook.md) |
