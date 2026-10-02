@@ -31,8 +31,8 @@ kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \
 
 # Confirm the pinned attention backend actually took effect. v0.29.0 does not read
 # VLLM_ATTENTION_BACKEND, so a pin passed as an environment variable leaves the engine
-# on whatever it auto-selects, and every arm of the A/B measures the same kernel under
-# a different label. Fail here rather than let that reach a result file.
+# on whatever it auto-selects, and the result is labelled with a backend that never ran.
+# Fail here rather than let that reach a result file.
 echo "==> Confirming the attention backend is TRITON_ATTN"
 BACKEND_LOG=$(kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" logs \
   deployment/gemma4-e4b-vllm-g7e-2xl-fp8kv-triton --container vllm)

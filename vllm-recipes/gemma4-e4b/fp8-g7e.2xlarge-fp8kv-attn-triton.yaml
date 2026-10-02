@@ -1,9 +1,8 @@
 #
 # Gemma 4 E4B at FP8 with an FP8 KV cache on one g7e.2xlarge, attention backend pinned to TRITON_ATTN.
 # Triton attention. Portable across any SM and head size, and the fallback if FlashInfer or FlashAttention reject sliding-window attention, GQA, or head_dim 512.
-# SUBSTITUTE: nothing. All arms of this A/B hold every flag but --attention-backend, and run at
-# --gpu-memory-utilization 0.90 rather than the 0.80 the fp8kv pair uses, so compare arms against
-# each other rather than against the fp8kv baseline.
+# SUBSTITUTE: nothing. Runs at --gpu-memory-utilization 0.90; fp8-p5.4xlarge-fp8kv-attn-triton.yaml
+# holds every serving flag identical on an H100.
 #
 apiVersion: apps/v1
 kind: Deployment
