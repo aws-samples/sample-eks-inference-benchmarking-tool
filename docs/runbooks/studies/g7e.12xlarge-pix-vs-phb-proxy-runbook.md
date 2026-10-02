@@ -82,7 +82,7 @@ MANIFESTS=(
   experiments/g7e12-switch-llama3.3-70b-shm.yaml
   vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml
   vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml
-  vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-shm.yaml
+  experiments/g7e12-switch-qwen3-30b-a3b-shm.yaml
 )
 sha256sum "${MANIFESTS[@]}" > "$ARTIFACT_ROOT/manifest-sha256.txt"
 ```
@@ -252,7 +252,7 @@ Run one deployment at a time in this recorded order. The default arm is a negati
 | 3 | `experiments/g7e12-switch-llama3.3-70b-shm.yaml` | `llama33-70b-g7e12-switch-shm` | `llama3.3-70b` | `fp8-switch-shm` | `llama3.3-70b-fp8` | same | none |
 | 4 | `vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml` | `qwen3-30b-a3b-g7e12-switch-default` | `qwen3-30b-a3b` | `fp8-switch-default` | `qwen3-30b-a3b-fp8` | `Qwen/Qwen3-30B-A3B-FP8` | `--thinking off` |
 | 5 | `vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml` | `qwen3-30b-a3b-g7e12-switch-pix` | `qwen3-30b-a3b` | `fp8-switch-pix` | `qwen3-30b-a3b-fp8` | same | `--thinking off` |
-| 6 | `vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-shm.yaml` | `qwen3-30b-a3b-g7e12-switch-shm` | `qwen3-30b-a3b` | `fp8-switch-shm` | `qwen3-30b-a3b-fp8` | same | `--thinking off` |
+| 6 | `experiments/g7e12-switch-qwen3-30b-a3b-shm.yaml` | `qwen3-30b-a3b-g7e12-switch-shm` | `qwen3-30b-a3b` | `fp8-switch-shm` | `qwen3-30b-a3b-fp8` | same | `--thinking off` |
 
 For each row, set the variables and run the function below. `RECIPE` is the manifest path from the repository root; only the arms under `vllm-recipes/` go through `validate-manifests`. Use `THINKING_ARGS=()` for Llama and `THINKING_ARGS=(--thinking off)` for Qwen.
 
@@ -364,7 +364,7 @@ for recipe in \
   experiments/g7e12-switch-llama3.3-70b-shm.yaml \
   vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml \
   vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml \
-  vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-shm.yaml; do
+  experiments/g7e12-switch-qwen3-30b-a3b-shm.yaml; do
   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f "$recipe" --ignore-not-found=true
 done
 kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete job \

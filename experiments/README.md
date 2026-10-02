@@ -8,9 +8,9 @@ A manifest belongs in `experiments/` when all three are true.
 
 - **It answers one question, once.** The artifact is a written finding, not a reusable file. If someone would apply it to serve a model, it is a recipe.
 - **It is a controlled comparison.** Several files that differ in exactly one variable are the normal shape here, because the comparison is the point. `k8s/examples/` deliberately collapses near-duplicates into one file per purpose; that would destroy a study.
-- **It does not run `vllm serve`, unless vLLM is only the load for an interconnect study.** A manifest that serves a model to measure serving performance is a recipe and lives in [`vllm-recipes/`](../vllm-recipes/), where `validate-manifests` can prove it passes the flags it claims. The Gemma serving arm of the NCCL study is that kind of file, so it is `vllm-recipes/gemma4-31b/fp8-g7.24xlarge-p2p.yaml`. The Qwen3-235B two-node arm and the Llama 3.3 70B arms have no published serving result, so they live here.
+- **It does not run `vllm serve`, unless vLLM is only the load for an interconnect study.** A manifest that serves a model to measure serving performance is a recipe and lives in [`vllm-recipes/`](../vllm-recipes/), where `validate-manifests` can prove it passes the flags it claims. The Gemma serving arm of the NCCL study is that kind of file, so it is `vllm-recipes/gemma4-31b/fp8-g7.24xlarge-p2p.yaml`. The Qwen3-235B two-node arm, the Llama 3.3 70B arms and the Qwen3-30B-A3B forced-SHM arm live here. The Qwen3-30B-A3B default and `PIX` arms are the exception: they are the model's two best results, so they stay in `vllm-recipes/` as recipes.
 
-Nothing here is checked by `validate-manifests`, whose scope is `vllm-recipes/*/*.yaml`. That is correct for the microbenchmarks, which have no `vllm serve` invocation to verify. The Qwen3-235B and Llama 3.3 70B arms do run `vllm serve`, so their deploy helpers and the switch study runbook check the served model and the live KV-cache configuration instead.
+Nothing here is checked by `validate-manifests`, whose scope is `vllm-recipes/*/*.yaml`. That is correct for the microbenchmarks, which have no `vllm serve` invocation to verify. The Qwen3-235B, Llama 3.3 70B and Qwen3-30B-A3B arms here do run `vllm serve`, so their deploy helpers and the switch study runbook check the served model and the live KV-cache configuration instead.
 
 ## The three directories
 
@@ -37,7 +37,7 @@ Measurements land in `docs/results/`, which is gitignored, so a fresh clone give
 
 ## Interconnect studies
 
-NCCL is NVIDIA's collective communications library, and it moves tensors between GPUs on every step of a tensor-parallel forward pass. The microbenchmarks above isolate the interconnect with no model. These run vLLM, but their purpose is to compare `NCCL_P2P_LEVEL` settings, not to measure serving performance, so they are studies first and their results are not serving benchmarks. The Gemma arm and the Qwen3-30B-A3B switch arms stay in `vllm-recipes/`, where `validate-manifests` checks them; the Qwen3-235B and Llama 3.3 70B arms live here. Change only `NCCL_P2P_LEVEL` between runs of the same manifest; `--config` keeps each arm in its own results file.
+NCCL is NVIDIA's collective communications library, and it moves tensors between GPUs on every step of a tensor-parallel forward pass. The microbenchmarks above isolate the interconnect with no model. These run vLLM, but their purpose is to compare `NCCL_P2P_LEVEL` settings, not to measure serving performance, so they are studies first and their results are not serving benchmarks. The Gemma arm and the Qwen3-30B-A3B default and `PIX` arms stay in `vllm-recipes/`, where `validate-manifests` checks them; the rest live here. Change only `NCCL_P2P_LEVEL` between runs of the same manifest; `--config` keeps each arm in its own results file.
 
 | Model | Instance | Precision | Parallelism | What's swept | Manifest | Runbook |
 |---|---|---|---|---|---|---|
@@ -45,6 +45,7 @@ NCCL is NVIDIA's collective communications library, and it moves tensors between
 | Qwen3-235B-A22B | `g7e.12xlarge` x2 | FP8 | TP2, PP2 | `NCCL_P2P_LEVEL` across two nodes, one 400 Gbps EFA card each, no NVLink | [`g7e12-2node-qwen3-235b-lws.yaml`](./g7e12-2node-qwen3-235b-lws.yaml), deployed with [`g7e12-2node-qwen3-235b-lws-deploy.sh`](./g7e12-2node-qwen3-235b-lws-deploy.sh) (`--config 2node`) | None |
 | Llama 3.3 70B Instruct | `g7e.12xlarge` | FP8 | TP2 | NCCL default selection, explicit `PIX` P2P, and forced SHM on one switch-local GPU pair | [`g7e12-switch-llama3.3-70b-default.yaml`](./g7e12-switch-llama3.3-70b-default.yaml), [`-pix`](./g7e12-switch-llama3.3-70b-pix.yaml), [`-shm`](./g7e12-switch-llama3.3-70b-shm.yaml) | [Runbook](../docs/runbooks/studies/g7e.12xlarge-pix-vs-phb-proxy-runbook.md) |
 | Llama 3.3 70B Instruct | `g7e.12xlarge` | FP8 | TP2 | Nothing: single-arm baseline, NCCL defaults, checkpoint downloaded into node-local storage | [`g7e12-llama3.3-70b-tp2.yaml`](./g7e12-llama3.3-70b-tp2.yaml), deployed with [`g7e12-llama3.3-70b-tp2-deploy.sh`](./g7e12-llama3.3-70b-tp2-deploy.sh) | None |
+| Qwen3-30B-A3B | `g7e.12xlarge` | FP8 | TP2, expert parallel | NCCL default selection, explicit `PIX` P2P, and forced SHM on one switch-local GPU pair | [`g7e12-switch-qwen3-30b-a3b-shm.yaml`](./g7e12-switch-qwen3-30b-a3b-shm.yaml); default and `PIX` arms are [`vllm-recipes/qwen3-30b-a3b/`](../vllm-recipes/qwen3-30b-a3b/) | [Runbook](../docs/runbooks/studies/g7e.12xlarge-pix-vs-phb-proxy-runbook.md) |
 
 The Qwen3-235B weights are staged by [`model-jobs/qwen3-235b/fp8-model-download.yaml`](../model-jobs/qwen3-235b/fp8-model-download.yaml), which stays with the other checkpoint-staging Jobs.
 
