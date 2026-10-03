@@ -129,7 +129,7 @@ spec:
             # mixed NVFP4/FP8 export (4-bit group-16 weight groups plus FP8 groups, 243 modules
             # kept high-precision) and the loader resolves it. Pinning a single method here would
             # mis-read the mixed export the way the vanilla fp8 loader mis-read Gemma's ModelOpt
-            # export; the deploy script prints the resolved method from the server log instead.
+            # export; the resolved method is in the server log instead.
             - name: KV_CACHE_DTYPE
               value: "fp8"
             - name: MAX_MODEL_LEN
@@ -157,7 +157,7 @@ spec:
             - name: PYTHONUNBUFFERED
               value: "1"
             # INFO rather than WARNING so the chosen backend and resolved quantization method
-            # are visible in the server log; the deploy script asserts on both.
+            # are visible in the server log; the deploy script asserts on the backend.
             - name: VLLM_LOGGING_LEVEL
               value: "INFO"
           resources:

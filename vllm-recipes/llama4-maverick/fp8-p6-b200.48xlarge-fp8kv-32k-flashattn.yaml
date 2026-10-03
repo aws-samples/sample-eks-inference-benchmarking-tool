@@ -129,7 +129,7 @@ spec:
             # No --quantization flag: the checkpoint's quantization_config declares a
             # compressed-tensors FP8 export with dynamic per-token activation scales and the
             # loader resolves it. Pinning the vanilla fp8 loader on a foreign export is the
-            # Gemma incident; the deploy script prints the resolved method from the server log.
+            # Gemma incident; the resolved method is in the server log.
             - name: KV_CACHE_DTYPE
               value: "fp8"
             - name: MAX_MODEL_LEN
@@ -157,7 +157,7 @@ spec:
             - name: PYTHONUNBUFFERED
               value: "1"
             # INFO rather than WARNING so the chosen backend and resolved quantization method
-            # are visible in the server log; the deploy script asserts on both.
+            # are visible in the server log; the deploy script asserts on the backend.
             - name: VLLM_LOGGING_LEVEL
               value: "INFO"
           resources:

@@ -89,7 +89,7 @@ The recipes in this section tune the server for throughput and real-time latency
 | Gemma 4 31B | FP8 | `g7.24xlarge`, `p6-b200.48xlarge` | [README](./docs/runbooks/gemma4-31b/README.md) |
 | Gemma 4 E4B | FP8 | `g7e.2xlarge`, `p5.4xlarge` | [README](./docs/runbooks/gemma4-e4b/README.md) |
 
-Each model guide lists every recipe for that model and links its runbook. [`vllm-recipes/README.md`](./vllm-recipes/README.md) indexes all of them in one table, with instance, GPU count, parallelism, workload kind and serving image per recipe. Recipes whose purpose is to measure the interconnect rather than serving performance are documented under [Interconnect studies](./experiments/README.md#interconnect-studies) in [`experiments/`](./experiments/) instead, and are absent from the model guides for that reason.
+Each model guide lists every recipe for that model and links its runbook. [`vllm-recipes/README.md`](./vllm-recipes/README.md) indexes all of them in one table, with instance, GPU count, parallelism, workload kind and serving image per recipe. Recipes whose purpose is to measure the interconnect rather than serving performance are documented under [Interconnect studies](./experiments/README.md#interconnect-studies) in [`experiments/`](./experiments/) instead, and are absent from the model guides for that reason. The exception is Qwen3-30B-A3B: its default and `PIX` study arms are its top results, so they stay in `vllm-recipes/` and have runbooks in its model guide.
 
 ---
 
