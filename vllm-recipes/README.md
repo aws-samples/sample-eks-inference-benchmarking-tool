@@ -9,7 +9,7 @@ An unset `Parallelism` cell means the recipe passes no `--tensor-parallel-size`,
 | Model | Precision | Instance | GPUs | Parallelism | Workload | Image | Runbook | Notes |
 |---|---|---|---|---|---|---|---|---|
 | **[Qwen2.5-7B](qwen2.5-7b/bf16-p5en.48xlarge.yaml)** | BF16 | `p5en.48xlarge` | 1x H200 | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/bf16-p5en.48xlarge-runbook.md) | 16-bit KV cache; weights from the shared claim |
-| **[Qwen2.5-7B](qwen2.5-7b/fp8-g7e.12xlarge.yaml)** | FP8 | `g7e.12xlarge` | 1x RTX PRO 6000 | TP1 | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/fp8-g7e.12xlarge-runbook.md) | FP8 KV cache; quantize first |
+| **[Qwen2.5-7B](qwen2.5-7b/fp8-g7e.12xlarge.yaml)** | FP8 | `g7e.12xlarge` | 1x RTX PRO 6000 | TP1 | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/fp8-g7e.12xlarge-runbook.md) | 16-bit KV cache; quantize first |
 | **[Gemma 4 E4B](gemma4-e4b/fp8-g7e.2xlarge-fp8kv-attn-triton.yaml)** | FP8 | `g7e.2xlarge` | 1x RTX PRO 6000 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-e4b/fp8-g7e.2xlarge-fp8kv-attn-triton-runbook.md) | TRITON_ATTN pinned; FP8 KV, memory fraction 0.90 |
 | **[Gemma 4 31B](gemma4-31b/fp8-g7.24xlarge.yaml)** | FP8 | `g7.24xlarge` | 4x RTX PRO 4500 | TP4 | Deployment | AWS DLC | [Runbook](../docs/runbooks/gemma4-31b/fp8-g7.24xlarge-runbook.md) | 16-bit KV cache; quantize first; no prefix caching |
 | **[Gemma 4 E4B](gemma4-e4b/fp8-p5.4xlarge-fp8kv-attn-triton.yaml)** | FP8 | `p5.4xlarge` | 1x H100 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-e4b/fp8-p5.4xlarge-fp8kv-attn-triton-runbook.md) | TRITON_ATTN pinned; FP8 KV, memory fraction 0.90; quantize first; weights from S3 to node-local |

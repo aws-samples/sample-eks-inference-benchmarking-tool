@@ -16,7 +16,7 @@ echo "==> Checking the served model"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \
   deployment/muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3-flashinfer \
   --container vllm \
-  -- curl -s localhost:8000/v1/models
+  -- curl -s -w '\n' localhost:8000/v1/models
 # Record the live KV-cache allocation.
 echo "==> Reading the KV-cache configuration"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \

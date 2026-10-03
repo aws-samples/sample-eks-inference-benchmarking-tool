@@ -16,7 +16,7 @@ echo "==> Checking the served model"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \
   deployment/llama4-maverick-vllm-b200-fp8kv-32k-flashattn \
   --container vllm \
-  -- curl -s localhost:8000/v1/models
+  -- curl -s -w '\n' localhost:8000/v1/models
 # Record the live KV-cache allocation.
 echo "==> Reading the KV-cache configuration"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \

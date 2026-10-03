@@ -4,7 +4,7 @@ Serves [`Qwen/Qwen2.5-7B-Instruct`](https://huggingface.co/Qwen/Qwen2.5-7B-Instr
 
 ## Capacity sizing
 
-Qwen2.5-7B-Instruct at FP8 occupies 7.4 GiB of the 89.4 GiB on 1 RTX PRO 6000 Blackwell card, leaving 70.1 GiB for KV cache. At the model maximum 32,768 token context that pool holds 80 concurrent sequences.
+Qwen2.5-7B-Instruct at FP8 occupies 7.4 GiB of the 89.4 GiB on 1 RTX PRO 6000 Blackwell card, leaving 70.1 GiB for KV cache. At the model maximum 32,768 token context that pool holds 40 concurrent sequences.
 
 | Property | Value | Source |
 |---|---|---|
@@ -14,13 +14,13 @@ Qwen2.5-7B-Instruct at FP8 occupies 7.4 GiB of the 89.4 GiB on 1 RTX PRO 6000 Bl
 | **Checkpoint size, FP8** | 7.4 GiB | 1 byte per parameter, derived from the BF16 card |
 | **Instance** | g7e.12xlarge, 1 of 2x RTX PRO 6000 Blackwell at 96 GB | 96 GB for this pod, 89.4 GiB |
 | **Tensor parallel size** | 1 | `TP_SIZE` |
-| **Weight precision** | FP8 | `QUANTIZATION` |
-| **KV cache precision** | FP8 (`fp8_e4m3`) | `--kv-cache-dtype fp8_e4m3` |
+| **Weight precision** | ModelOpt FP8 | `QUANTIZATION` |
+| **KV cache precision** | 16-bit | No `--kv-cache-dtype`; see Settings |
 | **Context length** | 32,768, not pinned by the recipe | `config.json`, `max_position_embeddings` |
 | **Memory fraction** | 0.95 | `GPU_MEM_UTIL` |
 | **Max sequences** | 512 | `MAX_NUM_SEQS` |
 
-KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, which is 1 KiB here. Every layer attends to the full context, so per-sequence cost scales linearly with context length across all 28 layers. The 70.1 GiB pool is 89.4 GiB at 0.95 utilization, less 7.4 GiB of weights, less roughly 7.5 GiB for activations and CUDA graphs.
+KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, which is 2 KiB here. Every layer attends to the full context, so per-sequence cost scales linearly with context length across all 28 layers. The 70.1 GiB pool is 89.4 GiB at 0.95 utilization, less 7.4 GiB of weights, less roughly 7.5 GiB for activations and CUDA graphs.
 
 ## Before you begin
 
@@ -61,6 +61,11 @@ Step 4 quantizes the checkpoint the measured results used; step 5 downloads the 
 4. Quantize the checkpoint onto the claim at `/models/quantized/Qwen2.5-7B-Instruct-fp8`.
 
    ```bash
+   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create configmap quantizer-src \
+       --from-file=app/quantize/src/quantize.py \
+       --from-file=app/quantize/src/config.py \
+       --from-file=app/quantize/src/fix_amax.py \
+       --from-file=app/quantize/src/verify_checkpoint.py
    sed -e "s|012345678901.dkr.ecr.us-east-1|${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}|" \
        model-jobs/qwen2.5-7b/fp8-model-quantize.yaml \
      | kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f -
@@ -130,21 +135,10 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/qwe
 
 ## Settings
 
-
-- **`- "--gpu-memory-utilization=0.95"`** --- Optimized G7e / Blackwell Parameters ---
-
-**`- "--port=8000"`**
-
-and improves scheduling fairness under mixed workloads
-
-```
---enforce-eager removed: V1 engine (default in vLLM 0.21) handles FP8 KV cache
-```
-
-with precompiled FlashInfer cubins; cudagraph capture no longer OOMs on Blackwell.
-
-- **`- name: VLLM_ATTENTION_BACKEND`** FlashInfer supports FP8 KV cache and has sm_120 (Blackwell) kernels. XFormers (default) does not have Blackwell kernels and will crash on g7e.
-- **`nvidia.com/gpu: 1`** g7e.12xlarge = 2 GPUs available (96GB each), using 1 for 7B FP8 model
-- **`- "--enable-prefix-caching"`** Reduces redundant KV recomputation under load
-- **`- "--enable-chunked-prefill"`** Breaks long prefills into chunks; reduces TTFT for long prompts
-- **`VLLM_LOGGING_LEVEL=WARNING`** Suppresses per-request INFO logs; errors and warnings still surface
+- **`QUANTIZATION=modelopt`** Serves the ModelOpt FP8 export the quantize step writes, using its `hf_quant_config.json` and calibrated input scales.
+- **16-bit KV cache.** The checkpoint carries no KV scales (`kv_cache_quant_algo` is `None`), and with `--kv-cache-dtype fp8_e4m3` the accuracy gate rejects the server because answers collapse into repetition.
+- **`--no-enable-prefix-caching`** `legacy_corpus` repeats five fixed prompts, so a cache-enabled server measures cache hits rather than prefill. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
+- **`--enable-chunked-prefill`** Breaks long prefills into chunks so they share a step with decodes.
+- **`--gpu-memory-utilization=0.95`** Leaves the rest of the 96 GB card for activations and CUDA graphs.
+- **`nvidia.com/gpu: 1`** The 7B model fits one of the two GPUs, so the pod takes one.
+- **`VLLM_LOGGING_LEVEL=INFO`** Logs the KV cache size and prefix cache hit rate the provenance block reads.

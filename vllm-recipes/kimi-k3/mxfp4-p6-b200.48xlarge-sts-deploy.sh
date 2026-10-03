@@ -16,7 +16,7 @@ echo "==> Checking the served model"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \
   pod/kimi-k3-b200-0 \
   --container vllm \
-  -- curl -s localhost:8000/v1/models
+  -- curl -s -w '\n' localhost:8000/v1/models
 # Record the live KV-cache allocation.
 echo "==> Reading the KV-cache configuration"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \

@@ -38,6 +38,10 @@ spec:
               value: "/models/cache"
             - name: OUTPUT_DIR
               value: "/models/quantized"
+            - name: MODELOPT_REAL_EXPORT
+              value: "1"
+            - name: CALIBRATE
+              value: "1"
             - name: HUGGING_FACE_HUB_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -54,8 +58,12 @@ spec:
           volumeMounts:
             - { name: models, mountPath: /models }
             - { name: dshm, mountPath: /dev/shm }
+            # Overlays this repo's quantizer source on an older image. Drop it once the image is rebuilt from current source.
+            - { name: src, mountPath: /app/src }
       volumes:
         - name: models
           persistentVolumeClaim: { claimName: fsx-pvc }
         - name: dshm
           emptyDir: { medium: Memory, sizeLimit: 16Gi }
+        - name: src
+          configMap: { name: quantizer-src }
