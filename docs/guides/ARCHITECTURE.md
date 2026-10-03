@@ -129,7 +129,6 @@ sample-eks-inference-benchmarking-tool/
 │   ├── install-prerequisites.sh       # Configure EKS namespace, plugin, secret, and node check.
 │   ├── push-image.sh                  # Build and push the quantizer image to ECR
 │   ├── patch-efa-plugin.sh            # Fixes the EFA device plugin's stale allow-list
-│   └── repeat-sweep.sh                # Legacy NCCL noise study helper
 ├── k8s/examples/                      # Examples, not runnable as written. One per purpose,
 │                                      #   every identifier a placeholder. Cluster, node groups,
 │                                      #   FSx PV/PVC, weight staging, quantization, image
