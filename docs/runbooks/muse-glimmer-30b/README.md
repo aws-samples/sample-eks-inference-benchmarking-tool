@@ -14,4 +14,4 @@ Use any one of the following runbook recipes to get started. For additional flag
 
 ## Results
 
-Each benchmark run saves a gitignored results file to `docs/results/`. The filename follows the recipe name of `muse-glimmer-30b-<quant>-<instance>[-<config>]-<protocol>[-<profile>]` to ensure results sort next to the recipe that produced them. The `<config>` segment is only included when it differs from `<quant>`, which it does for the recipes here. Open-loop runs add an `openloop` suffix. The g7e.48xlarge runbooks also write a `replica-balance` file recording how requests split across the eight replicas.
+Each benchmark run saves a gitignored results file to `docs/results/`. The filename follows the recipe name of `muse-glimmer-30b-<quant>-<instance>[-<config>]-<protocol>[-<profile>]` to ensure results sort next to the recipe that produced them. The `<config>` segment is only included when it differs from `<quant>`, which it does for the recipes here. Open-loop runs add an `openloop` suffix.

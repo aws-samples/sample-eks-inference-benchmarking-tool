@@ -36,6 +36,7 @@ spec:
             -o /traces/vllm-trace \
             vllm serve "${MODEL}" \
               --tensor-parallel-size "${TP_SIZE}" \
+              --no-enable-prefix-caching \
               --port 8000 \
             || echo "nsys/vllm exited rc=$? (expected: nsys stops the target)"
 
