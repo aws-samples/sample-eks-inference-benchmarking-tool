@@ -1,9 +1,6 @@
 #
-# Job that stages the published Inferact/Kimi-K3-DSpark speculator draft from Hugging Face into S3, once, for the dspark recipe. The draft is ~6.6 GiB.
-#
-# Naming note: the draft is a second model the dspark recipe loads beside the main checkpoint, not a precision of Kimi K3, so it takes its own name rather than a <quant>-model-download.yaml slot.
-#
-# Reuses the kimi-k3-s3-stager ConfigMap from mxfp4-model-download.yaml, so apply that file first. The stager fails unless every file reached S3.
+# Stages the published Inferact/Kimi-K3-DSpark speculator draft (~6.6 GiB) from Hugging Face into S3 for the dspark recipe.
+# Apply mxfp4-model-download.yaml first; this Job reuses its kimi-k3-s3-stager ConfigMap, which fails unless every file reached S3.
 #
 # SUBSTITUTE: WEIGHTS_BUCKET, AWS_REGION, and the IRSA-annotated ServiceAccount.
 apiVersion: batch/v1

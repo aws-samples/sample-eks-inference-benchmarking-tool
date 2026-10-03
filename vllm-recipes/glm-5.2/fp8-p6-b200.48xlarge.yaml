@@ -1,6 +1,5 @@
-#
-# GLM-5.2 at FP8 on one p6-b200.48xlarge, 8 GPUs, tensor parallel 8. Use this when the FP8 checkpoint fits one Blackwell node and no multi-node topology is wanted.
-#
+# GLM-5.2 at FP8 on one p6-b200.48xlarge, 8 GPUs, tensor parallel 8.
+# SUBSTITUTE: fsx-pvc if your claim is named differently.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

@@ -1,4 +1,4 @@
-# Qwen3-30B-A3B FP8 g7e.12xlarge switch study: P2P disabled, forcing SHM. Study record, not a serving recipe; the default and PIX arms stay in vllm-recipes/qwen3-30b-a3b/.
+# Qwen3-30B-A3B FP8 g7e.12xlarge switch study: P2P disabled, forcing SHM. The default and PIX arms are in vllm-recipes/qwen3-30b-a3b/.
 # SUBSTITUTE: kubernetes.io/hostname. All arms of this study must pin the SAME node.
 apiVersion: apps/v1
 kind: Deployment

@@ -28,7 +28,7 @@ spec:
               value: /staging/model
             - name: HF_HOME
               value: /staging/.hf-cache
-            # Xet is off here on purpose, and that now costs you the only accelerated path. See the README.
+            # Xet is disabled; it stalls on very large repositories.
             - name: HF_HUB_DISABLE_XET
               value: "1"
             - name: AWS_REGION

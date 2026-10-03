@@ -1,6 +1,5 @@
-#
-# Gemma 4 31B at FP8 on one g7.24xlarge, 4 GPUs, tensor parallel 4, prefix caching off. Use this for a publishable g7 throughput figure.
-#
+# Gemma 4 31B at FP8 on one g7.24xlarge, 4 GPUs, tensor parallel 4.
+# SUBSTITUTE: fsx-pvc if your claim is named differently.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

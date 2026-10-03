@@ -95,8 +95,7 @@ data:
       || { log "FAILED: /lib/modules/${K}/build absent after installing headers"; exit 1; }
 
     # --- 4. Locate the driver sources ---
-    # Sort by version and take the highest. Picking the first match instead would build the
-    # older tree whenever two are present, for example nvidia-535 over nvidia-580.
+    # Sort by version and take the highest; with two trees present, the first match can be the older one.
     pick_tree() {
       ls -d "$1"/nvidia-*/ 2>/dev/null | sed 's#/$##' | sort -V | tail -1
     }

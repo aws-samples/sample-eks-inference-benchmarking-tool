@@ -1,6 +1,6 @@
 #
-# Gemma 4 31B at FP8 on one g7.24xlarge, 4 GPUs, tensor parallel 4, instrumented for the NCCL peer-to-peer study. Study record, not a
-# serving recipe (see experiments/README.md): use it only to compare NCCL_P2P_LEVEL settings, not as a serving baseline.
+# Gemma 4 31B FP8 on one g7.24xlarge with tensor parallel 4, instrumented for the NCCL peer-to-peer study.
+# An experiment, not a serving recipe; see experiments/README.md.
 #
 apiVersion: apps/v1
 kind: Deployment

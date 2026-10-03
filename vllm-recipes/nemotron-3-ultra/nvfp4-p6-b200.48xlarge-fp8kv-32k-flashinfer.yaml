@@ -1,22 +1,14 @@
-#
-# Nemotron 3 Ultra 550B A55B at NVFP4 on one p6-b200.48xlarge (8x B200 180 GB, sm_100), tensor
-# parallel 8, FP8 KV cache, 32,768-token context, attention backend pinned to TRITON_ATTN.
-# On Blackwell the NVFP4 checkpoint runs the native cutlass W4A4 GEMM path. Results from this
-# recipe are NOT comparable to a Hopper run, which would use the FP4-Marlin W4A16 fallback.
-#
+# Nemotron 3 Ultra 550B A55B at NVFP4 on one p6-b200.48xlarge, 8 GPUs, tensor parallel 8,
+# FP8 KV cache, 32k context, FLASHINFER attention backend.
 # SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION, in both containers.
 ---
-#
-# ATTENTION-BACKEND A/B ARM: identical to nvfp4-p6-b200.48xlarge-fp8kv-32k.yaml except --attention-backend FLASHINFER
-# (and resource names), so the pair isolates the attention kernel. Treat results from this
-# file as their own labelled config; never fold them into the TRITON_ATTN baseline.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer
   labels: { app: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer }
 spec:
-  # The S3 weight sync outlasts the 600s default; without this, rollout status reports failure on a healthy load.
+  # The S3 weight sync outlasts the 600 s default progress deadline.
   progressDeadlineSeconds: 7200
   replicas: 1
   strategy: { type: Recreate }
@@ -45,8 +37,7 @@ spec:
               aws configure set default.s3.max_queue_size 10000
 
               echo "weights sync start $(date -u)"; df -h /models | tail -1
-              # An emptyDir lands wherever kubelet's root is, which is not always the instance store.
-              # Check the space is really here before pulling a checkpoint this size onto a root disk.
+              # The emptyDir must be on the NVMe instance store; stop if it lacks the space.
               avail=$(df -Pk /models | awk 'NR==2 {print int($4/1048576)}')
               if [ "$avail" -lt "$MIN_FREE_GIB" ]; then
                 echo "FATAL: ${avail} GiB free at /models, need ${MIN_FREE_GIB} GiB." >&2
@@ -125,11 +116,8 @@ spec:
           ports:
             - containerPort: 8000
           env:
-            # No --quantization flag: the checkpoint's quantization_config declares a ModelOpt
-            # mixed NVFP4/FP8 export (4-bit group-16 weight groups plus FP8 groups, 243 modules
-            # kept high-precision) and the loader resolves it. Pinning a single method here would
-            # mis-read the mixed export the way the vanilla fp8 loader mis-read Gemma's ModelOpt
-            # export; the resolved method is in the server log instead.
+            # No --quantization flag: vLLM detects the mixed NVFP4/FP8 ModelOpt export from the
+            # checkpoint config.
             - name: KV_CACHE_DTYPE
               value: "fp8"
             - name: MAX_MODEL_LEN
@@ -146,8 +134,7 @@ spec:
               value: "256"
             - name: GPU_MEM_UTIL
               value: "0.90"
-            # Pinned rather than auto-selected, and passed to the server as --attention-backend,
-            # not as VLLM_ATTENTION_BACKEND: v0.29.0 does not read that variable.
+            # Passed as --attention-backend because vLLM 0.29.0 ignores VLLM_ATTENTION_BACKEND.
             - name: ATTENTION_BACKEND
               value: "FLASHINFER"
             - name: INSTANCE_TYPE
@@ -156,8 +143,7 @@ spec:
               value: "b200-fp8kv-32k-tp8-flashinfer"
             - name: PYTHONUNBUFFERED
               value: "1"
-            # INFO rather than WARNING so the chosen backend and resolved quantization method
-            # are visible in the server log; the deploy script asserts on the backend.
+            # INFO logs the selected attention backend and quantization method at startup.
             - name: VLLM_LOGGING_LEVEL
               value: "INFO"
           resources:

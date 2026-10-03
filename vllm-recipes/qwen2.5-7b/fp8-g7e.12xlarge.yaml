@@ -1,6 +1,6 @@
-#
-# Qwen2.5-7B-Instruct at FP8 on one g7e.12xlarge, a single GPU, reading the KV scales baked into the checkpoint. Use this as the primary g7e FP8 configuration.
-#
+# Qwen2.5-7B-Instruct at FP8 with an FP8 KV cache on one GPU of a g7e.12xlarge, using the
+# KV scales stored in the checkpoint.
+# SUBSTITUTE: fsx-pvc if your claim is named differently.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

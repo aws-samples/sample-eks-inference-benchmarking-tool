@@ -1,9 +1,8 @@
 #
-# Job that stages the published moonshotai/Kimi-K3 MXFP4 checkpoint from Hugging Face into S3, once, so any cluster can pull it later. The checkpoint is ~1,454 GiB across 118 files, too large to download whole before uploading, so the stager streams one file at a time: download, upload, delete. Peak scratch is WORKERS x the largest shard.
-#
-# The stager skips any object already in S3 at the right size, so a retry resumes where the last attempt stopped. It exits non-zero if any file failed or if S3 holds less than 98% of the repository's bytes, so an incomplete stage can never exit 0.
-#
-# The ConfigMap is shared with dspark-draft-download.yaml; apply this file first.
+# Stages the published moonshotai/Kimi-K3 MXFP4 checkpoint (~1,454 GiB, 118 files) from Hugging Face into S3, once.
+# Streams one file at a time (download, upload, delete), so peak scratch is WORKERS x the largest shard.
+# Skips objects already in S3, so a retry resumes. Fails if any file failed or S3 holds under 98% of the repo's bytes.
+# Apply this file before dspark-draft-download.yaml, which reuses its ConfigMap.
 #
 # SUBSTITUTE: WEIGHTS_BUCKET, AWS_REGION, and the IRSA-annotated ServiceAccount.
 apiVersion: v1
@@ -86,7 +85,7 @@ kind: Job
 metadata:
   name: kimi-k3-mxfp4-hf-to-s3
 spec:
-  # Retries resume from what is already in S3, so they are cheap.
+  # Retries resume from objects already in S3.
   backoffLimit: 20
   activeDeadlineSeconds: 86400
   template:
@@ -96,7 +95,7 @@ spec:
     spec:
       restartPolicy: OnFailure
       serviceAccountName: kimi-k3-bench
-      # Requests no GPU. The toleration only lets it place on a cluster whose autoscaled pools are all GPU-tainted.
+      # Requests no GPU; the toleration lets it place where every autoscaled pool is GPU-tainted.
       tolerations:
         - key: nvidia.com/gpu
           operator: Exists
@@ -127,8 +126,7 @@ spec:
               value: /scratch
             - name: HF_HOME
               value: /scratch/.hf-cache
-            # Xet high-perf transfer OOM'd and stalled on an earlier large pull on this pattern;
-            # classic HTTP plus hf_transfer is the combination that completed.
+            # Xet is disabled; it stalls on very large repositories.
             - name: HF_HUB_DISABLE_XET
               value: "1"
             - name: HF_HUB_ENABLE_HF_TRANSFER

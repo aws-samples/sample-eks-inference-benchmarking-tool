@@ -1,5 +1,5 @@
 #
-# Job that quantizes google/gemma-4-E4B-it to ModelOpt FP8 and writes it to the shared claim, which the gemma4-e4b FP8 recipes serve. This is the Job that produced the published checkpoint.
+# Quantizes google/gemma-4-E4B-it to ModelOpt FP8 on the shared claim. Apply before the gemma4-e4b FP8 recipes.
 #
 # SUBSTITUTE: 012345678901, us-east-1, and fsx-pvc.
 apiVersion: batch/v1
@@ -11,8 +11,7 @@ spec:
   template:
     spec:
       restartPolicy: Never
-      # Pinned to the instance type that produced the published checkpoint. Calibration is not
-      # bit-reproducible, so moving the pin would produce different weights.
+      # Runs on one g7.2xlarge GPU.
       nodeSelector:
         node.kubernetes.io/instance-type: "g7.2xlarge"
       tolerations:
@@ -38,7 +37,7 @@ spec:
             # The default causal_lm auto-class cannot load this checkpoint.
             - name: MODEL_LOADER
               value: "image_text_to_text"
-            # The audio patterns are E4B-specific: it carries an audio tower as well as a vision one.
+            # E4B has an audio tower as well as a vision tower; both stay in 16-bit.
             - name: QUANT_EXCLUDE_PATTERNS
               value: "*vision_tower*,*embed_vision*,*multi_modal_projector*,*vision*,*audio_tower*,*embed_audio*,*audio*,*lm_head*"
             - name: MODEL_CACHE_DIR
@@ -67,7 +66,7 @@ spec:
           volumeMounts:
             - { name: models, mountPath: /models }
             - { name: dshm, mountPath: /dev/shm }
-            # Overlays this repo's quantizer source on an older image. Drop it once the image is rebuilt from current source.
+            # Overlays the current quantizer source onto the image. Drop it once the image is rebuilt.
             - { name: src, mountPath: /app/src }
       volumes:
         - name: models

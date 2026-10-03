@@ -1,6 +1,5 @@
-#
-# Qwen2.5-7B-Instruct at BF16 on one p5en.48xlarge, a single GPU of the eight. Use this as the BF16 reference for the p5en generation.
-#
+# Qwen2.5-7B-Instruct at BF16 on one GPU of a p5en.48xlarge.
+# SUBSTITUTE: fsx-pvc if your claim is named differently.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

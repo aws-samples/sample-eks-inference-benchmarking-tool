@@ -1,5 +1,6 @@
 #
-# DaemonSet that builds and loads the NVIDIA open kernel module on GPU nodes that joined without usable GPUs, and repeats it as nodes are replaced. Use this when a g7 or g7e node reports Ready but advertises `nvidia.com/gpu: 0` and you do not own the node group's launch template.
+# DaemonSet that builds and loads the NVIDIA open kernel module on GPU nodes that join without usable GPUs, including replacement nodes.
+# Use it when a g7 or g7e node is Ready but advertises `nvidia.com/gpu: 0` and you do not own the node group's launch template.
 #
 # SUBSTITUTE: the nodeAffinity instance types.
 apiVersion: v1
@@ -9,7 +10,7 @@ metadata:
 data:
   heal.sh: |
     #!/bin/sh
-    # Runs INSIDE the host mount namespace via chroot. Exits 0 when the node needs nothing,
+    # Runs inside the host mount namespace via chroot. Exits 0 when the node needs nothing,
     # and non-zero only when it tried to fix the node and could not.
     set -u
 
@@ -86,8 +87,7 @@ data:
       || { log "FAILED: /lib/modules/${K}/build absent after installing headers"; exit 1; }
 
     # --------------------------------------------------------------- 4. locate driver sources
-    # Highest version, not lexicographically first: `head -1` silently built nvidia-535 over
-    # nvidia-580 when both trees were present.
+    # Highest version, not the first match: with two trees present, the first match can be the older one.
     pick_tree() {
       ls -d "$1"/nvidia-*/ 2>/dev/null | sed 's#/$##' | sort -V | tail -1
     }
@@ -209,9 +209,8 @@ spec:
                   - key: node.kubernetes.io/instance-type
                     operator: In
                     values:
-                      # Every Blackwell (sm_120) type any recipe targets. A type missing here is
-                      # not skipped loudly: the node simply advertises no GPU forever, because the
-                      # healer never schedules onto it. Add new g7/g7e sizes alongside new recipes.
+                      # Every Blackwell (sm_120) instance type to repair. A node whose type is missing here never
+                      # advertises a GPU, because the DaemonSet never schedules onto it.
                       - g7.2xlarge
                       - g7.24xlarge
                       - g7e.2xlarge

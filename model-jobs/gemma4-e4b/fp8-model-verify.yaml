@@ -1,5 +1,5 @@
 #
-# Job that checks whether a quantized checkpoint on the shared claim is what its own config claims to be, failing if it is not. Run it against any checkpoint, including one produced before this repository's quantizer existed.
+# Checks that a quantized checkpoint on the shared claim matches its own config, and fails if it does not.
 #
 # SUBSTITUTE: fsx-pvc, CHECKPOINT_DIR, and the two values matching how it was quantized.
 apiVersion: batch/v1
@@ -11,7 +11,7 @@ spec:
   template:
     spec:
       restartPolicy: Never
-      # No GPU and no quantizer image: the verifier is stdlib-only, so it runs anywhere the claim mounts.
+      # Needs no GPU or quantizer image; the verifier uses only the Python standard library.
       containers:
         - name: verify
           image: python:3.12-slim
@@ -21,7 +21,7 @@ spec:
               value: "/models/quantized/gemma-4-E4B-it-fp8"
             - name: QUANTIZATION_FORMAT
               value: "fp8"
-            # Must match the patterns the quantize Job used, or the exclusion check is vacuous.
+            # Must match the exclude patterns used at quantize time, or the exclusion check proves nothing.
             - name: QUANT_EXCLUDE_PATTERNS
               value: "*vision_tower*,*embed_vision*,*multi_modal_projector*,*vision*,*audio_tower*,*embed_audio*,*audio*,*lm_head*"
             - name: PYTHONUNBUFFERED

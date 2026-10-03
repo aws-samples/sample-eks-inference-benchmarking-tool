@@ -1,5 +1,5 @@
 #
-# Job that downloads the published GLM 5.2 FP8 weights onto the shared PVC. Apply this once per filesystem before the glm-5.2-fp8 recipe that mounts a PVC, and expect a long transfer: the checkpoint is 141 shards.
+# Downloads the published GLM 5.2 FP8 weights (141 shards) onto the shared PVC. Apply once per filesystem before the glm-5.2-fp8 PVC recipe.
 #
 # SUBSTITUTE: fsx-pvc.
 apiVersion: batch/v1

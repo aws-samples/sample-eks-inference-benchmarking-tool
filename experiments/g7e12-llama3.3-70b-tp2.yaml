@@ -1,7 +1,6 @@
 #
-# Llama 3.3 70B Instruct at NVIDIA Model Optimizer FP8 with 16-bit KV on one g7e.12xlarge, TP2 across both GPUs, downloading its public checkpoint into node-backed ephemeral storage for a cache-free benchmark baseline.
-# Single-arm baseline for the g7e.12xlarge NCCL switch study (see experiments/README.md). It is a study record, not a
-# serving recipe: do not quote its results as serving benchmarks.
+# Llama 3.3 70B Instruct, ModelOpt FP8 with 16-bit KV, TP2 on one g7e.12xlarge. Downloads the public checkpoint into node ephemeral storage.
+# Baseline for the g7e.12xlarge NCCL switch study; an experiment, not a serving recipe.
 #
 apiVersion: apps/v1
 kind: Deployment

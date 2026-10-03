@@ -1,13 +1,8 @@
 #
-# nodeadm NodeConfig that stripes every local NVMe instance-store volume into one RAID0 array and
-# moves kubelet and containerd storage onto it, so emptyDir weight staging and image pulls use the
-# instance store instead of the EBS root volume. Put it in the user data of an EKS managed
-# nodegroup's launch template (AL2023 AMIs only, no custom AMI id); EKS merges it with the
-# NodeConfig it generates for the cluster itself.
-#
-# Why: four model copies writing 132 GiB to a 125 MB/s gp3 root volume took ~18 minutes to land
-# and stalled kubectl exec on the node for the whole window. The project rule is to stage weights
-# on local NVMe for every model short of GLM 5.2 / Kimi K3 size.
+# nodeadm NodeConfig that stripes every local NVMe instance-store volume into one RAID0 array and moves kubelet and
+# containerd storage onto it, so weight staging and image pulls use the instance store instead of the EBS root volume.
+# Put it in the launch template user data of an EKS managed nodegroup (AL2023 AMIs, no custom AMI ID); EKS merges it
+# with the NodeConfig it generates.
 #
 # Launch template user data is this document wrapped as a MIME part:
 #

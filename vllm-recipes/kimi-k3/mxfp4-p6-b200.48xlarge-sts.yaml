@@ -1,6 +1,5 @@
-#
-# Kimi K3 at MXFP4 across two p6-b200.48xlarge nodes as a StatefulSet, 16 GPUs, tensor parallel 8 inside each node and pipeline parallel 2 between them. Use this when the model has to span two nodes.
-#
+# Kimi K3 at MXFP4 on two p6-b200.48xlarge nodes as a StatefulSet, 16 GPUs over EFA:
+# tensor parallel 8 within each node, pipeline parallel 2 across them.
 # SUBSTITUTE: 012345678901 and us-east-1 in the image reference, and WEIGHTS_BUCKET and AWS_REGION in the init container.
 ---
 apiVersion: v1
@@ -63,8 +62,7 @@ spec:
               aws configure set default.s3.max_queue_size 10000
               echo "sync start $(date -u)"
               df -h /models | tail -1
-              # An emptyDir lands wherever kubelet's root is, which is not always the instance store.
-              # Check the space is really here before pulling a checkpoint this size onto a root disk.
+              # The emptyDir must be on the NVMe instance store; stop if it lacks the space.
               avail=$(df -Pk /models | awk 'NR==2 {print int($4/1048576)}')
               if [ "$avail" -lt "$MIN_FREE_GIB" ]; then
                 echo "FATAL: ${avail} GiB free at /models, need ${MIN_FREE_GIB} GiB." >&2

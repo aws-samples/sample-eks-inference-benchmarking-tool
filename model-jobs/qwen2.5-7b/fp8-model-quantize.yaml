@@ -1,5 +1,5 @@
 #
-# Job that quantizes Qwen/Qwen2.5-7B-Instruct to ModelOpt FP8 and writes it to the shared claim, which the qwen2.5-7b FP8 recipes serve. This is the producer the measured FP8 checkpoint came from; fp8-model-download.yaml is an alternative source for the same path.
+# Quantizes Qwen/Qwen2.5-7B-Instruct to ModelOpt FP8 on the shared claim for the qwen2.5-7b FP8 recipes. fp8-model-download.yaml fills the same path with published weights instead.
 #
 # SUBSTITUTE: 012345678901, us-east-1, and fsx-pvc.
 apiVersion: batch/v1
@@ -11,7 +11,7 @@ spec:
   template:
     spec:
       restartPolicy: Never
-      # The 7B BF16 source fits any single GPU in this repo, so the Job takes the first free one.
+      # The 7B BF16 source fits on one GPU, so the Job takes the first free one.
       nodeSelector:
         nvidia.com/gpu.present: "true"
       tolerations:
