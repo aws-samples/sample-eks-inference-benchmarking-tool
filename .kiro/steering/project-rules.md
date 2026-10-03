@@ -23,6 +23,7 @@
 * Make each Quickstart step one short sentence followed by its command, around 20 words. Reasoning belongs in `Settings` as a bullet, never as prose between the steps.
 * Write each `Before you begin` bullet as one line: a bulleted markdown link whose text is an imperative phrase and whose target is the relative path, with at most a short parenthetical caveat. The linked file carries the explanation; the bullet does not.
 * Split a function once it needs a second `try`/`except` or a second conditional variable, and compose small named helpers instead. Each check in `verify_checkpoint.py` is its own function returning `(problems, notes)`, and `verify()` only concatenates them, so a new check is a new function rather than another branch.
+* Write each deploy-script step as a comment describing it, an `echo`, then the command. Use no `if`, loops, or guard blocks: `set -euo pipefail` already stops the script when a step fails, so a check is a plain command such as `kubectl logs ... | grep "Using AttentionBackendEnum.FLASHINFER backend"`. A long-running command may run in the background, but keep it to one tidy line.
 * Tear down GPU deployments and scale the nodegroup to zero as soon as measurement stops.
 * Stage model weights on the node's local NVMe instance store, never on the EBS root volume or FSx. Four Muse-Glimmer copies writing 132 GiB to a 125 MB/s gp3 root disk took ~18 minutes to land and stalled `kubectl exec` for the whole window. Serve from FSx or S3 only for checkpoints the size of GLM 5.2 or Kimi K3. On AL2023 managed nodegroups the instance store stays unmounted unless the launch template sets nodeadm `localStorage.strategy: RAID0`; Karpenter's `instanceStorePolicy: RAID0` does the same. Confirm `df /models` shows the NVMe array before trusting a staging step.
 
@@ -40,3 +41,4 @@
 * Never claim a benchmark answers a question it did not measure. N-gram on generic chat says nothing about n-gram on autocomplete, where the output echoes the prompt.
 * Never start a long or costly run on your own after asking for a go/no-go. Wait for the answer.
 * Never report a diff before ruling out an extraction artifact. A jsonpath key containing dots silently produced empty files and three bogus mismatches.
+* Never write comments that record why something changed, compare a file with another, or restate obvious logic. "Identical to X except", "Treat results as their own labelled config" and "calibration is not bit-reproducible, so..." belong in a commit message or nowhere. A comment says what a non-obvious setting does.
