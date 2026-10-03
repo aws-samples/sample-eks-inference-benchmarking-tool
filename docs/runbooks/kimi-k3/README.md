@@ -19,9 +19,3 @@ The multi node recipe uses 16 GPUs across two `p6-b200.48xlarge` nodes. It is a 
 ## Results
 
 Each benchmark run saves a gitignored results file to `docs/results/`. The filename follows the recipe name of `kimi-k3-<quant>-<instance>[-<config>]-<protocol>[-<profile>]` to ensure results sort next to the recipe that produced them. The `<config>` segment is only included when it differs from `<quant>`, so every recipe here carries its topology tag. Open-loop runs add an `openloop` suffix.
-
-## Known issues
-
-These recipes need infrastructure that most others in this repo do not. They run a custom image built with matched NCCL and EFA versions rather than the AWS Deep Learning Container, and each runbook's `Setup` section covers building it. The multi node recipe also needs the EFA device plugin installed before it will schedule. Each recipe syncs its weights from S3 to node-local NVMe. [`mxfp4-model-download.yaml`](../../../model-jobs/kimi-k3/mxfp4-model-download.yaml) stages the published checkpoint into S3 once, and [`dspark-draft-download.yaml`](../../../model-jobs/kimi-k3/dspark-draft-download.yaml) stages the draft the dspark recipe adds.
-
-For reference, see [`TROUBLESHOOTING.md`](../../guides/TROUBLESHOOTING.md) for background on what was encountered and why.

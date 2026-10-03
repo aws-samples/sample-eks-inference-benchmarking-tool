@@ -176,17 +176,12 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/gemma4-31b/fp8-g7.24xlarge.yaml
 ```
 
-## Notes
-
-* Step 8 runs at the shipped targets, TTFT p99 500 ms and TPOT p99 50 ms. `--ttft-target` and `--tpot-target` override them, and an overridden value is appended to the result filename so a run at different targets cannot overwrite one at the defaults. Read [Trusting the open-loop verdict](../../guides/REFERENCE.md#trusting-the-open-loop-verdict) before quoting a rate as sustainable.
-**This recipe serves without `--enable-prefix-caching`, and `legacy_corpus` repeats five fixed prompts.** Those two facts go together: a repeating prompt set against a cache-enabled server measures cache hits rather than serving, so the flag is off here and the throughput figure reflects prefill actually being done. Add the flag back for a serving deployment, and leave it off for a measured one.
-Check the `Prefix cache hit` line in the result file's provenance block regardless: anything other than 0% means prefill was skipped and throughput is inflated. On a pod that has been up for days that line rotates out of the log window and records as `(not found in server log)`, which is not the same as 0%, so a fresh server is worth more than it looks.
-
 ---
-
 
 ## Settings
 
+- **`--ttft-target` and `--tpot-target`** Step 12 runs at the shipped targets, TTFT p99 500 ms and TPOT p99 50 ms. An overridden value is appended to the result filename, so a run at different targets cannot overwrite one at the defaults. Read [Trusting the open-loop verdict](../../guides/REFERENCE.md#trusting-the-open-loop-verdict) before quoting a rate as sustainable.
+- **`Prefix cache hit`** Check this line in the result file's provenance block: anything other than 0% means prefill was skipped and throughput is inflated. On a pod that has been up for days the line rotates out of the log window and records as `(not found in server log)`, which is not the same as 0%.
 - **`strategy:`** This pod claims all 4 GPUs and at one replica maxUnavailable rounds to 0, so Kubernetes waits on a new pod that can never schedule while the old one holds every GPU. Any edit to this recipe would deadlock.
 
 - **`- --quantization=modelopt`** Real modelopt FP8 export (float8_e4m3fn weights + hf_quant_config.json + static input_scale). Served via vLLM's modelopt loader, NOT the vanilla "fp8" loader. The old "fp8" value mis-read the (previously mislabeled) checkpoint and produced garbage output.

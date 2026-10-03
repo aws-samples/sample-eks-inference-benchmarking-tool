@@ -8,5 +8,3 @@ Use any one of the following runbook recipes to get started. For additional flag
 | `p5.4xlarge` | FP8, FP8 KV cache, Triton attention | Single node inference | 1 | unset | [Runbook](./fp8-p5.4xlarge-fp8kv-attn-triton-runbook.md) |
 ## Results
 Each benchmark run saves a gitignored results file to `docs/results/`. The filename follows the recipe name of `gemma4-e4b-<quant>-<instance>[-<config>]-<protocol>[-<profile>]` to ensure results sort next to the recipe that produced them. The `<config>` segment is only included when it differs from `<quant>`, which it does for the recipes here. Open-loop runs add an `openloop` suffix.
-## Known issues
-Blackwell instances (g7, g7e) have compatibility quirks that affected these recipes during development. The fixes have already been applied to the recipes in this section. For reference, see [`TROUBLESHOOTING.md`](../../guides/TROUBLESHOOTING.md) for background on what was encountered and why.

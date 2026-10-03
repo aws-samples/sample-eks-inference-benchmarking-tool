@@ -18,11 +18,3 @@ Every recipe here fits on a single GPU, so the larger instances measure one GPU 
 ## Results
 
 Each benchmark run saves a gitignored results file to `docs/results/`. The filename follows the recipe name of `qwen2.5-7b-<quant>-<instance>[-<config>]-<protocol>[-<profile>]` to ensure results sort next to the recipe that produced them. The `<config>` segment is only included when it differs from `<quant>`, so neither recipe here carries one. Open-loop runs add an `openloop` suffix.
-
-## Checkpoint staging
-
-All BF16 recipes stage the published `Qwen/Qwen2.5-7B-Instruct` checkpoint. Every FP8 recipe uses `/models/quantized/Qwen2.5-7B-Instruct-fp8`, which can be populated either by the published `Qwen/Qwen2.5-7B-Instruct-FP8` staging Job or by local quantization, but not both. The published repository is gated, so its staging Job needs a Hugging Face account that accepted the gating. The FP8 `g7e` runbook applies the published staging Job directly; to produce the path by local quantization instead, apply [`fp8-model-quantize.yaml`](../../../model-jobs/qwen2.5-7b/fp8-model-quantize.yaml).
-
-The g7e recipes run on Blackwell, so their compatibility fixes are already applied in the recipes.
-
-For reference, see [`TROUBLESHOOTING.md`](../../guides/TROUBLESHOOTING.md) for background on what was encountered and why.

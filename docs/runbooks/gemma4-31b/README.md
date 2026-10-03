@@ -16,7 +16,3 @@ The NCCL peer-to-peer study on `g7.24xlarge` is a study record, not a recipe. To
 ## Results
 
 Each benchmark run saves a gitignored results file to `docs/results/`. The filename follows the recipe name of `gemma4-31b-<quant>-<instance>[-<config>]-<protocol>[-<profile>]` to ensure results sort next to the recipe that produced them. The `<config>` segment is only included when it differs from `<quant>`. Open-loop runs add an `openloop` suffix.
-
-## Known issues
-
-Blackwell instances (g7, g7e) have compatibility quirks that affected these recipes during development. The fixes have already been applied to the recipes in this section. For reference, see [`TROUBLESHOOTING.md`](../../guides/TROUBLESHOOTING.md) for background on what was encountered and why.

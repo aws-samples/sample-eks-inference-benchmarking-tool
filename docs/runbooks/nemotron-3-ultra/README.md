@@ -12,16 +12,6 @@ Use any one of the following runbook recipes to get started. For additional flag
 | `p6-b200.48xlarge` | NVFP4, FP8 KV cache | `FLASH_ATTN` | Single node, 1 replica | 8 | 8 | [Runbook](./nvfp4-p6-b200.48xlarge-fp8kv-32k-flashattn-runbook.md) |
 | `p6-b200.48xlarge` | NVFP4, FP8 KV cache | `FLASHINFER` | Single node, 1 replica | 8 | 8 | [Runbook](./nvfp4-p6-b200.48xlarge-fp8kv-32k-flashinfer-runbook.md) |
 
-The three recipes are an attention-backend set and differ only in `--attention-backend` and resource names.
-
 ## Results
 
 Each benchmark run saves a gitignored results file to `docs/results/`. The filename follows the recipe name of `nemotron-3-ultra-<quant>-<instance>[-<config>]-<protocol>[-<profile>]` to ensure results sort next to the recipe that produced them. The `<config>` segment is only included when it differs from `<quant>`, which it does for the recipes here. Open-loop runs add an `openloop` suffix.
-
-## Known issues
-
-Every recipe here serves NVIDIA's published checkpoint, staged once from Hugging Face to S3 by [`nvfp4-model-download.yaml`](../../../model-jobs/nemotron-3-ultra/nvfp4-model-download.yaml). Nothing is quantized in this repo.
-
-NVFP4 runs natively only on Blackwell. On a Hopper GPU, vLLM falls back to an FP4-Marlin W4A16 path, so results from these recipes are not comparable to a Hopper run.
-
-Blackwell instances have compatibility quirks that affected recipes in this repo during development. For reference, see [`TROUBLESHOOTING.md`](../../guides/TROUBLESHOOTING.md) for background on what was encountered and why.

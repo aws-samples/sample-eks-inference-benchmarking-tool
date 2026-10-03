@@ -12,14 +12,6 @@ Use any one of the following runbook recipes to get started. For additional flag
 | `p6-b200.48xlarge` | FP8, FP8 KV cache | `FLASH_ATTN` | Single node, 1 replica | 8 | 8 | [Runbook](./fp8-p6-b200.48xlarge-fp8kv-32k-flashattn-runbook.md) |
 | `p6-b200.48xlarge` | FP8, FP8 KV cache | `FLASHINFER` | Single node, 1 replica | 8 | 8 | [Runbook](./fp8-p6-b200.48xlarge-fp8kv-32k-flashinfer-runbook.md) |
 
-The three recipes are an attention-backend set and differ only in `--attention-backend`.
-
 ## Results
 
 Each benchmark run saves a gitignored results file to `docs/results/`. The filename follows the recipe name of `llama4-maverick-<quant>-<instance>[-<config>]-<protocol>[-<profile>]` to ensure results sort next to the recipe that produced them. The `<config>` segment is only included when it differs from `<quant>`, which it does for the recipes here. Open-loop runs add an `openloop` suffix.
-
-## Known issues
-
-Every recipe here serves the published FP8 checkpoint, staged once from Hugging Face to S3 by [`fp8-model-download.yaml`](../../../model-jobs/llama4-maverick/fp8-model-download.yaml). The `meta-llama` repository is gated, so the `hf-token` must belong to an account that accepted the Llama 4 license. The Job can instead point `MODEL_REPO` at the ungated `unsloth/Llama-4-Maverick-17B-128E-Instruct-FP8` mirror, which it records as carrying the same shards.
-
-The recipes pass no `--quantization` flag. The checkpoint declares a compressed-tensors FP8 export and vLLM resolves the loader from it; pinning the plain `fp8` loader on a foreign export is a known failure. For background on other issues encountered while building recipes, see [`TROUBLESHOOTING.md`](../../guides/TROUBLESHOOTING.md).

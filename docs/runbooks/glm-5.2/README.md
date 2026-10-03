@@ -14,9 +14,3 @@ Use any one of the following runbook recipes to get started. For additional flag
 ## Results
 
 Each benchmark run saves a gitignored results file to `docs/results/`. The filename follows the recipe name of `glm-5.2-<quant>-<instance>[-<config>]-<protocol>[-<profile>]` to ensure results sort next to the recipe that produced them. The `<config>` segment is only included when it differs from `<quant>`, which it does not for these recipes. Open-loop runs add an `openloop` suffix.
-
-## Known issues
-
-These recipes run upstream `vllm/vllm-openai:v0.26.0` rather than the AWS Deep Learning Container that most recipes in this repo use, so a version bump here is a larger change than it looks. Each runbook states where its weights come from, which differs between the two: an FSx PVC staged by a download Job, and a Hugging Face download to `emptyDir` inside the serving pod.
-
-For reference, see [`TROUBLESHOOTING.md`](../../guides/TROUBLESHOOTING.md) for background on what was encountered and why.
