@@ -4,15 +4,15 @@ Serves [`Qwen/Qwen2.5-7B-Instruct`](https://huggingface.co/Qwen/Qwen2.5-7B-Instr
 
 ## Capacity sizing
 
-Qwen2.5-7B-Instruct at FP8 occupies 7.4 GiB of the 89.4 GiB on 1 RTX PRO 6000 Blackwell card, leaving 70.1 GiB for KV cache. At the model maximum 32,768 token context that pool holds 40 concurrent sequences.
+Qwen2.5-7B-Instruct at ModelOpt FP8 occupies 8.1 GiB of the 95.6 GiB on 1 RTX PRO 6000 Blackwell card. At 0.95 utilization that leaves at most 82.7 GiB, before activations and CUDA graphs, which is room for fewer than 47 sequences at the model maximum 32,768-token context.
 
 | Property | Value | Source |
 |---|---|---|
 | **Parameters** | 7B | Model card |
 | **Layers** | 28 | `config.json`, `num_hidden_layers` |
 | **KV heads, head dimension** | 4, 128 | `config.json` |
-| **Checkpoint size, FP8** | 7.4 GiB | 1 byte per parameter, derived from the BF16 card |
-| **Instance** | g7e.12xlarge, 1 of 2x RTX PRO 6000 Blackwell at 96 GB | 96 GB for this pod, 89.4 GiB |
+| **Checkpoint size, FP8** | 8.1 GiB | `model.safetensors` from the quantize step; embeddings and `lm_head` stay BF16 |
+| **Instance** | g7e.12xlarge, 1 of 2x RTX PRO 6000 Blackwell at 96 GB | 97,887 MiB as `nvidia-smi` reports it |
 | **Tensor parallel size** | 1 | `TP_SIZE` |
 | **Weight precision** | ModelOpt FP8 | `QUANTIZATION` |
 | **KV cache precision** | 16-bit | No `--kv-cache-dtype`; see Settings |
@@ -20,7 +20,9 @@ Qwen2.5-7B-Instruct at FP8 occupies 7.4 GiB of the 89.4 GiB on 1 RTX PRO 6000 Bl
 | **Memory fraction** | 0.95 | `GPU_MEM_UTIL` |
 | **Max sequences** | 512 | `MAX_NUM_SEQS` |
 
-KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, which is 2 KiB here. Every layer attends to the full context, so per-sequence cost scales linearly with context length across all 28 layers. The 70.1 GiB pool is 89.4 GiB at 0.95 utilization, less 7.4 GiB of weights, less roughly 7.5 GiB for activations and CUDA graphs.
+KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, which is 2 KiB here, or 56 KiB per token across all 28 layers, so a full 32,768-token sequence holds 1.75 GiB. Read `KV cache size` in the result file's provenance block for the allocation in force.
+
+`legacy_corpus` sends 38 wire input tokens and asks for up to 150 output tokens, so 512 concurrent sequences hold under 100k tokens, about 5.1 GiB of KV. `--max-num-seqs 512`, not KV memory, caps the batch for this workload.
 
 ## Before you begin
 
@@ -28,11 +30,9 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
 - [Create a `g7e.12xlarge` node group](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
-- [Build and push the quantizer image](../../../k8s/examples/README.md#job-quantize-modelyaml) (only if you quantize in step 4)
+- [Build and push the quantizer image](../../../k8s/examples/README.md#job-quantize-modelyaml)
 
 ## Quickstart
-
-Step 4 quantizes the checkpoint the measured results used; step 5 downloads the published FP8 checkpoint to the same path instead. Run one, not both.
 
 1. Set environment variables.
 
@@ -73,20 +73,13 @@ Step 4 quantizes the checkpoint the measured results used; step 5 downloads the 
        --for=condition=complete job/quantize-qwen25-7b-fp8 --timeout=1h
    ```
 
-5. Or download the published FP8 checkpoint to the same path; the repository is gated.
-
-   ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-jobs/qwen2.5-7b/fp8-model-download.yaml
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait --for=condition=complete job/download-qwen25-7b-fp8 --timeout=6h
-   ```
-
-6. Deploy and validate the model server mounted to `fsx-pvc`.
+5. Deploy and validate the model server mounted to `fsx-pvc`.
 
    ```bash
    ./vllm-recipes/qwen2.5-7b/fp8-g7e.12xlarge-deploy.sh
    ```
 
-7. Generate the accuracy gate (.JSON) required for the next step.
+6. Generate the accuracy gate (.JSON) required for the next step.
 
    ```bash
    eks-bench capture-reference \
@@ -97,7 +90,7 @@ Step 4 quantizes the checkpoint the measured results used; step 5 downloads the 
        --out-dir docs/results
    ```
 
-8. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
+7. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
 
    ```bash
    eks-bench measure \
@@ -111,7 +104,7 @@ Step 4 quantizes the checkpoint the measured results used; step 5 downloads the 
        --dry-run
    ```
 
-9. Benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
+8. Benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
 
    ```bash
    eks-bench measure \

@@ -1,5 +1,5 @@
 #
-# Quantizes Qwen/Qwen2.5-7B-Instruct to ModelOpt FP8 on the shared claim for the qwen2.5-7b FP8 recipes. fp8-model-download.yaml fills the same path with published weights instead.
+# Quantizes Qwen/Qwen2.5-7B-Instruct to ModelOpt FP8 on the shared claim for the qwen2.5-7b FP8 recipes.
 #
 # SUBSTITUTE: 012345678901, us-east-1, and fsx-pvc.
 apiVersion: batch/v1
