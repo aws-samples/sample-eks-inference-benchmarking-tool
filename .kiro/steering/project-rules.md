@@ -46,3 +46,32 @@
 * Never start a long or costly run on your own after asking for a go/no-go. Wait for the answer.
 * Never report a diff before ruling out an extraction artifact. A jsonpath key containing dots silently produced empty files and three bogus mismatches.
 * Never write comments that record why something changed, compare a file with another, or restate obvious logic. "Identical to X except", "Treat results as their own labelled config" and "calibration is not bit-reproducible, so..." belong in a commit message or nowhere. A comment says what a non-obvious setting does.
+
+## Runbook step wording
+
+Use these sentences for runbook steps, word for word, in the order the steps occur. Fill in the claim name or node where the template shows one. A step with no template here follows the same pattern: say what the step does and what it acts on, in about 10 to 15 words.
+
+| Step | Sentence |
+|---|---|
+| Variables | Set environment variables. |
+| CLI | Install the `eks-bench` CLI into a Python virtual environment. |
+| Prerequisites | Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret. |
+| Download to a claim | Download the published checkpoint from Hugging Face to the `<claim>` claim. |
+| Download to S3 | Copy the published checkpoint from Hugging Face to your S3 bucket. |
+| Download a draft to S3 | Copy the published DSpark draft model from Hugging Face to your S3 bucket. |
+| Quantize | Quantize the model to ModelOpt FP8 and save the checkpoint to the `fsx-pvc` claim. |
+| Quantize and verify | Quantize the model to ModelOpt FP8 on the `fsx-pvc` claim, then verify the checkpoint. |
+| Claim to S3 | Copy the quantized checkpoint from the claim to your S3 bucket. |
+| Deploy | Deploy the vLLM inference server and confirm it serves the model. |
+| Deploy, pinned | Deploy the vLLM inference server on `GPU_NODE` and confirm it serves the model. |
+| Deploy, replicas | Deploy eight vLLM inference server replicas and confirm they serve the model. |
+| NVMe check | Confirm `/models` is on the NVMe RAID0 array, not the EBS root volume. |
+| KV cache check | Confirm the KV cache is FP8 and record the KV pool size. |
+| NCCL check | Confirm no NCCL transport override is set and NCCL chose P2P, not SHM. |
+| NCCL check, pinned level | Confirm `NCCL_P2P_LEVEL=PIX` is set and NCCL chose P2P, not SHM. |
+| Warmup | Warm up the server with one unrecorded benchmark run, saved outside `docs/results`. |
+| Accuracy gate | Generate the accuracy gate (.JSON) that the benchmark checks against. |
+| Dry run | Dry-run the exact in-cluster benchmark. |
+| Benchmark | Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. |
+| Optional pair | (Optional) Dry-run the NVIDIA AIPerf cross-client calibration. / (Optional) Run the NVIDIA AIPerf cross-client calibration. |
+| Optional pair | (Optional) Dry-run the open-loop latency test. / (Optional) Run the open-loop latency test. |
