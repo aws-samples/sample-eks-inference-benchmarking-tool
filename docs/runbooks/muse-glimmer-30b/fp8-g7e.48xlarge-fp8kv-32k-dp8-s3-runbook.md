@@ -72,18 +72,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./vllm-recipes/muse-glimmer-30b/fp8-g7e.48xlarge-fp8kv-32k-dp8-s3-deploy.sh
    ```
 
-2. Record each replica's completed-request count before the run.
-   ```bash
-   APP=muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3
-   BALANCE=docs/results/muse-glimmer-30b-fp8-g7e.48xlarge-fp8kv-32k-dp8-s3-replica-balance.txt
-   echo "== before measurement $(date -u '+%F %T UTC') ==" | tee "$BALANCE"
-   for pod in $(kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get pods -l app="$APP" -o name); do
-     printf '  %s %s\n' "${pod#pod/}" "$(kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" exec "$pod" -c vllm \
-       -- curl -s localhost:8000/metrics | awk '/^vllm:request_success_total/ {s+=$NF} END {print s+0}')"
-   done | tee -a "$BALANCE"
-   ```
-
-3. Generate the accuracy gate (.JSON) that the benchmark checks against.
+2. Generate the accuracy gate (.JSON) that the benchmark checks against.
    ```bash
    eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -94,7 +83,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --out-dir docs/results
    ```
 
-4. Dry-run the in-cluster benchmark, which renders the Job without creating it.
+3. Dry-run the in-cluster benchmark, which renders the Job without creating it.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -110,7 +99,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-5. Benchmark in-cluster.
+4. Benchmark in-cluster.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -123,15 +112,6 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --pod "$(kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get pods \
            -l app=muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3 -o jsonpath='{.items[0].metadata.name}')" \
        --reps 3 --out-dir docs/results
-   ```
-
-6. Record each replica's count again; an uneven split belongs beside the result.
-   ```bash
-   echo "== after measurement $(date -u '+%F %T UTC') ==" | tee -a "$BALANCE"
-   for pod in $(kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get pods -l app="$APP" -o name); do
-     printf '  %s %s\n' "${pod#pod/}" "$(kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" exec "$pod" -c vllm \
-       -- curl -s localhost:8000/metrics | awk '/^vllm:request_success_total/ {s+=$NF} END {print s+0}')"
-   done | tee -a "$BALANCE"
    ```
 
 ## Tear down
@@ -150,7 +130,7 @@ Scale the quantization and benchmark-client node groups to zero too if you creat
 ## Settings
 
 - **Eight copies rather than one split copy.** The model fits one GPU, and g7e GPUs talk over PCIe with no NVLink, so tensor parallelism pays a transfer cost on every layer. Independent replicas trade that for one Service balancing requests between them.
-- **The Service balances per connection, not per request.** The benchmark client holds one persistent connection per in-flight request, so at low concurrency some replicas can sit idle. Throughput steps 2 and 6 record `vllm:request_success_total` per pod so the split is on file beside the result.
+- **The Service balances per connection, not per request.** The benchmark client holds one persistent connection per in-flight request, so at low concurrency some replicas can sit idle.
 - **`--pod` names one replica for provenance.** `measure` reads the image, KV pool and server log from that pod. Every replica runs the same spec.
 - **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable and falls back to its auto-selected backend. The deploy script fails unless the server logs `Using AttentionBackendEnum.TRITON_ATTN backend`.
 - **Why `TRITON_ATTN`.** It serves an FP8 KV cache on sm_120, where `FLASH_ATTN` refuses one.
