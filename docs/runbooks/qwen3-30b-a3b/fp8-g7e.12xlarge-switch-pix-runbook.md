@@ -15,7 +15,7 @@ Qwen3-30B-A3B is a mixture-of-experts model. Each of its 48 layers holds 128 exp
 | **Experts** | 128 per layer, 8 routed per token | `config.json`, `num_experts`, `num_experts_per_tok` |
 | **KV heads, head dimension** | 4, 128 | `config.json`, `num_key_value_heads`, `head_dim` |
 | **KV cache per token, BF16** | 96 KiB, 48 KiB per GPU | `2 x 4 x 128 x 2 bytes x 48 layers`, halved by TP2 |
-| **Checkpoint size, FP8** | ~31 GiB, 7 safetensors shards | `g7e12-switch-model-stage` shard check |
+| **Checkpoint size, FP8** | ~31 GiB, 7 safetensors shards | `download-qwen3-30b-a3b-fp8` shard check |
 | **Instance** | g7e.12xlarge, 2x RTX PRO 6000 Blackwell at 96 GB, PCIe, no NVLink | Instance type; `nvidia-smi topo -m` in the server log |
 | **GPUs per pod** | 2 | `nvidia.com/gpu: "2"` |
 | **Parallelism** | TP2 with expert parallel, `allgather_reducescatter` | `--tensor-parallel-size`, `--enable-expert-parallel`, `--all2all-backend` |
@@ -66,18 +66,17 @@ Step 4 is a no-op when the sibling arm already staged the checkpoint in this nam
 4. Create the `g7e12-switch-model-storage` claim and stage the checkpoint onto it from the pinned node.
    ```bash
    sed "s|ip-10-0-0-1.us-east-1.compute.internal|${GPU_NODE}|" \
-       experiments/g7e12-switch-study-storage-and-model-stage.yaml \
+       model-jobs/qwen3-30b-a3b/fp8-model-download.yaml \
      | kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f -
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-       --for=condition=complete job/g7e12-switch-model-stage --timeout=7200s
+       --for=condition=complete job/download-qwen3-30b-a3b-fp8 --timeout=7200s
    ```
 
-5. Confirm the claim is bound and the staging Job validated all 7 Qwen shards.
+5. Confirm the claim is bound and the download Job found all 7 shards.
    ```bash
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
        --for=jsonpath='{.status.phase}'=Bound pvc/g7e12-switch-model-storage --timeout=2m
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs job/g7e12-switch-model-stage \
-       | grep 'validate Qwen/Qwen3-30B-A3B-FP8'
+   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs job/download-qwen3-30b-a3b-fp8 | grep 'shards:'
    ```
 
 ## Throughput test
@@ -171,7 +170,7 @@ git checkout -- vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml
 Once both arms are measured, delete the shared claim and scale the node groups to zero. Deleting the claim deletes its EBS volume and every checkpoint staged on it.
 
 ```bash
-kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete job g7e12-switch-model-stage --ignore-not-found
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete job download-qwen3-30b-a3b-fp8 --ignore-not-found
 kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete pvc g7e12-switch-model-storage --ignore-not-found
 aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-name gpu-spot-1node \
     --region "$AWS_REGION" --scaling-config minSize=0,maxSize=1,desiredSize=0
@@ -185,7 +184,7 @@ aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-n
 
 - **`NCCL_P2P_LEVEL=PIX`** Allows NCCL peer-to-peer only between GPUs behind the same PCIe switch, which the g7e.12xlarge pair is. On this pair it states explicitly what the default arm should select on its own, so the two arms should agree. Throughput step 3 checks that the variable reached the container and that the server log shows P2P channels and no SHM channels; do not measure an arm that fails it.
 - **Both arms pin the same physical node.** `kubernetes.io/hostname` holds this arm, the default arm and the staging Job on one g7e.12xlarge, so the pair compares two transport settings rather than two hosts. Use the same `GPU_NODE` in both runbooks. A Spot reclaim or replacement node has a new name and a new GPU pair; re-substitute both recipes and treat it as a different host.
-- **The hostname is a placeholder in git.** Throughput step 1 fills it in your working copy and Tear down restores it with `git checkout`; keep the real node name out of commits. The deploy script refuses to apply while `ip-10-0-0-1.us-east-1.compute.internal` remains. Quickstart step 4 pipes the staging manifest through `sed` instead, leaving that file untouched.
+- **The hostname is a placeholder in git.** Throughput step 1 fills it in your working copy and Tear down restores it with `git checkout`; keep the real node name out of commits. The deploy script refuses to apply while `ip-10-0-0-1.us-east-1.compute.internal` remains. Quickstart step 4 pipes the download manifest through `sed` instead, leaving that file untouched.
 - **`--config fp8-switch-pix`** The study's config tag, so the result lands in `qwen3-30b-a3b-fp8-g7e.12xlarge-fp8-switch-pix-corpus-legacy_corpus.txt` beside the `fp8-switch-default` arm. Results from the two arms are separate labelled configs; never fold one into the other.
 - **The forced-SHM arm is not a recipe.** [`g7e12-switch-qwen3-30b-a3b-shm.yaml`](../../../experiments/g7e12-switch-qwen3-30b-a3b-shm.yaml) sets `NCCL_P2P_DISABLE=1` as a host-copy proxy and lives in `experiments/`. For the full three-arm study with its NCCL matrix, see the [PIX versus PHB-proxy study runbook](../studies/g7e.12xlarge-pix-vs-phb-proxy-runbook.md).
 - **Two GPUs on purpose.** The checkpoint fits one card. TP2 with `--enable-expert-parallel` splits attention heads and places whole experts across the switch-local pair, and `--all2all-backend allgather_reducescatter` exchanges tokens between them, so every layer crosses the PCIe switch. That traffic is what the transport pair compares.
@@ -200,7 +199,7 @@ aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-n
 - **`--pod` names the server pod.** `measure` reads the image, KV pool and NCCL log from it. The two arms share the namespace, so name the pod explicitly.
 - **One arm at a time.** Each Deployment requests both GPUs, so a second arm stays Pending until the first is deleted. `strategy: Recreate` stops a reapply from overlapping GPU claims.
 - **Fixed arm order couples treatment to time.** The study ran default, then `PIX`, then SHM. Alternate the arms across fresh deployments for a stronger comparison, and keep such a rerun out of the original result files.
-- **Weights come from a gp3 EBS claim, not node-local NVMe.** The recipe mounts `g7e12-switch-model-storage`, a 300 GiB `ReadWriteOnce` gp3 claim created by the study's staging manifest. This departs from the repo's rule of staging on local NVMe and is kept because the recipe records what the study ran; every server start re-reads about 31 GiB from EBS.
-- **The staging Job also stages Llama 3.3 70B.** The shared study manifest downloads `nvidia/Llama-3.3-70B-Instruct-FP8` (15 shards, about 68 GiB) for the study's Llama arms. It is resumable, validates each checkpoint's shard count and fails on a mismatch, so a rerun skips complete checkpoints.
+- **Weights come from a gp3 EBS claim, not node-local NVMe.** The recipe mounts `g7e12-switch-model-storage`, a 300 GiB `ReadWriteOnce` gp3 claim created by `model-jobs/qwen3-30b-a3b/fp8-model-download.yaml`. This departs from the repo's rule of staging on local NVMe and is kept because the recipe records what the study ran; every server start re-reads about 31 GiB from EBS.
+- **The claim name matches the study's.** The study's shared staging manifest in `experiments/` creates the same `g7e12-switch-model-storage` claim and adds Llama 3.3 70B to it, so either manifest leaves a claim these recipes can mount. The download Job fails unless `config.json` and all 7 shards are present and no partial file remains.
 - **No Hugging Face token is used.** Both checkpoints are public. `install-prerequisites.sh` still requires `HUGGING_FACE_HUB_TOKEN` and creates an `hf-token` secret that nothing here mounts.
 - **Closed-loop only.** This runbook measures closed-loop concurrency. It says nothing about SLA-safe open-loop arrival rates; do not compare its figures to one.

@@ -86,7 +86,7 @@ spec:
           volumeMounts:
             - { name: models, mountPath: /models }
             - { name: dshm, mountPath: /dev/shm }
-            # Only needed when the image predates this repo's quantizer source. See the README.
+            # Overlays this repo's quantizer source on an older image. Drop it once the image is rebuilt from current source.
             - { name: src, mountPath: /app/src }
       volumes:
         - name: models

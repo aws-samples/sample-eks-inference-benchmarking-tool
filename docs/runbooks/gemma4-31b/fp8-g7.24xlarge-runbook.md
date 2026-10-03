@@ -28,6 +28,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
 - [Install the open NVIDIA kernel module if the node advertises no GPUs](../../../k8s/examples/pod-diagnostic-probe.yaml)
 - [Create the `vllm-sitecustomize` ConfigMap](../../../k8s/examples/configmap-vllm-sitecustomize.yaml)
+- [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
+- [Build and push the quantizer image](../../../k8s/examples/README.md#job-quantize-modelyaml) (only if the checkpoint is not on the claim yet)
 
 ## Quickstart
 
@@ -35,6 +37,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
    ```bash
    export AWS_REGION=<your-cluster-region>
+   export AWS_ACCOUNT_ID=<your-account-id>
    export EKS_CLUSTER_NAME=<your-cluster-name>
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-gemma4-31b-fp8-g7-24xlarge
@@ -47,20 +50,35 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-3. Confirm the FSx claim containing the ModelOpt-quantized weights and the sitecustomize ConfigMap exist in the namespace.
+3. Confirm the FSx claim and the sitecustomize ConfigMap exist in the namespace.
 
    ```bash
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get pvc fsx-pvc
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get configmap vllm-sitecustomize
    ```
 
-4. Deploy and validate the model server. The server mounts `/models/quantized/gemma-4-31b-it-fp8` from `fsx-pvc`; update `claimName` first if your weights use a differently named PVC. The recipe uses `Recreate`, so reapplying it causes a gap with no server rather than overlapping GPU claims.
+4. Quantize the checkpoint onto the claim at `/models/quantized/gemma-4-31b-it-fp8`, on all four GPUs; skip this when an earlier run already did.
+
+   ```bash
+   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create configmap quantizer-src \
+       --from-file=app/quantize/src/quantize.py \
+       --from-file=app/quantize/src/config.py \
+       --from-file=app/quantize/src/fix_amax.py \
+       --from-file=app/quantize/src/verify_checkpoint.py
+   sed -e "s|012345678901.dkr.ecr.us-east-1|${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}|" \
+       model-jobs/gemma4-31b/fp8-model-quantize.yaml \
+     | kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f -
+   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
+       --for=condition=complete job/quantize-gemma4-31b-fp8 --timeout=3h
+   ```
+
+5. Deploy and validate the model server. The server mounts `/models/quantized/gemma-4-31b-it-fp8` from `fsx-pvc`; update `claimName` first if your weights use a differently named PVC. The recipe uses `Recreate`, so reapplying it causes a gap with no server rather than overlapping GPU claims.
 
    ```bash
    ./vllm-recipes/gemma4-31b/fp8-g7.24xlarge-deploy.sh
    ```
 
-5. Generate the accuracy gate (.JSON) required for the next step.
+6. Generate the accuracy gate (.JSON) required for the next step.
 
    ```bash
    eks-bench capture-reference \
@@ -71,7 +89,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --out-dir docs/results
    ```
 
-6. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
+7. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
 
    ```bash
    eks-bench measure \
@@ -85,7 +103,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-7. Benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
+8. Benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
 
    ```bash
    eks-bench measure \
@@ -98,7 +116,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --reps 3 --out-dir docs/results
    ```
 
-8. Dry-run the optional NVIDIA AIPerf cross-client calibration with identical arguments.
+9. Dry-run the optional NVIDIA AIPerf cross-client calibration with identical arguments.
 
    ```bash
    eks-bench measure \
@@ -112,7 +130,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-9. Run the optional NVIDIA AIPerf cross-client calibration. It uses the same server, profile, and canonical levels and requires the AIPerf extras.
+10. Run the optional NVIDIA AIPerf cross-client calibration. It uses the same server, profile, and canonical levels and requires the AIPerf extras.
 
    ```bash
    eks-bench measure \
@@ -125,7 +143,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --reps 3 --out-dir docs/results
    ```
 
-10. Dry-run the optional interactive capacity search with identical arguments. The full run can take several hours for 3 reps.
+11. Dry-run the optional interactive capacity search with identical arguments. The full run can take several hours for 3 reps.
 
    ```bash
    eks-bench measure \
@@ -139,7 +157,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-11. Run the optional interactive capacity search.
+12. Run the optional interactive capacity search.
 
    ```bash
    eks-bench measure \
@@ -160,7 +178,7 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/gem
 
 ## Notes
 
-* Step 7 runs at the shipped targets, TTFT p99 500 ms and TPOT p99 50 ms. `--ttft-target` and `--tpot-target` override them, and an overridden value is appended to the result filename so a run at different targets cannot overwrite one at the defaults. Read [Trusting the open-loop verdict](../../guides/REFERENCE.md#trusting-the-open-loop-verdict) before quoting a rate as sustainable.
+* Step 8 runs at the shipped targets, TTFT p99 500 ms and TPOT p99 50 ms. `--ttft-target` and `--tpot-target` override them, and an overridden value is appended to the result filename so a run at different targets cannot overwrite one at the defaults. Read [Trusting the open-loop verdict](../../guides/REFERENCE.md#trusting-the-open-loop-verdict) before quoting a rate as sustainable.
 **This recipe serves without `--enable-prefix-caching`, and `legacy_corpus` repeats five fixed prompts.** Those two facts go together: a repeating prompt set against a cache-enabled server measures cache hits rather than serving, so the flag is off here and the throughput figure reflects prefill actually being done. Add the flag back for a serving deployment, and leave it off for a measured one.
 Check the `Prefix cache hit` line in the result file's provenance block regardless: anything other than 0% means prefill was skipped and throughput is inflated. On a pod that has been up for days that line rotates out of the log window and records as `(not found in server log)`, which is not the same as 0%, so a fresh server is worth more than it looks.
 

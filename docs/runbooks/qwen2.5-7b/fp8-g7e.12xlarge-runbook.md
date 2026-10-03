@@ -28,13 +28,17 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
 - [Create a `g7e.12xlarge` node group](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
+- [Build and push the quantizer image](../../../k8s/examples/README.md#job-quantize-modelyaml) (only if you quantize in step 4)
 
 ## Quickstart
+
+Step 4 quantizes the checkpoint the measured results used; step 5 downloads the published FP8 checkpoint to the same path instead. Run one, not both.
 
 1. Set environment variables.
 
    ```bash
    export AWS_REGION=<your-cluster-region>
+   export AWS_ACCOUNT_ID=<your-account-id>
    export EKS_CLUSTER_NAME=<your-cluster-name>
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-qwen25-7b-fp8-g7e-12xlarge
@@ -47,21 +51,37 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-3. Confirm the persistent PVC, then stage the FP8 checkpoint with baked-in KV scales. A completed earlier download Job makes staging a no-op.
+3. Confirm the claim is bound.
 
    ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get pvc fsx-pvc
+   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
+       --for=jsonpath='{.status.phase}'=Bound pvc/fsx-pvc --timeout=2m
+   ```
+
+4. Quantize the checkpoint onto the claim at `/models/quantized/Qwen2.5-7B-Instruct-fp8`.
+
+   ```bash
+   sed -e "s|012345678901.dkr.ecr.us-east-1|${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}|" \
+       model-jobs/qwen2.5-7b/fp8-model-quantize.yaml \
+     | kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f -
+   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
+       --for=condition=complete job/quantize-qwen25-7b-fp8 --timeout=1h
+   ```
+
+5. Or download the published FP8 checkpoint to the same path; the repository is gated.
+
+   ```bash
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-jobs/qwen2.5-7b/fp8-model-download.yaml
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait --for=condition=complete job/download-qwen25-7b-fp8 --timeout=6h
    ```
 
-4. Deploy and validate the model server mounted to `fsx-pvc`.
+6. Deploy and validate the model server mounted to `fsx-pvc`.
 
    ```bash
    ./vllm-recipes/qwen2.5-7b/fp8-g7e.12xlarge-deploy.sh
    ```
 
-5. Generate the accuracy gate (.JSON) required for the next step.
+7. Generate the accuracy gate (.JSON) required for the next step.
 
    ```bash
    eks-bench capture-reference \
@@ -72,7 +92,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --out-dir docs/results
    ```
 
-6. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
+8. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
 
    ```bash
    eks-bench measure \
@@ -86,7 +106,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-7. Benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
+9. Benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
 
    ```bash
    eks-bench measure \

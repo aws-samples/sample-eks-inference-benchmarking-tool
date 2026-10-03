@@ -21,6 +21,6 @@ Each benchmark run saves a gitignored results file to `docs/results/`. The filen
 
 Both recipes pin `kubernetes.io/hostname` to the placeholder `ip-10-0-0-1.us-east-1.compute.internal` in git. Each runbook substitutes your node name in a working copy and restores the placeholder at tear down, and each deploy script refuses to apply while the placeholder remains.
 
-The checkpoint is staged by the study's shared [`g7e12-switch-study-storage-and-model-stage.yaml`](../../../experiments/g7e12-switch-study-storage-and-model-stage.yaml) onto a gp3 EBS claim, not by a Job in `model-jobs/`, and that Job also stages the study's Llama 3.3 70B checkpoint. Serving from EBS rather than node-local NVMe is kept because the recipes record what the study ran.
+The checkpoint is staged by [`fp8-model-download.yaml`](../../../model-jobs/qwen3-30b-a3b/fp8-model-download.yaml) onto a gp3 EBS claim, which uses the same claim name as the study's shared staging manifest in `experiments/`. Serving from EBS rather than node-local NVMe is kept because the recipes record what the study ran.
 
 Blackwell instances (g7e) have compatibility quirks that affected recipes in this repo during development. For reference, see [`TROUBLESHOOTING.md`](../../guides/TROUBLESHOOTING.md) for background on what was encountered and why.

@@ -21,7 +21,7 @@ Each benchmark run saves a gitignored results file to `docs/results/`. The filen
 
 ## Checkpoint staging
 
-All BF16 recipes stage the published `Qwen/Qwen2.5-7B-Instruct` checkpoint. Every FP8 recipe uses `/models/quantized/Qwen2.5-7B-Instruct-fp8`, which can be populated either by the published `Qwen/Qwen2.5-7B-Instruct-FP8` staging Job or by local quantization; see the [model-download provenance notes](../../../model-jobs/README.md#fp8-weights-downloaded-or-quantized). The FP8 `g7e` runbook applies the published staging Job directly; to produce the path by local quantization instead, apply [`fp8-model-quantize.yaml`](../../../model-jobs/qwen2.5-7b/fp8-model-quantize.yaml).
+All BF16 recipes stage the published `Qwen/Qwen2.5-7B-Instruct` checkpoint. Every FP8 recipe uses `/models/quantized/Qwen2.5-7B-Instruct-fp8`, which can be populated either by the published `Qwen/Qwen2.5-7B-Instruct-FP8` staging Job or by local quantization, but not both. The published repository is gated, so its staging Job needs a Hugging Face account that accepted the gating. The FP8 `g7e` runbook applies the published staging Job directly; to produce the path by local quantization instead, apply [`fp8-model-quantize.yaml`](../../../model-jobs/qwen2.5-7b/fp8-model-quantize.yaml).
 
 The g7e recipes run on Blackwell, so their compatibility fixes are already applied in the recipes.
 
