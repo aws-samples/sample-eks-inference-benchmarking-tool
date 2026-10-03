@@ -1,6 +1,6 @@
 # Gemma 4 E4B FP8 with an FP8 KV cache on g7e.2xlarge, Triton attention
 
-Serves a locally quantized ModelOpt FP8 build of [`google/gemma-4-E4B-it`](https://huggingface.co/google/gemma-4-E4B-it) with an FP8 KV cache and the attention backend pinned to `TRITON_ATTN`, using [`fp8-g7e.2xlarge-fp8kv-attn-triton.yaml`](../../../vllm-recipes/gemma4-e4b/fp8-g7e.2xlarge-fp8kv-attn-triton.yaml). Its H100 sibling, [`fp8-p5.4xlarge-fp8kv-attn-triton.yaml`](../../../vllm-recipes/gemma4-e4b/fp8-p5.4xlarge-fp8kv-attn-triton.yaml), holds every serving flag identical.
+Serves a locally quantized ModelOpt FP8 build of [`google/gemma-4-E4B-it`](https://huggingface.co/google/gemma-4-E4B-it) with an FP8 KV cache and the attention backend pinned to `TRITON_ATTN`, using [`fp8-g7e.2xlarge-fp8kv-attn-triton.yaml`](../../../vllm-recipes/gemma4-e4b/fp8-g7e.2xlarge-fp8kv-attn-triton.yaml).
 
 ## Capacity sizing
 
@@ -30,7 +30,6 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
 - A node with more than 8 allocatable CPU for the benchmark client, which is not the GPU node (an 8 vCPU node offers 7910m, so the Job stays Pending)
 - [Export the checkpoint to S3](../../../model-jobs/gemma4-e4b/fp8-model-export.yaml) (only when the claim is in a region the checkpoint was not quantized in)
-- [Load it onto the claim in that region](../../../model-jobs/gemma4-e4b/fp8-model-download.yaml) (copy rather than requantize; calibration is not bit-reproducible)
 - A Lustre filesystem at version 2.15 if you create one for this (a 2.10 filesystem fails to mount with `mount.lustre ... Invalid argument`)
 
 ## Quickstart

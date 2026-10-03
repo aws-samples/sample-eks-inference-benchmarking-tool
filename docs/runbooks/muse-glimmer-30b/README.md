@@ -12,7 +12,7 @@ Use any one of the following runbook recipes to get started. For additional flag
 | `g7e.48xlarge` | FP8, FP8 KV cache | `FLASHINFER` | Single node, 8 replicas | 8 | unset | [Runbook](./fp8-g7e.48xlarge-fp8kv-32k-dp8-s3-flashinfer-runbook.md) |
 | `p6-b200.48xlarge` | FP8, FP8 KV cache | `FLASHINFER` | Single node, 1 replica | 1 | unset | [Runbook](./fp8-p6-b200.48xlarge-fp8kv-32k-flashinfer-runbook.md) |
 
-The two g7e.48xlarge recipes are an attention-backend pair and differ only in `--attention-backend`. The p6-b200.48xlarge recipe has the same single-GPU serving shape as one g7e replica.
+The two g7e.48xlarge recipes are an attention-backend pair and differ only in `--attention-backend`.
 
 ## Results
 

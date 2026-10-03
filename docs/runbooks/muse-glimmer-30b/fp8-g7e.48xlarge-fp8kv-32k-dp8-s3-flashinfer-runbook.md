@@ -1,6 +1,6 @@
 # Muse-Glimmer-30B FP8 with an FP8 KV cache on g7e.48xlarge, eight replicas, FlashInfer attention
 
-Serves a locally quantized ModelOpt FP8 build of [`meta-models/Muse-Glimmer-30B`](https://huggingface.co/meta-models/Muse-Glimmer-30B) as eight independent single-GPU replicas behind one Service, using [`fp8-g7e.48xlarge-fp8kv-32k-dp8-s3-flashinfer.yaml`](../../../vllm-recipes/muse-glimmer-30b/fp8-g7e.48xlarge-fp8kv-32k-dp8-s3-flashinfer.yaml). This is the `FLASHINFER` arm of an attention-backend pair. [`fp8-g7e.48xlarge-fp8kv-32k-dp8-s3.yaml`](../../../vllm-recipes/muse-glimmer-30b/fp8-g7e.48xlarge-fp8kv-32k-dp8-s3.yaml) is identical apart from the backend.
+Serves a locally quantized ModelOpt FP8 build of [`meta-models/Muse-Glimmer-30B`](https://huggingface.co/meta-models/Muse-Glimmer-30B) as eight independent single-GPU replicas behind one Service, using [`fp8-g7e.48xlarge-fp8kv-32k-dp8-s3-flashinfer.yaml`](../../../vllm-recipes/muse-glimmer-30b/fp8-g7e.48xlarge-fp8kv-32k-dp8-s3-flashinfer.yaml).
 
 ## Capacity sizing
 
@@ -196,7 +196,7 @@ Scale the quantization and benchmark-client node groups to zero too if you creat
 - **The Service balances per connection, not per request.** The benchmark client holds one persistent connection per in-flight request, so at low concurrency some replicas can sit idle. Throughput steps 3 and 7 record `vllm:request_success_total` per pod so the split is on file beside the result.
 - **`--pod` names one replica for provenance.** `measure` reads the image, KV pool and server log from that pod. Every replica runs the same spec.
 - **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable and falls back to its auto-selected backend. The deploy script fails unless the server logs `Using AttentionBackendEnum.FLASHINFER backend`.
-- **Why `FLASHINFER`.** It is the candidate read against the `TRITON_ATTN` baseline. `FLASH_ATTN` refuses an FP8 KV cache on sm_120, so it cannot be a third arm. Results from the two arms are separate labelled configs; never fold one into the other.
+- **Why `FLASHINFER`.** It serves an FP8 KV cache on sm_120, where `FLASH_ATTN` refuses one.
 - **KV scales are uncalibrated.** vLLM 0.29.0 rejects `--calculate-kv-scales`, so each server logs `Using KV cache scaling factor 1.0 for fp8_e4m3`. This bounds any quality comparison.
 - **`--no-enable-prefix-caching`** Held off for an uncached measurement. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
 - **`MAX_NUM_SEQS=64` and `MAX_CUDAGRAPH=64`.** Held at the Gemma 4 31B 32k recipe's values so the batch ceiling is not a variable between the two models. The pool would allow roughly 60 full-length sequences, and more at this workload's length.

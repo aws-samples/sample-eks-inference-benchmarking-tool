@@ -115,7 +115,7 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/glm
 
 **`kubernetes.io/hostname: ip-10-0-0-1.ec2.internal`**
 
-Pinned to one node so the run is reproducible on known hardware. The pin does not preserve model data.
+Pinned to one node. The pin does not preserve model data.
 
 - **`fetch-weights` init container** Downloads `nvidia/GLM-5.2-NVFP4` from Hugging Face into `/weights/glm-5.2-nvfp4`. It verifies at least 500 GiB is free, installs `huggingface_hub==1.28.0`, uses `/weights/.hf-cache`, enables high-performance Xet with `HF_XET_HIGH_PERFORMANCE=1`, and verifies that every shard is complete before vLLM starts.
 

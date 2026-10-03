@@ -30,7 +30,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
 
 ## Setup
 
-This recipe uses a custom vLLM image and carries a placeholder ECR account and region in `image:`. The image includes matched NCCL and `aws-ofi-nccl` versions for a reproducible Kimi K3 serving environment; the EFA plugin is not required for this single-node deployment.
+This recipe uses a custom vLLM image and carries a placeholder ECR account and region in `image:`. The image includes matched NCCL and `aws-ofi-nccl` versions; the EFA plugin is not required for this single-node deployment.
 
 1. [Create an ECR repository](https://docs.aws.amazon.com/AmazonECR/latest/userguide/repository-create.html) for the image.
 

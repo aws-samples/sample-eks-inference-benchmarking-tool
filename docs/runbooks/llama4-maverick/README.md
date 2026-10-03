@@ -12,7 +12,7 @@ Use any one of the following runbook recipes to get started. For additional flag
 | `p6-b200.48xlarge` | FP8, FP8 KV cache | `FLASH_ATTN` | Single node, 1 replica | 8 | 8 | [Runbook](./fp8-p6-b200.48xlarge-fp8kv-32k-flashattn-runbook.md) |
 | `p6-b200.48xlarge` | FP8, FP8 KV cache | `FLASHINFER` | Single node, 1 replica | 8 | 8 | [Runbook](./fp8-p6-b200.48xlarge-fp8kv-32k-flashinfer-runbook.md) |
 
-The three recipes are an attention-backend set and differ only in `--attention-backend`. `TRITON_ATTN` is the baseline; each of the other two is its own labelled config and is never folded into it.
+The three recipes are an attention-backend set and differ only in `--attention-backend`.
 
 ## Results
 

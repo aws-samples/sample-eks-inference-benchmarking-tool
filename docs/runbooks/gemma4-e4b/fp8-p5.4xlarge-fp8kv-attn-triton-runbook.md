@@ -1,6 +1,6 @@
 # Gemma 4 E4B FP8 with an FP8 KV cache on p5.4xlarge, Triton attention
 
-Serves a locally quantized ModelOpt FP8 build of [`google/gemma-4-E4B-it`](https://huggingface.co/google/gemma-4-E4B-it) on one H100 with an FP8 KV cache and the attention backend pinned to `TRITON_ATTN`, using [`fp8-p5.4xlarge-fp8kv-attn-triton.yaml`](../../../vllm-recipes/gemma4-e4b/fp8-p5.4xlarge-fp8kv-attn-triton.yaml). Its g7e sibling, [`fp8-g7e.2xlarge-fp8kv-attn-triton.yaml`](../../../vllm-recipes/gemma4-e4b/fp8-g7e.2xlarge-fp8kv-attn-triton.yaml), holds every serving flag identical, so the pair isolates the GPU.
+Serves a locally quantized ModelOpt FP8 build of [`google/gemma-4-E4B-it`](https://huggingface.co/google/gemma-4-E4B-it) on one H100 with an FP8 KV cache and the attention backend pinned to `TRITON_ATTN`, using [`fp8-p5.4xlarge-fp8kv-attn-triton.yaml`](../../../vllm-recipes/gemma4-e4b/fp8-p5.4xlarge-fp8kv-attn-triton.yaml).
 
 ## Capacity sizing
 
@@ -186,10 +186,8 @@ Scale the quantization and benchmark-client node groups to zero too if you creat
 
 ## Settings
 
-- **Every serving flag matches the g7e.2xlarge sibling.** Context, batch limits, memory fraction, stream interval, KV precision and backend are identical, so a difference between the two results is the GPU and the weight source, not the configuration.
 - **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable. It logs `Unknown vLLM environment variable detected: VLLM_ATTENTION_BACKEND` and proceeds on its auto-selected backend. The deploy script fails unless the server log reports `TRITON_ATTN`.
-- **The backend is pinned rather than auto-selected** because vLLM would pick a different kernel on sm_90 than on the g7e sibling's sm_120, which would make the backend a second variable in the pair.
-- **`--config p5-fp8kv-attn-triton`** The `p5-` prefix keeps this server's accuracy gate separate from the g7e sibling's. The gate file is named by model tag and config, and the same checkpoint on a different GPU produces a different fingerprint.
+- **`--config p5-fp8kv-attn-triton`** The `p5-` prefix gives this server its own accuracy gate, because the same checkpoint on a different GPU produces a different fingerprint.
 - **KV scales are uncalibrated.** vLLM 0.29.0 rejects `--calculate-kv-scales`, so the server logs `Using KV cache scaling factor 1.0 for fp8_e4m3`. This bounds any quality comparison.
 - **`--no-enable-prefix-caching`** Held off for an uncached measurement. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
 - **`--stream-interval 10`** The server streams in 10-token chunks. That changes inter-token latency only, so never compare ITL against a recipe with a different stream interval.
@@ -199,4 +197,3 @@ Scale the quantization and benchmark-client node groups to zero too if you creat
 - **`serviceAccountName: gemma4-31b-bench`** The recipe reuses the Gemma 4 31B ServiceAccount name for its pod-scoped S3 read through EKS Pod Identity. Any ServiceAccount with read access to the prefix works if you change the name in the recipe.
 - **`WEIGHTS_BUCKET` and `AWS_REGION` are placeholders in git.** The throughput step (step one) fills in the values.
 - **The S3 staging Job sets no ServiceAccount.** It runs as the namespace's `default` ServiceAccount, so that is the identity the write role must be associated with.
-- **Copy the checkpoint rather than requantizing it.** Calibration is not bit-reproducible, so a fresh quantize gives different weights and makes results incomparable with the g7e sibling. Serve the S3 copy of the checkpoint the sibling reads from the claim.

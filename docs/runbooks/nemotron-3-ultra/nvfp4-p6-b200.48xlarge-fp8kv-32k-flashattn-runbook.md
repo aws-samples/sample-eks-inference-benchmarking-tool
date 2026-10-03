@@ -1,6 +1,6 @@
 # Nemotron 3 Ultra NVFP4 with an FP8 KV cache on p6-b200.48xlarge, FlashAttention
 
-Serves NVIDIA's published NVFP4 checkpoint [`nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4`](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4) as one tensor-parallel copy across all eight GPUs of a p6-b200.48xlarge, using [`nvfp4-p6-b200.48xlarge-fp8kv-32k-flashattn.yaml`](../../../vllm-recipes/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-flashattn.yaml). This is the `FLASH_ATTN` arm of an attention-backend set. [`nvfp4-p6-b200.48xlarge-fp8kv-32k.yaml`](../../../vllm-recipes/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k.yaml) is the `TRITON_ATTN` baseline and is identical apart from the backend.
+Serves NVIDIA's published NVFP4 checkpoint [`nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4`](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4) as one tensor-parallel copy across all eight GPUs of a p6-b200.48xlarge, using [`nvfp4-p6-b200.48xlarge-fp8kv-32k-flashattn.yaml`](../../../vllm-recipes/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-flashattn.yaml).
 
 ## Capacity sizing
 
@@ -155,7 +155,7 @@ Scale the benchmark-client node group to zero too if you created it for this run
 - **One copy across all eight GPUs.** The recipe requests `nvidia.com/gpu: "8"` and shards one copy with `--tensor-parallel-size 8`, so results are per-node figures. The server prints `nvidia-smi topo -m` at start and warns when it finds no NVLink pairs; do not trust a run that logged that warning.
 - **One arm at a time.** Each attention-backend arm takes the whole node and runs in its own namespace, so tear one down before deploying the next. One vLLM pod per namespace means `measure` needs no `--pod`.
 - **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable. The deploy script fails unless the server logs `Using AttentionBackendEnum.FLASH_ATTN backend`.
-- **Why `FLASH_ATTN`.** On B200 this build selects FlashAttention 4, which accepts an FP8 KV cache at head size 128. Treat its results as their own labelled config; never fold them into the `TRITON_ATTN` baseline.
+- **Why `FLASH_ATTN`.** On B200 this build selects FlashAttention 4, which accepts an FP8 KV cache at head size 128.
 - **NVFP4 on Blackwell is not comparable to a Hopper run.** On sm_100 the checkpoint runs the native cutlass W4A4 GEMM path. A Hopper GPU would fall back to FP4-Marlin W4A16, so never read this recipe's results against a Hopper one.
 - **No `--quantization` flag.** The checkpoint's `quantization_config` declares a ModelOpt mixed NVFP4 and FP8 export, and the loader resolves it. Pinning a single method would mis-read the mixed export.
 - **`--stream-interval 10`** The server streams in 10-token chunks. That changes inter-token latency only, so never compare ITL against a recipe with a different stream interval. All three Nemotron arms share it.
@@ -163,7 +163,7 @@ Scale the benchmark-client node group to zero too if you created it for this run
 - **`--async-scheduling` and `--enable-chunked-prefill`** On in all three arms, so neither is a variable between them.
 - **`MAX_NUM_SEQS=256`, `MAX_CUDAGRAPH=256` and `MAX_NUM_BATCHED_TOKENS=32768`.** The CUDA graph capture size matches the sequence cap. A 32,768-token batch budget prefills a full `coding_repo_context` prompt in one chunk.
 - **No reasoning parser.** The recipe sets no `--reasoning-parser`, so any reasoning trace arrives in the message content and counts against the profile's 1,024-token output cap. The corpus protocol truncates a reasoning model's output by design.
-- **The checkpoint ships an MTP layer that this recipe leaves off.** `config.json` sets `num_nextn_predict_layers: 1`, but the recipe passes no `--speculative-config`. Run speculation as its own labelled config, and re-read the KV pool when you do.
+- **The checkpoint ships an MTP layer that this recipe leaves off.** `config.json` sets `num_nextn_predict_layers: 1`, but the recipe passes no `--speculative-config`.
 - **`--served-model-name nemotron-3-ultra`** The server answers to that name rather than its path, so `--model-id` is `nemotron-3-ultra`.
 - **Weights come from S3 into an `emptyDir` on the NVMe array.** A pod restart re-downloads ~328 GiB. The `fetch-weights` init container fails unless `/models` has 400 GiB free, then fails unless it finds 113 shards and at least 300 GiB. Its log prints `df -h /models`; confirm that is the NVMe array.
 - **`progressDeadlineSeconds: 7200`** The S3 sync and load outlast the 600-second default. The deploy script waits the same 7,200 seconds, and the startup probe allows 3,600 seconds once the init container finishes.

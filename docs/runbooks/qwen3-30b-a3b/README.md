@@ -19,7 +19,7 @@ Each benchmark run saves a gitignored results file to `docs/results/`. The filen
 
 ## Known issues
 
-Both recipes pin `kubernetes.io/hostname` to the placeholder `ip-10-0-0-1.us-east-1.compute.internal` in git. Each runbook substitutes your node name in a working copy and restores the placeholder at tear down, and each deploy script refuses to apply while the placeholder remains.
+Both recipes pin `kubernetes.io/hostname` to the placeholder `ip-10-0-0-1.us-east-1.compute.internal` in git. Each runbook substitutes your node name in a working copy and restores the placeholder at tear down.
 
 The checkpoint is staged by [`fp8-model-download.yaml`](../../../model-jobs/qwen3-30b-a3b/fp8-model-download.yaml) onto a gp3 EBS claim, which uses the same claim name as the study's shared staging manifest in `experiments/`. Serving from EBS rather than node-local NVMe is kept because the recipes record what the study ran.
 

@@ -2,7 +2,7 @@
 
 This runbook reproduces the two-model study that compared switch-local direct P2P (`PIX`) with a no-direct-peer proxy (`NCCL_P2P_DISABLE=1`, NCCL `SHM`) on the same two GPUs. It runs Llama 3.3 70B FP8 with TP2 and Qwen3-30B-A3B FP8 with TP2+EP2.
 
-> **Scope:** the forced-SHM arm is a conservative software proxy for a switchless/PHB product question, not a physical PHB topology. A candidate PHB SKU still requires measurement on its actual motherboard, root-complex, NUMA, and PCIe configuration.
+> **Scope:** the forced-SHM arm is a conservative software proxy for a switchless/PHB product question, not a physical PHB topology. A PHB instance type still requires measurement on its actual motherboard, root-complex, NUMA, and PCIe configuration.
 
 The retained manifests are cleaned, functionally equivalent versions of the executed configurations. The post-run cleanup removed only a non-functional `TREATMENT` log label and converted YAML flow mappings to block style; model, image, resources, vLLM arguments, NCCL controls, storage, placement, and Kubernetes resource names are unchanged.
 
