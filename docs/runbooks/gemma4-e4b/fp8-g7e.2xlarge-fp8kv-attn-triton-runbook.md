@@ -26,6 +26,7 @@ The pool is not the constraint. `chat_terse` sends 96 wire input tokens with a 3
 Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
 
 - [Create a `g7e.2xlarge` node group](../../../k8s/examples/eksctl-nodegroup-g7e-2xl-spot.yaml) (give it every subnet in your FSx filesystem's availability zone)
+- [Create a `g7.2xlarge` node group for quantization](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (only if the checkpoint is not on the claim yet)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
 - A node with more than 8 allocatable CPU for the benchmark client, which is not the GPU node (an 8 vCPU node offers 7910m, so the Job stays Pending)
 - [Export the checkpoint to S3](../../../model-jobs/gemma4-e4b/fp8-model-export.yaml) (only when the claim is in a region the checkpoint was not quantized in)

@@ -1,0 +1,61 @@
+#
+# Job that quantizes Qwen/Qwen2.5-7B-Instruct to ModelOpt FP8 and writes it to the shared claim, which the qwen2.5-7b FP8 recipes serve. This is the producer the measured FP8 checkpoint came from; fp8-model-download.yaml is an alternative source for the same path.
+#
+# SUBSTITUTE: 012345678901, us-east-1, and fsx-pvc.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: quantize-qwen25-7b-fp8
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      # The 7B BF16 source fits any single GPU in this repo, so the Job takes the first free one.
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: quantizer
+          image: 012345678901.dkr.ecr.us-east-1.amazonaws.com/serving-sweep-quantizer:latest
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+              python -c "import transformers,modelopt;print('transformers',transformers.__version__)"
+              cd /app/src && exec python quantize.py
+          env:
+            - name: MODEL_ID
+              value: "Qwen/Qwen2.5-7B-Instruct"
+            - name: QUANTIZATION_FORMAT
+              value: "fp8"
+            - name: MODEL_CACHE_DIR
+              value: "/models/cache"
+            - name: OUTPUT_DIR
+              value: "/models/quantized"
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+            requests:
+              cpu: "4"
+              memory: 20Gi
+          volumeMounts:
+            - { name: models, mountPath: /models }
+            - { name: dshm, mountPath: /dev/shm }
+      volumes:
+        - name: models
+          persistentVolumeClaim: { claimName: fsx-pvc }
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 16Gi }

@@ -1,5 +1,5 @@
 #
-# Job that quantizes google/gemma-4-E4B-it to ModelOpt FP8 and writes it to the shared claim, which the four gemma4-e4b FP8 recipes serve. This is the Job that produced the published checkpoint.
+# Job that quantizes google/gemma-4-E4B-it to ModelOpt FP8 and writes it to the shared claim, which the gemma4-e4b FP8 recipes serve. This is the Job that produced the published checkpoint.
 #
 # SUBSTITUTE: 012345678901, us-east-1, and fsx-pvc.
 apiVersion: batch/v1
@@ -11,7 +11,8 @@ spec:
   template:
     spec:
       restartPolicy: Never
-      # Pinned to the serving instance type, so calibration runs on the GPU the result is measured on.
+      # Pinned to the instance type that produced the published checkpoint. Calibration is not
+      # bit-reproducible, so moving the pin would produce different weights.
       nodeSelector:
         node.kubernetes.io/instance-type: "g7.2xlarge"
       tolerations:

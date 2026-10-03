@@ -14,6 +14,7 @@ A download stages weights that are already published. A quantize job produces a 
 | [`muse-glimmer-30b/fp8-model-quantize.yaml`](muse-glimmer-30b/fp8-model-quantize.yaml) | `meta-models/Muse-Glimmer-30B` | `/models/quantized/Muse-Glimmer-30B-fp8` |
 | [`qwen2.5-7b/bf16-model-download.yaml`](qwen2.5-7b/bf16-model-download.yaml) | `Qwen/Qwen2.5-7B-Instruct` | `/models/Qwen2.5-7B-Instruct` |
 | [`qwen2.5-7b/fp8-model-download.yaml`](qwen2.5-7b/fp8-model-download.yaml) | `Qwen/Qwen2.5-7B-Instruct-FP8` | `/models/quantized/Qwen2.5-7B-Instruct-fp8` |
+| [`qwen2.5-7b/fp8-model-quantize.yaml`](qwen2.5-7b/fp8-model-quantize.yaml) | `Qwen/Qwen2.5-7B-Instruct` | `/models/quantized/Qwen2.5-7B-Instruct-fp8` |
 | [`qwen3-235b/fp8-model-download.yaml`](qwen3-235b/fp8-model-download.yaml) | `Qwen/Qwen3-235B-A22B-FP8` | `/models/qwen3-235b-a22b-fp8` |
 
 | Utility | Purpose |
@@ -127,7 +128,7 @@ These recipes do keep a pre-flight space check, because an `emptyDir` lands wher
 
 ## FP8 weights, downloaded or quantized
 
-`/models/quantized/Qwen2.5-7B-Instruct-fp8` can be produced two ways: [`qwen2.5-7b/fp8-model-download.yaml`](qwen2.5-7b/fp8-model-download.yaml) fetches ready-made FP8 weights from Hugging Face, and [`job-quantize-model.yaml`](../k8s/examples/job-quantize-model.yaml) produces them from the BF16 weights. Use one or the other, not both.
+`/models/quantized/Qwen2.5-7B-Instruct-fp8` can be produced two ways: [`qwen2.5-7b/fp8-model-download.yaml`](qwen2.5-7b/fp8-model-download.yaml) fetches ready-made FP8 weights from Hugging Face, and [`qwen2.5-7b/fp8-model-quantize.yaml`](qwen2.5-7b/fp8-model-quantize.yaml) produces them from the BF16 weights. Use one or the other, not both.
 
 One path has no download Job here because no published FP8 repository matches it, so [`gemma4-31b/fp8-model-quantize.yaml`](gemma4-31b/fp8-model-quantize.yaml) is the only producer of `/models/quantized/gemma-4-31b-it-fp8`. It returns HTTP 401 from the Hugging Face API under the repository names checked, which indicates gated, private, or absent. The API returns 401 rather than 404 because it does not confirm whether a private repository exists.
 
