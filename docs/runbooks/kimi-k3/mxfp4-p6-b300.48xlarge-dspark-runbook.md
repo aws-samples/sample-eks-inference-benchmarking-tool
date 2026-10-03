@@ -45,28 +45,35 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
    export KIMI_S3_ROLE_ARN=<your-kimi-s3-read-role-arn>
    ```
 
-2. Configure the EKS context and namespace, install the NVIDIA Kubernetes device plugin, and create the `hf-token` secret.
+2. Install the `eks-bench` CLI into a Python virtual environment.
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -e '.[tokenizer]'
+   ```
+
+3. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
 
    ```bash
    ./scripts/install-prerequisites.sh
    ```
 
-3. Stage the published checkpoint from Hugging Face to S3; a rerun skips files already there.
+4. Copy the published checkpoint from Hugging Face to your S3 bucket.
    ```bash
    ./model-jobs/kimi-k3/mxfp4-model-download.sh
    ```
 
-4. Stage the published DSpark draft from Hugging Face to S3.
+5. Copy the published DSpark draft model from Hugging Face to your S3 bucket.
    ```bash
    ./model-jobs/kimi-k3/dspark-draft-download.sh
    ```
 
-5. Deploy and validate the server.
+6. Deploy the vLLM inference server and confirm it serves the model.
    ```bash
    ./vllm-recipes/kimi-k3/mxfp4-p6-b300.48xlarge-dspark-deploy.sh
    ```
 
-6. Generate the accuracy gate (.JSON) required for the next step.
+7. Generate the accuracy gate (.JSON) that the benchmark checks against.
 
    ```bash
    eks-bench capture-reference \
@@ -78,7 +85,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
        --out-dir docs/results
    ```
 
-7. Dry-run the exact in-cluster benchmark.
+8. Dry-run the exact in-cluster benchmark.
 
    ```bash
    eks-bench measure \
@@ -93,7 +100,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
        --dry-run
    ```
 
-8. Run the identical benchmark without `--dry-run`.
+9. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
 
    ```bash
    eks-bench measure \
@@ -115,6 +122,8 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/kim
 
 ## Settings
 
+- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
+- **The checkpoint stays in S3.** A later run can skip Quickstart steps 4 and 5; rerunning only copies files that are missing.
 - **`serviceAccountName: kimi-k3-bench`** Supplies the pod-scoped S3 identity used by the init container.
 - **`test -n "$(ls -A /models/kimi-k3-dspark 2>/dev/null)"`** Fails before model loading when the staged draft prefix is empty.
 - **`--speculative-config`** Loads `/models/kimi-k3-dspark` with the `dspark` method, seven speculative tokens, probabilistic draft sampling, and block rejection sampling.

@@ -39,7 +39,7 @@ Create the following before you start.
 
 ## Quickstart
 
-1. Set environment variables, using the same `NAMESPACE` and `GPU_NODE` for both arms.
+1. Set environment variables.
    ```bash
    export AWS_REGION=<your-cluster-region>
    export EKS_CLUSTER_NAME=<your-cluster-name>
@@ -49,24 +49,31 @@ Create the following before you start.
    export GPU_NODE=<your-g7e-12xlarge-node-name>
    ```
 
-2. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
+2. Install the `eks-bench` CLI into a Python virtual environment.
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -e '.[tokenizer]'
+   ```
+
+3. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
    ```bash
    ./scripts/install-prerequisites.sh
    ```
 
-3. Stage the checkpoint onto the `g7e12-switch-model-storage` claim from the pinned node.
+4. Download the published checkpoint from Hugging Face to the `g7e12-switch-model-storage` claim.
    ```bash
    ./model-jobs/qwen3-30b-a3b/fp8-model-download.sh
    ```
 
 ## Throughput test
 
-1. Deploy and validate the server, which mounts the staged checkpoint at `/models/qwen3-30b-a3b-fp8`.
+1. Deploy the vLLM inference server on `GPU_NODE` and confirm it serves the model.
    ```bash
    ./vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default-deploy.sh
    ```
 
-2. Confirm no transport override is set and NCCL chose P2P; the P2P count must be non-zero, SHM zero.
+2. Confirm no NCCL transport override is set and NCCL chose P2P, not SHM.
    ```bash
    SERVER_LOG=$(kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs \
        deployment/qwen3-30b-a3b-g7e12-switch-default -c vllm)
@@ -75,7 +82,7 @@ Create the following before you start.
    grep -cE 'via SHM/' <<<"$SERVER_LOG"
    ```
 
-3. Generate the accuracy gate (.JSON) with thinking disabled.
+3. Generate the accuracy gate (.JSON) that the benchmark checks against.
    ```bash
    eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -87,7 +94,7 @@ Create the following before you start.
        --out-dir docs/results
    ```
 
-4. Dry-run the in-cluster benchmark, which renders the Job without creating it.
+4. Dry-run the exact in-cluster benchmark.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -103,7 +110,7 @@ Create the following before you start.
        --dry-run
    ```
 
-5. Warm the server with one unrecorded repetition, written outside `docs/results`.
+5. Warm up the server with one unrecorded benchmark run, saved outside `docs/results`.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -117,7 +124,7 @@ Create the following before you start.
        --out-dir /tmp/qwen3-30b-a3b-switch-warmup/fp8-switch-default
    ```
 
-6. Benchmark in-cluster.
+6. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -154,6 +161,7 @@ aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-n
 
 ## Settings
 
+- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
 - **No NCCL transport override.** The recipe sets neither `NCCL_P2P_LEVEL` nor `NCCL_P2P_DISABLE`, so NCCL picks the transport itself. This arm is the negative control for the `PIX` arm: on a switch-local pair it should select P2P without being told to. Throughput step 2 checks the server log for P2P channels and no SHM channels; do not measure an arm that fails it.
 - **Both arms pin the same physical node.** Use the same `GPU_NODE` in both runbooks. A Spot reclaim or replacement node has a new name and a new GPU pair; export its name as `GPU_NODE` and treat it as a different host.
 - **The hostname is a placeholder in git.** The staging and deploy scripts substitute `GPU_NODE` as they apply each manifest, so the files in git stay untouched.

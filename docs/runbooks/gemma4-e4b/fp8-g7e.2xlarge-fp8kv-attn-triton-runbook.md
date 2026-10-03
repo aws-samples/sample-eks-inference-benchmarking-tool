@@ -45,24 +45,31 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    export INSTANCE_TYPE=g7e.2xlarge
    ```
 
-2. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
+2. Install the `eks-bench` CLI into a Python virtual environment.
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -e '.[tokenizer]'
+   ```
+
+3. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
    ```bash
    ./scripts/install-prerequisites.sh
    ```
 
-3. Quantize the checkpoint onto the claim at `/models/quantized/gemma-4-E4B-it-fp8` on one g7.2xlarge GPU, and re-verify it; skip this when an earlier run already did.
+4. Quantize the model to ModelOpt FP8 on the `fsx-pvc` claim, then verify the checkpoint.
    ```bash
    ./model-jobs/gemma4-e4b/fp8-model-quantize.sh
    ```
 
 ## Throughput test
 
-1. Deploy the server; the script fails if the engine did not select `TRITON_ATTN`.
+1. Deploy the vLLM inference server and confirm it serves the model.
    ```bash
    ./vllm-recipes/gemma4-e4b/fp8-g7e.2xlarge-fp8kv-attn-triton-deploy.sh
    ```
 
-2. Confirm the KV cache is FP8 and read the pool this memory fraction produced.
+2. Confirm the KV cache is FP8 and record the KV pool size.
    ```bash
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" exec \
        deployment/gemma4-e4b-vllm-g7e-2xl-fp8kv-triton -c vllm -- \
@@ -80,7 +87,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --out-dir docs/results
    ```
 
-4. Dry-run the in-cluster benchmark, which renders the Job without creating it.
+4. Dry-run the exact in-cluster benchmark.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -96,7 +103,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-5. Benchmark in-cluster.
+5. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -126,6 +133,8 @@ Delete the benchmark-client node group too if you created one for this run. The 
 
 ## Settings
 
+- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
+- **The checkpoint stays on the claim.** A later run can skip Quickstart step 4.
 - **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable. It logs `Unknown vLLM environment variable detected: VLLM_ATTENTION_BACKEND` and proceeds on its auto-selected backend. The deploy script fails unless the server log reports `TRITON_ATTN`.
 - **The backend is pinned rather than auto-selected** because vLLM's auto-priority tables are written for sm_10x B200. This card is sm_120, so leaving it unset makes the backend an unrecorded variable.
 - **Why `TRITON_ATTN`.** It is portable across GPU generations and head sizes. `FLASH_ATTN` refuses an FP8 KV cache on this GPU at startup (`FP8 KV cache requires FA3 on SM90 or FA4 on SM100`). `FLASHINFER` serves, but its XQA decode path rejects `head_dim=512` and falls back to a slower native decode for the full-attention layers.

@@ -50,29 +50,36 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    export WEIGHTS_REGION=<your-weights-bucket-region>
    ```
 
-2. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
+2. Install the `eks-bench` CLI into a Python virtual environment.
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -e '.[tokenizer]'
+   ```
+
+3. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
    ```bash
    ./scripts/install-prerequisites.sh
    ```
 
-3. Quantize the checkpoint onto the claim at `/models/quantized/gemma-4-E4B-it-fp8` on one g7.2xlarge GPU, and re-verify it; skip this and the next step when an earlier run already put the checkpoint in S3.
+4. Quantize the model to ModelOpt FP8 on the `fsx-pvc` claim, then verify the checkpoint.
    ```bash
    ./model-jobs/gemma4-e4b/fp8-model-quantize.sh
    ```
 
-4. Copy the checkpoint from the claim to S3.
+5. Copy the quantized checkpoint from the claim to your S3 bucket.
    ```bash
    ./model-jobs/gemma4-e4b/fp8-model-fsx-to-s3.sh
    ```
 
 ## Throughput test
 
-1. Deploy the server; the script fails if the engine did not select `TRITON_ATTN`.
+1. Deploy the vLLM inference server and confirm it serves the model.
    ```bash
    ./vllm-recipes/gemma4-e4b/fp8-p5.4xlarge-fp8kv-attn-triton-deploy.sh
    ```
 
-2. Confirm `/models` is the NVMe RAID0 array, not the EBS root volume.
+2. Confirm `/models` is on the NVMe RAID0 array, not the EBS root volume.
    ```bash
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" exec \
        deployment/gemma4-e4b-vllm-p5-4xl-fp8kv-triton -c vllm -- df -h /models
@@ -89,7 +96,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --out-dir docs/results
    ```
 
-4. Dry-run the in-cluster benchmark, which renders the Job without creating it.
+4. Dry-run the exact in-cluster benchmark.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -103,7 +110,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-5. Benchmark in-cluster.
+5. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -125,12 +132,13 @@ kubectl --context "$EKS_CLUSTER_NAME" delete nodepool bench-capacity-block --ign
 kubectl --context "$EKS_CLUSTER_NAME" delete ec2nodeclass bench-capacity-block --ignore-not-found
 ```
 
-Scale the quantization and benchmark-client node groups to zero too if you created them for this run. The checkpoint in S3 survives, so a later run skips Quickstart steps 3 and 4.
+Scale the quantization and benchmark-client node groups to zero too if you created them for this run. The checkpoint in S3 survives, so a later run skips Quickstart steps 4 and 5.
 
 ---
 
 ## Settings
 
+- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
 - **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable. It logs `Unknown vLLM environment variable detected: VLLM_ATTENTION_BACKEND` and proceeds on its auto-selected backend. The deploy script fails unless the server log reports `TRITON_ATTN`.
 - **`--config p5-fp8kv-attn-triton`** The `p5-` prefix gives this server its own accuracy gate, because the same checkpoint on a different GPU produces a different fingerprint.
 - **KV scales are uncalibrated.** vLLM 0.29.0 rejects `--calculate-kv-scales`, so the server logs `Using KV cache scaling factor 1.0 for fp8_e4m3`. This bounds any quality comparison.

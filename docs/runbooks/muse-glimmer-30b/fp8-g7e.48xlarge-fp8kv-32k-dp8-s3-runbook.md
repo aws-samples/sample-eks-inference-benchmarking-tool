@@ -50,24 +50,31 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    export WEIGHTS_REGION=<your-weights-bucket-region>
    ```
 
-2. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
+2. Install the `eks-bench` CLI into a Python virtual environment.
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -e '.[tokenizer]'
+   ```
+
+3. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
    ```bash
    ./scripts/install-prerequisites.sh
    ```
 
-3. Quantize the checkpoint onto the claim at `/models/quantized/Muse-Glimmer-30B-fp8` on one g7e.2xlarge GPU; skip this and the next step when an earlier run already put the checkpoint in S3.
+4. Quantize the model to ModelOpt FP8 and save the checkpoint to the `fsx-pvc` claim.
    ```bash
    ./model-jobs/muse-glimmer-30b/fp8-model-quantize.sh
    ```
 
-4. Copy the checkpoint from the claim to S3.
+5. Copy the quantized checkpoint from the claim to your S3 bucket.
    ```bash
    ./model-jobs/muse-glimmer-30b/fp8-model-fsx-to-s3.sh
    ```
 
 ## Throughput test
 
-1. Deploy the eight replicas; the script fails unless the server reports `TRITON_ATTN`.
+1. Deploy eight vLLM inference server replicas and confirm they serve the model.
    ```bash
    ./vllm-recipes/muse-glimmer-30b/fp8-g7e.48xlarge-fp8kv-32k-dp8-s3-deploy.sh
    ```
@@ -83,7 +90,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --out-dir docs/results
    ```
 
-3. Dry-run the in-cluster benchmark, which renders the Job without creating it.
+3. Dry-run the exact in-cluster benchmark.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -99,7 +106,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-4. Benchmark in-cluster.
+4. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -123,12 +130,13 @@ aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-n
     --region "$AWS_REGION" --scaling-config minSize=0,maxSize=1,desiredSize=0
 ```
 
-Scale the quantization and benchmark-client node groups to zero too if you created them for this run. The checkpoint in S3 survives, so a later run skips Quickstart steps 3 and 4.
+Scale the quantization and benchmark-client node groups to zero too if you created them for this run. The checkpoint in S3 survives, so a later run skips Quickstart steps 4 and 5.
 
 ---
 
 ## Settings
 
+- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
 - **Eight copies rather than one split copy.** The model fits one GPU, and g7e GPUs talk over PCIe with no NVLink, so tensor parallelism pays a transfer cost on every layer. Independent replicas trade that for one Service balancing requests between them.
 - **The Service balances per connection, not per request.** The benchmark client holds one persistent connection per in-flight request, so at low concurrency some replicas can sit idle.
 - **`--pod` names one replica for provenance.** `measure` reads the image, KV pool and server log from that pod. Every replica runs the same spec.

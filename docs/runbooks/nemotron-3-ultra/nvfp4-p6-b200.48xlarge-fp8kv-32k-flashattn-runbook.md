@@ -51,19 +51,26 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    export NEMOTRON_S3_ROLE_ARN=<your-nemotron-s3-role-arn>
    ```
 
-2. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
+2. Install the `eks-bench` CLI into a Python virtual environment.
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -e '.[tokenizer]'
+   ```
+
+3. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
    ```bash
    ./scripts/install-prerequisites.sh
    ```
 
-3. Stage the published checkpoint from Hugging Face to S3; skip this when an earlier run already did.
+4. Copy the published checkpoint from Hugging Face to your S3 bucket.
    ```bash
    ./model-jobs/nemotron-3-ultra/nvfp4-model-download.sh
    ```
 
 ## Throughput test
 
-1. Deploy the server; the script fails unless the engine reports `FLASH_ATTN`.
+1. Deploy the vLLM inference server and confirm it serves the model.
    ```bash
    ./vllm-recipes/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-flashattn-deploy.sh
    ```
@@ -79,7 +86,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --out-dir docs/results
    ```
 
-3. Dry-run the in-cluster benchmark, which renders the Job without creating it.
+3. Dry-run the exact in-cluster benchmark.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -93,7 +100,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-4. Benchmark in-cluster.
+4. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -117,12 +124,13 @@ aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-n
     --region "$AWS_REGION" --scaling-config minSize=0,maxSize=1,desiredSize=0
 ```
 
-Scale the benchmark-client node group to zero too if you created it for this run. The checkpoint in S3 survives, so a later run skips Quickstart step 3.
+Scale the benchmark-client node group to zero too if you created it for this run. The checkpoint in S3 survives, so a later run skips Quickstart step 4.
 
 ---
 
 ## Settings
 
+- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
 - **One copy across all eight GPUs.** The recipe requests `nvidia.com/gpu: "8"` and shards one copy with `--tensor-parallel-size 8`, so results are per-node figures. The server prints `nvidia-smi topo -m` at start and warns when it finds no NVLink pairs; do not trust a run that logged that warning.
 - **One arm at a time.** Each attention-backend arm takes the whole node and runs in its own namespace, so tear one down before deploying the next. One vLLM pod per namespace means `measure` needs no `--pod`.
 - **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable. The deploy script fails unless the server logs `Using AttentionBackendEnum.FLASH_ATTN backend`.

@@ -57,7 +57,7 @@ This puts `eks-bench` on your PATH, along with the longer alias `eks-inference-b
 
 ### 2. Follow the selected runbook
 
-Choose a serving runbook from [vLLM recipes](#vllm-recipes). The runbook sets its recipe-specific environment, installs the shared cluster prerequisites, preserves any recipe-specific checks and weight staging, then calls the recipe-local deploy helper. Keep the visible `eks-bench` accuracy, dry-run, and benchmark commands in order; each real benchmark is paired with an otherwise identical `--dry-run` command.
+Choose a serving runbook from [vLLM recipes](#vllm-recipes). The runbook sets its recipe-specific environment, repeats the install above so it stands on its own, installs the shared cluster prerequisites, preserves any recipe-specific checks and weight staging, then calls the recipe-local deploy helper. Keep the visible `eks-bench` accuracy, dry-run, and benchmark commands in order; each real benchmark is paired with an otherwise identical `--dry-run` command.
 
 ---
 

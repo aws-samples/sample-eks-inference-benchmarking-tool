@@ -49,19 +49,26 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    export GPU_NODE=<your-p6-b300-node-name>
    ```
 
-2. Configure the EKS context and namespace, install the NVIDIA Kubernetes device plugin, and create the `hf-token` secret.
+2. Install the `eks-bench` CLI into a Python virtual environment.
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -e '.[tokenizer]'
+   ```
+
+3. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
 
    ```bash
    ./scripts/install-prerequisites.sh
    ```
 
-3. Deploy and validate the model server, pinned to `GPU_NODE`.
+4. Deploy the vLLM inference server on `GPU_NODE` and confirm it serves the model.
 
    ```bash
    ./vllm-recipes/glm-5.2/nvfp4-p6-b300.48xlarge-deploy.sh
    ```
 
-4. Generate the accuracy gate (.JSON) required for the next step.
+5. Generate the accuracy gate (.JSON) that the benchmark checks against.
 
    ```bash
    eks-bench capture-reference \
@@ -73,7 +80,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --out-dir docs/results
    ```
 
-5. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
+6. Dry-run the exact in-cluster benchmark.
 
    ```bash
    eks-bench measure \
@@ -88,7 +95,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-6. Benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
+7. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
 
    ```bash
    eks-bench measure \
@@ -113,6 +120,7 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/glm
 
 ## Settings
 
+- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
 - **`kubernetes.io/hostname`** Pins the pod to one node; the deploy script fills in `GPU_NODE` as it applies the manifest, so the file in git stays untouched. The pin does not preserve model data.
 - **`fetch-weights` init container** Downloads `nvidia/GLM-5.2-NVFP4` from Hugging Face into `/weights/glm-5.2-nvfp4`. It verifies at least 500 GiB is free, installs `huggingface_hub==1.28.0`, uses `/weights/.hf-cache`, enables high-performance Xet with `HF_XET_HIGH_PERFORMANCE=1`, and verifies that every shard is complete before vLLM starts.
 
