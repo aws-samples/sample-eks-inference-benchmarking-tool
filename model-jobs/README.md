@@ -10,6 +10,7 @@ A download stages weights that are already published. A quantize job produces a 
 |---|---|---|
 | [`gemma4-e4b/fp8-model-quantize.yaml`](gemma4-e4b/fp8-model-quantize.yaml) | `google/gemma-4-E4B-it` | `/models/quantized/gemma-4-E4B-it-fp8` |
 | [`glm-5.2/fp8-model-download.yaml`](glm-5.2/fp8-model-download.yaml) | `zai-org/GLM-5.2-FP8` | `/models/glm-5.2-fp8` |
+| [`muse-glimmer-30b/fp8-model-quantize.yaml`](muse-glimmer-30b/fp8-model-quantize.yaml) | `meta-models/Muse-Glimmer-30B` | `/models/quantized/Muse-Glimmer-30B-fp8` |
 | [`qwen2.5-7b/bf16-model-download.yaml`](qwen2.5-7b/bf16-model-download.yaml) | `Qwen/Qwen2.5-7B-Instruct` | `/models/Qwen2.5-7B-Instruct` |
 | [`qwen2.5-7b/fp8-model-download.yaml`](qwen2.5-7b/fp8-model-download.yaml) | `Qwen/Qwen2.5-7B-Instruct-FP8` | `/models/quantized/Qwen2.5-7B-Instruct-fp8` |
 | [`qwen3-235b/fp8-model-download.yaml`](qwen3-235b/fp8-model-download.yaml) | `Qwen/Qwen3-235B-A22B-FP8` | `/models/qwen3-235b-a22b-fp8` |
@@ -17,6 +18,9 @@ A download stages weights that are already published. A quantize job produces a 
 | Utility | Purpose |
 |---|---|
 | [`gemma4-e4b/fp8-model-verify.yaml`](gemma4-e4b/fp8-model-verify.yaml) | Check a quantized checkpoint on the claim, and fail if it is not what its config claims |
+| [`llama4-maverick/fp8-model-download.yaml`](llama4-maverick/fp8-model-download.yaml) | Stage the published checkpoint from Hugging Face to S3, and fail on a shard-count or size mismatch |
+| [`nemotron-3-ultra/nvfp4-model-download.yaml`](nemotron-3-ultra/nvfp4-model-download.yaml) | Stage the published NVFP4 checkpoint from Hugging Face to S3, and fail on a shard-count or size mismatch |
+| [`muse-glimmer-30b/fp8-model-fsx-to-s3.yaml`](muse-glimmer-30b/fp8-model-fsx-to-s3.yaml) | Copy the quantized checkpoint from the claim to S3, and fail on a shard-count mismatch |
 
 Each download Job is three lines of shell, and everything that varies is in `env`. This follows NVIDIA's [Dynamo GLM recipe](https://github.com/ai-dynamo/dynamo/blob/main/recipes/glm-5.2/model-cache/model-download.yaml), including the pinned hub client and `HF_XET_HIGH_PERFORMANCE`, because Xet is the accelerated transfer path now that `hf_transfer` has been removed from the client.
 
