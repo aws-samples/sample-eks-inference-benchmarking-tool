@@ -81,7 +81,7 @@ Step 4 is a no-op when the sibling arm already staged the checkpoint in this nam
 
 ## Throughput test
 
-1. Pin the recipe to your node; the deploy script refuses the placeholder.
+1. Pin the recipe to your node.
    ```bash
    sed -i.bak "s|ip-10-0-0-1.us-east-1.compute.internal|${GPU_NODE}|" \
        vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml \
@@ -184,7 +184,7 @@ aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-n
 
 - **`NCCL_P2P_LEVEL=PIX`** Allows NCCL peer-to-peer only between GPUs behind the same PCIe switch, which the g7e.12xlarge pair is. On this pair it states explicitly what the default arm should select on its own, so the two arms should agree. Throughput step 3 checks that the variable reached the container and that the server log shows P2P channels and no SHM channels; do not measure an arm that fails it.
 - **Both arms pin the same physical node.** `kubernetes.io/hostname` holds this arm, the default arm and the staging Job on one g7e.12xlarge, so the pair compares two transport settings rather than two hosts. Use the same `GPU_NODE` in both runbooks. A Spot reclaim or replacement node has a new name and a new GPU pair; re-substitute both recipes and treat it as a different host.
-- **The hostname is a placeholder in git.** Throughput step 1 fills it in your working copy and Tear down restores it with `git checkout`; keep the real node name out of commits. The deploy script refuses to apply while `ip-10-0-0-1.us-east-1.compute.internal` remains. Quickstart step 4 pipes the download manifest through `sed` instead, leaving that file untouched.
+- **The hostname is a placeholder in git.** Throughput step 1 fills it in your working copy and Tear down restores it with `git checkout`; keep the real node name out of commits. Quickstart step 4 pipes the download manifest through `sed` instead, leaving that file untouched.
 - **`--config fp8-switch-pix`** The study's config tag, so the result lands in `qwen3-30b-a3b-fp8-g7e.12xlarge-fp8-switch-pix-corpus-legacy_corpus.txt` beside the `fp8-switch-default` arm. Results from the two arms are separate labelled configs; never fold one into the other.
 - **The forced-SHM arm is not a recipe.** [`g7e12-switch-qwen3-30b-a3b-shm.yaml`](../../../experiments/g7e12-switch-qwen3-30b-a3b-shm.yaml) sets `NCCL_P2P_DISABLE=1` as a host-copy proxy and lives in `experiments/`. For the full three-arm study with its NCCL matrix, see the [PIX versus PHB-proxy study runbook](../studies/g7e.12xlarge-pix-vs-phb-proxy-runbook.md).
 - **Two GPUs on purpose.** The checkpoint fits one card. TP2 with `--enable-expert-parallel` splits attention heads and places whole experts across the switch-local pair, and `--all2all-backend allgather_reducescatter` exchanges tokens between them, so every layer crosses the PCIe switch. That traffic is what the transport pair compares.

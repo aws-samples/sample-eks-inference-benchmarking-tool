@@ -114,7 +114,7 @@ Skip steps 4 to 7 when an earlier run already put the checkpoint in S3. Run step
 
 ## Throughput test
 
-1. Set the weights bucket and its region in the recipe; the deploy script refuses the placeholder.
+1. Set the weights bucket and its region in the recipe.
    ```bash
    sed -i.bak -e "s|SUBSTITUTE-weights-bucket|${WEIGHTS_BUCKET}|" \
        -e "/name: AWS_REGION/{n;s|value: .*|value: \"${WEIGHTS_REGION}\"|;}" \
@@ -187,7 +187,7 @@ Scale the quantization and benchmark-client node groups to zero too if you creat
 ## Settings
 
 - **Every serving flag matches the g7e.2xlarge sibling.** Context, batch limits, memory fraction, stream interval, KV precision and backend are identical, so a difference between the two results is the GPU and the weight source, not the configuration.
-- **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable. It logs `Unknown vLLM environment variable detected: VLLM_ATTENTION_BACKEND` and proceeds on its auto-selected backend. The deploy script asserts `TRITON_ATTN` appears in the server log and exits non-zero if it does not.
+- **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable. It logs `Unknown vLLM environment variable detected: VLLM_ATTENTION_BACKEND` and proceeds on its auto-selected backend. The deploy script fails unless the server log reports `TRITON_ATTN`.
 - **The backend is pinned rather than auto-selected** because vLLM would pick a different kernel on sm_90 than on the g7e sibling's sm_120, which would make the backend a second variable in the pair.
 - **`--config p5-fp8kv-attn-triton`** The `p5-` prefix keeps this server's accuracy gate separate from the g7e sibling's. The gate file is named by model tag and config, and the same checkpoint on a different GPU produces a different fingerprint.
 - **KV scales are uncalibrated.** vLLM 0.29.0 rejects `--calculate-kv-scales`, so the server logs `Using KV cache scaling factor 1.0 for fp8_e4m3`. This bounds any quality comparison.
@@ -197,6 +197,6 @@ Scale the quantization and benchmark-client node groups to zero too if you creat
 - **Weights come from S3 into an `emptyDir`, not from the claim.** A pod restart re-downloads 11 GiB. The `fetch-weights` init container fails unless it finds `hf_quant_config.json`, exactly one shard and at least 10 GiB.
 - **The instance store must back the `emptyDir`.** The Capacity Block node class sets `instanceStorePolicy: RAID0`; without it the sync lands on the EBS root volume. Throughput step 3 confirms where `/models` is.
 - **`serviceAccountName: gemma4-31b-bench`** The recipe reuses the Gemma 4 31B ServiceAccount name for its pod-scoped S3 read through EKS Pod Identity. Any ServiceAccount with read access to the prefix works if you change the name in the recipe.
-- **`WEIGHTS_BUCKET` and `AWS_REGION` are placeholders in git.** Throughput step 1 fills them in your working copy; keep that edit out of commits. The deploy script refuses to apply while the bucket placeholder remains.
+- **`WEIGHTS_BUCKET` and `AWS_REGION` are placeholders in git.** The throughput step (step one) fills in the values.
 - **The S3 staging Job sets no ServiceAccount.** It runs as the namespace's `default` ServiceAccount, so that is the identity the write role must be associated with.
 - **Copy the checkpoint rather than requantizing it.** Calibration is not bit-reproducible, so a fresh quantize gives different weights and makes results incomparable with the g7e sibling. Serve the S3 copy of the checkpoint the sibling reads from the claim.

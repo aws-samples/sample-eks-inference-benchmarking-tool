@@ -150,7 +150,7 @@ Delete the benchmark-client node group too if you created one for this run. The 
 
 ## Settings
 
-- **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable. It logs `Unknown vLLM environment variable detected: VLLM_ATTENTION_BACKEND` and proceeds on its auto-selected backend. The deploy script asserts `TRITON_ATTN` appears in the server log and exits non-zero if it does not.
+- **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable. It logs `Unknown vLLM environment variable detected: VLLM_ATTENTION_BACKEND` and proceeds on its auto-selected backend. The deploy script fails unless the server log reports `TRITON_ATTN`.
 - **The backend is pinned rather than auto-selected** because vLLM's auto-priority tables are written for sm_10x B200. This card is sm_120, so leaving it unset makes the backend an unrecorded variable.
 - **Why `TRITON_ATTN`.** It is portable across GPU generations and head sizes. `FLASH_ATTN` refuses an FP8 KV cache on this GPU at startup (`FP8 KV cache requires FA3 on SM90 or FA4 on SM100`). `FLASHINFER` serves, but its XQA decode path rejects `head_dim=512` and falls back to a slower native decode for the full-attention layers.
 - **KV scales are uncalibrated.** vLLM 0.29.0 rejects `--calculate-kv-scales`, so the server logs `Using KV cache scaling factor 1.0 for fp8_e4m3`. This bounds any quality comparison.

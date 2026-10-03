@@ -37,7 +37,7 @@ This recipe requires a custom vLLM image containing a matched `aws-ofi-nccl` plu
 
 2. Build and push the custom vLLM image with `aws-ofi-nccl` installed. [`job-build-image-kaniko.yaml`](../../../k8s/examples/job-build-image-kaniko.yaml) can build it in-cluster on a CPU node when local Docker is unavailable.
 
-3. Replace account `012345678901` and region `us-east-1` in the recipe's `image:` reference with the image you pushed. The deploy helper refuses to apply a manifest that still contains the placeholder account.
+3. Replace account `012345678901` and region `us-east-1` in the recipe's `image:` reference with the image you pushed.
 
 ## Quickstart
 
@@ -86,7 +86,7 @@ This recipe requires a custom vLLM image containing a matched `aws-ofi-nccl` plu
    aws s3 ls "s3://${WEIGHTS_BUCKET}/kimi-k3-mxfp4/" --region "$WEIGHTS_REGION" | head
    ```
 
-6. Set the weights bucket and its region in the recipe; the deploy helper refuses the placeholder.
+6. Set the weights bucket and its region in the recipe.
    ```bash
    sed -i.bak -e "s|SUBSTITUTE-weights-bucket|${WEIGHTS_BUCKET}|" \
        -e "/name: AWS_REGION/{n;s|value: .*|value: \"${WEIGHTS_REGION}\"|;}" \
@@ -158,4 +158,4 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/kim
 - **`emptyDir: { sizeLimit: 2000Gi }`** Is pod-local ephemeral storage rooted wherever kubelet stores `emptyDir`; the free-space check does not prove NVMe placement.
 - **`NCCL_DEBUG=INFO`** Records whether NCCL selected OFI/EFA rather than sockets.
 - **`add: ["IPC_LOCK"]`** Supplies the capability required by EFA/libfabric.
-- **`WEIGHTS_BUCKET` and `AWS_REGION` are placeholders in git.** The bucket-and-region step fills them in your working copy; keep that edit out of commits. The deploy helper refuses to apply while the bucket placeholder remains.
+- **`WEIGHTS_BUCKET` and `AWS_REGION` are placeholders in git.** The bucket and region step above fills in the values. 

@@ -84,7 +84,7 @@ Skip step 4 when an earlier run already put the checkpoint in S3. Run step 5 eit
 
 ## Throughput test
 
-1. Set the weights bucket and its region in the recipe; the deploy script refuses the placeholder.
+1. Set the weights bucket and its region in the recipe.
    ```bash
    sed -i.bak -e "s|SUBSTITUTE-weights-bucket|${WEIGHTS_BUCKET}|" \
        -e "/name: AWS_REGION/{n;s|value: .*|value: \"${WEIGHTS_REGION}\"|;}" \
@@ -168,5 +168,5 @@ Scale the benchmark-client node group to zero too if you created it for this run
 - **Weights come from S3 into an `emptyDir` on the NVMe array.** A pod restart re-downloads ~328 GiB. The `fetch-weights` init container fails unless `/models` has 400 GiB free, then fails unless it finds 113 shards and at least 300 GiB. Its log prints `df -h /models`; confirm that is the NVMe array.
 - **`progressDeadlineSeconds: 7200`** The S3 sync and load outlast the 600-second default. The deploy script waits the same 7,200 seconds, and the startup probe allows 3,600 seconds once the init container finishes.
 - **`serviceAccountName: nemotron-3-ultra-bench`** Supplies the pod-scoped S3 identity through IRSA. The staging Job runs as the same ServiceAccount, so the role also needs write access to the prefix while staging. Its trust policy must name each namespace that runs an arm.
-- **`WEIGHTS_BUCKET` and `AWS_REGION` are placeholders in git.** Throughput step 1 fills them in your working copy; keep that edit out of commits. Quickstart step 4 pipes the Job through `sed`, so its file is never edited. The deploy script refuses to apply while the bucket placeholder remains.
+- **`WEIGHTS_BUCKET` and `AWS_REGION` are placeholders in git.** The throughput step (step one) fills in the values. Quickstart step 4 pipes the Job through `sed`, so its file is never edited.
 - **The staging Job tolerates the GPU taint and requests 350 GiB of ephemeral storage.** On most clusters that places it on the GPU node's NVMe array. It fails on a shard-count, partial-file or size mismatch, so a completed Job means all 113 shards reached S3.
