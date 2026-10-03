@@ -22,6 +22,6 @@ Each benchmark run saves a gitignored results file to `docs/results/`. The filen
 
 ## Known issues
 
-These recipes need infrastructure that most others in this repo do not. They run a custom image built with matched NCCL and EFA versions rather than the AWS Deep Learning Container, and each runbook's `Setup` section covers building it. The multi node recipe also needs the EFA device plugin installed before it will schedule. Each recipe syncs its weights from S3 to node-local NVMe.
+These recipes need infrastructure that most others in this repo do not. They run a custom image built with matched NCCL and EFA versions rather than the AWS Deep Learning Container, and each runbook's `Setup` section covers building it. The multi node recipe also needs the EFA device plugin installed before it will schedule. Each recipe syncs its weights from S3 to node-local NVMe. [`mxfp4-model-download.yaml`](../../../model-jobs/kimi-k3/mxfp4-model-download.yaml) stages the published checkpoint into S3 once, and [`dspark-draft-download.yaml`](../../../model-jobs/kimi-k3/dspark-draft-download.yaml) stages the draft the dspark recipe adds.
 
 For reference, see [`TROUBLESHOOTING.md`](../../guides/TROUBLESHOOTING.md) for background on what was encountered and why.

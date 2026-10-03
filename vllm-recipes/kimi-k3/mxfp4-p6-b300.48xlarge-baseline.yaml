@@ -1,7 +1,7 @@
 #
 # Kimi K3 at MXFP4 on one p6-b300.48xlarge, 8 GPUs, tensor parallel 8. Use this as the single-node baseline that the dspark and ep variants are compared against.
 #
-# SUBSTITUTE: 012345678901 and us-east-1 in the image reference, and WEIGHTS_BUCKET.
+# SUBSTITUTE: 012345678901 and us-east-1 in the image reference, and WEIGHTS_BUCKET and AWS_REGION in the init container.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -52,11 +52,11 @@ spec:
             - name: MIN_FREE_GIB
               value: "1500"
             - name: WEIGHTS_BUCKET
-              value: "kimi-k3-mxfp4-weights"
+              value: SUBSTITUTE-weights-bucket
             - name: WEIGHTS_PREFIX
               value: "kimi-k3-mxfp4"
             - name: AWS_REGION
-              value: "us-west-2"
+              value: "us-east-1"
           volumeMounts:
             - { name: models, mountPath: /models }
           resources:

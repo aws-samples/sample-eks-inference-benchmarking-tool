@@ -1,7 +1,7 @@
 #
 # Kimi K3 at MXFP4 across two p6-b200.48xlarge nodes as a StatefulSet, 16 GPUs, tensor parallel 8 inside each node and pipeline parallel 2 between them. Use this when the model has to span two nodes.
 #
-# SUBSTITUTE: 012345678901 and us-east-1 in the image reference, and WEIGHTS_BUCKET.
+# SUBSTITUTE: 012345678901 and us-east-1 in the image reference, and WEIGHTS_BUCKET and AWS_REGION in the init container.
 ---
 apiVersion: v1
 kind: Service
@@ -74,7 +74,7 @@ spec:
               fi
 
               aws s3 sync "s3://${WEIGHTS_BUCKET}/${WEIGHTS_PREFIX}/" /models/kimi-k3-mxfp4/ \
-                --region us-west-2 --only-show-errors
+                --region "${AWS_REGION}" --only-show-errors
               echo "sync done  $(date -u)"
               SZ=$(du -s --block-size=1G /models/kimi-k3-mxfp4 | cut -f1)
               echo "staged ${SZ} GiB"
@@ -83,9 +83,11 @@ spec:
             - name: MIN_FREE_GIB
               value: "1500"
             - name: WEIGHTS_BUCKET
-              value: "kimi-k3-mxfp4-weights"
+              value: SUBSTITUTE-weights-bucket
             - name: WEIGHTS_PREFIX
               value: "kimi-k3-mxfp4"
+            - name: AWS_REGION
+              value: "us-east-1"
           volumeMounts:
             - { name: models, mountPath: /models }
           resources:

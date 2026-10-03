@@ -12,6 +12,10 @@ if grep -Eq '^[[:space:]]*image:[[:space:]].*012345678901' "$MANIFEST"; then
   echo "FATAL: $MANIFEST still contains placeholder ECR account 012345678901; replace the image reference before deploying." >&2
   exit 1
 fi
+if grep -q 'SUBSTITUTE-weights-bucket' "$MANIFEST"; then
+  echo "FATAL: $MANIFEST still contains the placeholder weights bucket; set WEIGHTS_BUCKET and AWS_REGION first." >&2
+  exit 1
+fi
 
 echo "==> Deploying the DSpark Kimi K3 B300 server"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f "$MANIFEST"
