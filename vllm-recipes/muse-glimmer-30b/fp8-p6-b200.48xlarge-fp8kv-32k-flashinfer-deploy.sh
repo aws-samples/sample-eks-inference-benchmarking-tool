@@ -2,10 +2,20 @@
 set -euo pipefail
 : "${EKS_CLUSTER_NAME:?Set EKS_CLUSTER_NAME before running this script}"
 : "${NAMESPACE:?Set NAMESPACE before running this script}"
+: "${WEIGHTS_BUCKET:?Set WEIGHTS_BUCKET before running this script}"
+: "${WEIGHTS_REGION:?Set WEIGHTS_REGION before running this script}"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-# Deploy the Muse-Glimmer 30B server.
+# Apply the muse-glimmer-30b-bench ServiceAccount the server runs as.
+echo "==> Applying ServiceAccount muse-glimmer-30b-bench"
+kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" create serviceaccount muse-glimmer-30b-bench \
+  --dry-run=client -o yaml \
+  | kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f -
+# Deploy the Muse-Glimmer 30B server with the weights bucket and its region filled in.
 echo "==> Deploying Muse-Glimmer 30B FP8 on p6-b200.48xlarge"
-kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f "$SCRIPT_DIR/fp8-p6-b200.48xlarge-fp8kv-32k-flashinfer.yaml"
+sed -e "s|value: SUBSTITUTE-weights-bucket|value: ${WEIGHTS_BUCKET}|" \
+  -e "/name: AWS_REGION/{n;s|value: .*|value: \"${WEIGHTS_REGION}\"|;}" \
+  "$SCRIPT_DIR/fp8-p6-b200.48xlarge-fp8kv-32k-flashinfer.yaml" \
+  | kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f -
 # Wait for the weights to stage and the server to start.
 echo "==> Waiting for the Muse-Glimmer 30B server"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" rollout status \

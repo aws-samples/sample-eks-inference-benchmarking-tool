@@ -39,8 +39,6 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
 ## Quickstart
 
-Skip step 4 when an earlier run already put the checkpoint in S3. Run step 5 either way.
-
 1. Set environment variables.
    ```bash
    export AWS_REGION=<your-cluster-region>
@@ -58,46 +56,19 @@ Skip step 4 when an earlier run already put the checkpoint in S3. Run step 5 eit
    ./scripts/install-prerequisites.sh
    ```
 
-3. Create the `nemotron-3-ultra-bench` ServiceAccount and annotate it with the IRSA role.
+3. Stage the published checkpoint from Hugging Face to S3; skip this when an earlier run already did.
    ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create serviceaccount nemotron-3-ultra-bench \
-       --dry-run=client -o yaml | kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f -
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" annotate serviceaccount nemotron-3-ultra-bench \
-       eks.amazonaws.com/role-arn="$NEMOTRON_S3_ROLE_ARN" --overwrite
-   ```
-
-4. Stage the published checkpoint from Hugging Face to S3; the Job fails on a shard-count or size mismatch.
-   ```bash
-   sed -e "s|value: SUBSTITUTE-weights-bucket|value: ${WEIGHTS_BUCKET}|" \
-       -e "/name: AWS_REGION/{n;s|value: .*|value: ${WEIGHTS_REGION}|;}" \
-       model-jobs/nemotron-3-ultra/nvfp4-model-download.yaml \
-     | kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f -
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-       --for=condition=complete job/nemotron-3-ultra-nvfp4-hf-to-s3 --timeout=24h
-   ```
-
-5. Confirm the checkpoint in S3 has 113 safetensors shards.
-   ```bash
-   aws s3 ls "s3://${WEIGHTS_BUCKET}/nemotron-3-ultra-nvfp4/" --region "$WEIGHTS_REGION" \
-       | grep -c '\.safetensors$'
+   ./model-jobs/nemotron-3-ultra/nvfp4-model-download.sh
    ```
 
 ## Throughput test
 
-1. Set the weights bucket and its region in the recipe.
-   ```bash
-   sed -i.bak -e "s|SUBSTITUTE-weights-bucket|${WEIGHTS_BUCKET}|" \
-       -e "/name: AWS_REGION/{n;s|value: .*|value: \"${WEIGHTS_REGION}\"|;}" \
-       vllm-recipes/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-flashinfer.yaml \
-     && rm vllm-recipes/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-flashinfer.yaml.bak
-   ```
-
-2. Deploy the server; the script fails unless the engine reports `FLASHINFER`.
+1. Deploy the server; the script fails unless the engine reports `FLASHINFER`.
    ```bash
    ./vllm-recipes/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-flashinfer-deploy.sh
    ```
 
-3. Generate the accuracy gate (.JSON) that the benchmark checks against.
+2. Generate the accuracy gate (.JSON) that the benchmark checks against.
    ```bash
    eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -108,7 +79,7 @@ Skip step 4 when an earlier run already put the checkpoint in S3. Run step 5 eit
        --out-dir docs/results
    ```
 
-4. Dry-run the in-cluster benchmark, which renders the Job without creating it.
+3. Dry-run the in-cluster benchmark, which renders the Job without creating it.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -122,7 +93,7 @@ Skip step 4 when an earlier run already put the checkpoint in S3. Run step 5 eit
        --dry-run
    ```
 
-5. Benchmark in-cluster.
+4. Benchmark in-cluster.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -146,7 +117,7 @@ aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-n
     --region "$AWS_REGION" --scaling-config minSize=0,maxSize=1,desiredSize=0
 ```
 
-Scale the benchmark-client node group to zero too if you created it for this run. The checkpoint in S3 survives, so a later run skips Quickstart step 4.
+Scale the benchmark-client node group to zero too if you created it for this run. The checkpoint in S3 survives, so a later run skips Quickstart step 3.
 
 ---
 
@@ -167,5 +138,5 @@ Scale the benchmark-client node group to zero too if you created it for this run
 - **Weights come from S3 into an `emptyDir` on the NVMe array.** A pod restart re-downloads ~328 GiB. The `fetch-weights` init container fails unless `/models` has 400 GiB free, then fails unless it finds 113 shards and at least 300 GiB. Its log prints `df -h /models`; confirm that is the NVMe array.
 - **`progressDeadlineSeconds: 7200`** The S3 sync and load outlast the 600-second default. The deploy script waits the same 7,200 seconds, and the startup probe allows 3,600 seconds once the init container finishes.
 - **`serviceAccountName: nemotron-3-ultra-bench`** Supplies the pod-scoped S3 identity through IRSA. The staging Job runs as the same ServiceAccount, so the role also needs write access to the prefix while staging. Its trust policy must name each namespace that runs an arm.
-- **`WEIGHTS_BUCKET` and `AWS_REGION` are placeholders in git.** The throughput step (step one) fills in the values. Quickstart step 4 pipes the Job through `sed`, so its file is never edited.
+- **`WEIGHTS_BUCKET` and `AWS_REGION` are placeholders in git.** The staging and deploy scripts fill them in from `WEIGHTS_BUCKET` and `WEIGHTS_REGION` as they apply each manifest, so the files in git stay untouched.
 - **The staging Job tolerates the GPU taint and requests 350 GiB of ephemeral storage.** On most clusters that places it on the GPU node's NVMe array. It fails on a shard-count, partial-file or size mismatch, so a completed Job means all 113 shards reached S3.

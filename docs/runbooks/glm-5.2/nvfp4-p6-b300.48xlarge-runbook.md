@@ -35,7 +35,6 @@ Derived from the 1,380,864-token pool this server actually allocated, divided by
 Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
 
 - [Create a `p6-b300.48xlarge` node group](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml)
-- Confirm node `ip-10-0-0-1.ec2.internal` exists
 
 ## Quickstart
 
@@ -47,6 +46,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-glm-52-nvfp4-p6-b300-48xlarge
    export INSTANCE_TYPE=p6-b300.48xlarge
+   export GPU_NODE=<your-p6-b300-node-name>
    ```
 
 2. Configure the EKS context and namespace, install the NVIDIA Kubernetes device plugin, and create the `hf-token` secret.
@@ -55,7 +55,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-3. Deploy and validate the model server. The init container downloads the published Hugging Face NVFP4 checkpoint directly into the pod's 800 GiB `emptyDir`; no local quantization step is required. Pod replacement deletes the checkpoint and cache, so the replacement pod downloads them again.
+3. Deploy and validate the model server, pinned to `GPU_NODE`.
 
    ```bash
    ./vllm-recipes/glm-5.2/nvfp4-p6-b300.48xlarge-deploy.sh
@@ -113,19 +113,15 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/glm
 
 ## Settings
 
-**`kubernetes.io/hostname: ip-10-0-0-1.ec2.internal`**
-
-Pinned to one node. The pin does not preserve model data.
-
+- **`kubernetes.io/hostname`** Pins the pod to one node; the deploy script fills in `GPU_NODE` as it applies the manifest, so the file in git stays untouched. The pin does not preserve model data.
 - **`fetch-weights` init container** Downloads `nvidia/GLM-5.2-NVFP4` from Hugging Face into `/weights/glm-5.2-nvfp4`. It verifies at least 500 GiB is free, installs `huggingface_hub==1.28.0`, uses `/weights/.hf-cache`, enables high-performance Xet with `HF_XET_HIGH_PERFORMANCE=1`, and verifies that every shard is complete before vLLM starts.
 
 - **`weights: emptyDir: { sizeLimit: 800Gi }`** Stores both the checkpoint and Hugging Face cache in pod-local storage shared by the init container and vLLM. Kubernetes deletes this volume with the pod, so replacement or scale-to-zero discards all downloaded data and the new pod downloads it again. This recipe does not use a PVC and does not preserve downloads across pods; two observed cold downloads took about 2h15m each.
 
 - **No local quantization step** The published checkpoint already contains Model Optimizer NVFP4 weights, and vLLM auto-detects that metadata without a `--quantization` flag.
 
-- **`ARGS=(`** Build argv as an ARRAY. A '#' comment cannot follow a '\' line continuation: bash ends the command there and silently discards every remaining flag, and the server still starts successfully. That defect served a p6-b300 run at the wrong KV precision with both parsers missing.
+- **`ARGS=(`** Build argv as an ARRAY. A '#' comment cannot follow a '\' line continuation: bash ends the command there and silently discards every remaining flag, and the server still starts successfully.
 
-- **No `--quantization` flag** NVFP4 is declared in the checkpoint (`quant_method=modelopt`), so vLLM auto-detects the published weight format.
 
 - **`--max-cudagraph-capture-size 512`** MUST be >= --max-num-seqs. A batch wider than the largest captured CUDA graph falls back to eager execution, which costs most of the graph speedup. Setting it below --max-num-seqs is the single most expensive misconfiguration in this recipe.
 

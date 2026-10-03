@@ -1,6 +1,6 @@
 # Llama 4 Maverick 17B 128E Instruct at FP8 on one p6-b200.48xlarge, 8 GPUs, tensor parallel 8,
 # FP8 KV cache, 32k context, FLASH_ATTN attention backend.
-# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION, in both containers.
+# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION in the init container.
 ---
 # On B200, FLASH_ATTN selects FlashAttention 4, which supports an FP8 KV cache at head size 128.
 apiVersion: apps/v1

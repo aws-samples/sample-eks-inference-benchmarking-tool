@@ -50,35 +50,18 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-3. Confirm the FSx claim and the sitecustomize ConfigMap exist in the namespace.
-
+3. Quantize the checkpoint onto the claim at `/models/quantized/gemma-4-31b-it-fp8` on all four GPUs; skip this when an earlier run already did.
    ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get pvc fsx-pvc
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get configmap vllm-sitecustomize
+   ./model-jobs/gemma4-31b/fp8-model-quantize.sh
    ```
 
-4. Quantize the checkpoint onto the claim at `/models/quantized/gemma-4-31b-it-fp8`, on all four GPUs; skip this when an earlier run already did.
-
-   ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create configmap quantizer-src \
-       --from-file=app/quantize/src/quantize.py \
-       --from-file=app/quantize/src/config.py \
-       --from-file=app/quantize/src/fix_amax.py \
-       --from-file=app/quantize/src/verify_checkpoint.py
-   sed -e "s|012345678901.dkr.ecr.us-east-1|${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}|" \
-       model-jobs/gemma4-31b/fp8-model-quantize.yaml \
-     | kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f -
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-       --for=condition=complete job/quantize-gemma4-31b-fp8 --timeout=3h
-   ```
-
-5. Deploy and validate the model server. The server mounts `/models/quantized/gemma-4-31b-it-fp8` from `fsx-pvc`; update `claimName` first if your weights use a differently named PVC. The recipe uses `Recreate`, so reapplying it causes a gap with no server rather than overlapping GPU claims.
+4. Deploy and validate the model server.
 
    ```bash
    ./vllm-recipes/gemma4-31b/fp8-g7.24xlarge-deploy.sh
    ```
 
-6. Generate the accuracy gate (.JSON) required for the next step.
+5. Generate the accuracy gate (.JSON) required for the next step.
 
    ```bash
    eks-bench capture-reference \
@@ -89,7 +72,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --out-dir docs/results
    ```
 
-7. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
+6. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
 
    ```bash
    eks-bench measure \
@@ -103,7 +86,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-8. Benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
+7. Benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
 
    ```bash
    eks-bench measure \
@@ -116,7 +99,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --reps 3 --out-dir docs/results
    ```
 
-9. Dry-run the optional NVIDIA AIPerf cross-client calibration with identical arguments.
+8. Dry-run the optional NVIDIA AIPerf cross-client calibration with identical arguments.
 
    ```bash
    eks-bench measure \
@@ -130,7 +113,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-10. Run the optional NVIDIA AIPerf cross-client calibration. It uses the same server, profile, and canonical levels and requires the AIPerf extras.
+9. Run the optional NVIDIA AIPerf cross-client calibration. It uses the same server, profile, and canonical levels and requires the AIPerf extras.
 
    ```bash
    eks-bench measure \
@@ -143,7 +126,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --reps 3 --out-dir docs/results
    ```
 
-11. Dry-run the optional interactive capacity search with identical arguments. The full run can take several hours for 3 reps.
+10. Dry-run the optional interactive capacity search with identical arguments. The full run can take several hours for 3 reps.
 
    ```bash
    eks-bench measure \
@@ -157,7 +140,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-12. Run the optional interactive capacity search.
+11. Run the optional interactive capacity search.
 
    ```bash
    eks-bench measure \
@@ -180,7 +163,8 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/gem
 
 ## Settings
 
-- **`--ttft-target` and `--tpot-target`** Step 12 runs at the shipped targets, TTFT p99 500 ms and TPOT p99 50 ms. An overridden value is appended to the result filename, so a run at different targets cannot overwrite one at the defaults. Read [Trusting the open-loop verdict](../../guides/REFERENCE.md#trusting-the-open-loop-verdict) before quoting a rate as sustainable.
+- **`strategy: Recreate`** Stops the old pod before starting its replacement, so a redeploy never overlaps GPU claims.
+- **`--ttft-target` and `--tpot-target`** Step 11 runs at the shipped targets, TTFT p99 500 ms and TPOT p99 50 ms. An overridden value is appended to the result filename, so a run at different targets cannot overwrite one at the defaults. Read [Trusting the open-loop verdict](../../guides/REFERENCE.md#trusting-the-open-loop-verdict) before quoting a rate as sustainable.
 - **`Prefix cache hit`** Check this line in the result file's provenance block: anything other than 0% means prefill was skipped and throughput is inflated. On a pod that has been up for days the line rotates out of the log window and records as `(not found in server log)`, which is not the same as 0%.
 - **`strategy:`** This pod claims all 4 GPUs and at one replica maxUnavailable rounds to 0, so Kubernetes waits on a new pod that can never schedule while the old one holds every GPU. Any edit to this recipe would deadlock.
 
@@ -188,7 +172,8 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/gem
 
 - **`- --gpu-memory-utilization=0.90`** Left at 0.90 rather than tuned for this precision, so precision is the only variable in a comparison. No FP8 KV cache: vLLM 0.21 with Gemma 4 raises the q_scale assertion when the KV cache is quantized.
 
-- **`- --enable-chunked-prefill`** No --enable-prefix-caching: the corpus protocols repeat a five-prompt set, so a warm cache skips prefill and measures caching rather than serving. Turn it on for a serving deployment, off for a measured one.
+- **`--no-enable-prefix-caching`** Turns off prefix caching, which vLLM enables by default. The corpus protocols repeat a five-prompt set, so a warm cache skips prefill and measures caching rather than serving.
+- **`--enable-chunked-prefill`** Breaks long prefills into chunks so they share a step with decodes.
 
 - **`- --port=8000`** No --enforce-eager: CUDA graphs on (Blackwell sm_120, FlashInfer cubins).
 - **`nvidia.com/gpu: 4`** g7.24xlarge = 4x NVIDIA RTX PRO 4500 Blackwell, 32GB each (sm_120)

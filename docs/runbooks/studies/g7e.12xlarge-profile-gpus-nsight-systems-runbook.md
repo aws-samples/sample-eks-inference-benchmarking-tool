@@ -13,47 +13,21 @@ Complete the following before you start. `nsys` must be the parent process of `v
 
 ## Quickstart
 
-This capture runs the public Qwen2.5-7B model in BF16 on g7e.12xlarge at TP=2. It does not require a Hugging Face token.
+This capture runs the public Qwen2.5-7B model in BF16 on g7e.12xlarge at TP=2.
 
 1. Set environment variables.
 
    ```bash
-   export AWS_REGION="us-east-1"
-   export EKS_CLUSTER_NAME="<your-cluster-name>"
-   export NAMESPACE="vb-nsys-qwen25-7b-g7e-12xlarge"
-   export INSTANCE_TYPE="g7e.12xlarge"
+   export AWS_REGION=<your-cluster-region>
+   export EKS_CLUSTER_NAME=<your-cluster-name>
+   export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
+   export NAMESPACE=vb-nsys-qwen25-7b-g7e-12xlarge
+   export INSTANCE_TYPE=g7e.12xlarge
    ```
 
-2. Configure a kubeconfig context whose alias matches the cluster name, create the workload namespace idempotently, install NVIDIA device-plugin chart 0.20.0, wait for matching nodes to become Ready, and print the GPUs advertised by the plugin.
-
+2. Configure the EKS context and namespace, install the NVIDIA Kubernetes device plugin, and create the `hf-token` secret.
    ```bash
-   aws eks update-kubeconfig \
-     --name "$EKS_CLUSTER_NAME" \
-     --region "$AWS_REGION" \
-     --alias "$EKS_CLUSTER_NAME"
-
-   kubectl --context "$EKS_CLUSTER_NAME" create namespace "$NAMESPACE" \
-     --dry-run=client -o yaml \
-     | kubectl --context "$EKS_CLUSTER_NAME" apply -f -
-
-   helm repo add nvdp https://nvidia.github.io/k8s-device-plugin --force-update
-   helm repo update nvdp
-   helm upgrade --install nvdp nvdp/nvidia-device-plugin \
-     --version 0.20.0 \
-     --namespace nvidia-device-plugin \
-     --create-namespace \
-     --kube-context "$EKS_CLUSTER_NAME" \
-     --atomic \
-     --wait \
-     --timeout 5m
-
-   kubectl --context "$EKS_CLUSTER_NAME" wait node \
-     -l "node.kubernetes.io/instance-type=$INSTANCE_TYPE" \
-     --for=condition=Ready \
-     --timeout=5m
-   kubectl --context "$EKS_CLUSTER_NAME" get nodes \
-     -l "node.kubernetes.io/instance-type=$INSTANCE_TYPE" \
-     -o custom-columns='NAME:.metadata.name,GPUS:.status.allocatable.nvidia\.com/gpu'
+   ./scripts/install-prerequisites.sh
    ```
 
 3. Build the nsys-capable image once with Kaniko. Create user-edited copy `my-nsys-image-build.yaml`, replace its ConfigMap Dockerfile with the repository's `app/vllm-nsys/Dockerfile`, and set both the ECR destination and cache repository. The commands below make those edits only in the copy.
@@ -232,6 +206,7 @@ Knobs: `TP`, `PORT`, `NSYS_DELAY` (default 180 s, must exceed model load and war
 
 ## Settings
 
+- **No Hugging Face token is used.** The model is public. `install-prerequisites.sh` still requires `HUGGING_FACE_HUB_TOKEN` and creates an `hf-token` secret that nothing here mounts.
 - **Do not `exec` the `nsys` command.** `nsys` stops the target when the capture closes, and with `exec` the shell is gone, so nothing runs afterwards to preserve the trace. One attempt lost the `.nsys-rep` when the kubelet reclaimed the `emptyDir` on container exit.
 - **Do not pipe `nsys stats` into `head`.** SIGPIPE plus `pipefail` kills the script before the remaining reports are written.
 - **Keep TP at 2 or more.** The manifest pins TP=2 so the collective exists to be measured.

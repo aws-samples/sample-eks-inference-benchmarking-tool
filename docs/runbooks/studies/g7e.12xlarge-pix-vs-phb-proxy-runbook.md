@@ -20,7 +20,7 @@ The retained manifests are cleaned, functionally equivalent versions of the exec
 
 ## Before you begin
 
-1. Run from the repository root with AWS, `kubectl`, Helm, Python 3, and `sha256sum` available. Setup step 1 creates `$NAMESPACE` idempotently and installs the pinned NVIDIA device plugin. No HF token is needed because both study checkpoints are public.
+1. Run from the repository root with AWS, `kubectl`, Helm, Python 3, and `sha256sum` available. Setup step 1 runs `scripts/install-prerequisites.sh`, which creates `$NAMESPACE`, installs the pinned NVIDIA device plugin and creates an `hf-token` secret. Both study checkpoints are public, so any value works for `HUGGING_FACE_HUB_TOKEN`.
 2. Use an idle GPU node. Do not repurpose a node that is running another workload.
 3. The eight executed manifests pin `kubernetes.io/hostname` to the placeholder `ip-10-0-0-1.us-east-1.compute.internal`. Every arm must land on the **same** physical node, or the comparison measures two different hosts rather than two transports. Substitute your own node name identically across all eight files before applying anything, and treat them as one versioned set. The namespace is not pinned in the manifests; it comes from `-n "$NAMESPACE"`.
 4. The storage manifest creates `g7e12-switch-model-storage`. 
@@ -39,7 +39,9 @@ pip install -e '.[tokenizer]'
 
 export AWS_REGION=<your-cluster-region>
 export EKS_CLUSTER_NAME=<your-cluster-name>
+export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
 export NAMESPACE=vb-g7e-12xlarge-switch-study
+export INSTANCE_TYPE=g7e.12xlarge
 export GPU_NODE=<your-gpu-node-name>
 export OTHER_PROTECTED_GPU_NODE=<your-second-gpu-node-name>
 export CLIENT_NODEGROUP=g7e12-switch-client-ondemand
@@ -47,25 +49,7 @@ export CLIENT_ROLE=g7e12-switch-client
 export ARTIFACT_ROOT=artifacts/g7e12-switch
 mkdir -p "$ARTIFACT_ROOT"
 
-aws eks update-kubeconfig \
-  --name "$EKS_CLUSTER_NAME" \
-  --region "$AWS_REGION" \
-  --alias "$EKS_CLUSTER_NAME"
-
-kubectl --context "$EKS_CLUSTER_NAME" create namespace "$NAMESPACE" \
-  --dry-run=client -o yaml \
-  | kubectl --context "$EKS_CLUSTER_NAME" apply -f -
-
-helm repo add nvdp https://nvidia.github.io/k8s-device-plugin --force-update
-helm repo update nvdp
-helm upgrade --install nvdp nvdp/nvidia-device-plugin \
-  --version 0.20.0 \
-  --namespace nvidia-device-plugin \
-  --create-namespace \
-  --kube-context "$EKS_CLUSTER_NAME" \
-  --atomic \
-  --wait \
-  --timeout 5m
+./scripts/install-prerequisites.sh
 
 kubectl --context "$EKS_CLUSTER_NAME" wait node "$GPU_NODE" \
   --for=condition=Ready \

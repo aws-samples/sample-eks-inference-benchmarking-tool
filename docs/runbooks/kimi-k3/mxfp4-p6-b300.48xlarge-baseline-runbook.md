@@ -24,18 +24,9 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
 ## Before you begin
 
 - [Create a `p6-b300.48xlarge` node group](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml)
-- [Install the NVIDIA device plugin](../../../README.md)
+- [Create an ECR repository in your cluster's region](https://docs.aws.amazon.com/AmazonECR/latest/userguide/repository-create.html) for the custom vLLM image
+- [Build and push the custom vLLM image as `vllm-kimi-k3-efa:nccl2.29.7-efa1.49.0`](../../../k8s/examples/job-build-image-kaniko.yaml) (builds in-cluster on a CPU node)
 - [Create an IAM role configured for EKS IRSA with read access to the S3 checkpoint prefix](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) (and write access, if the checkpoint is not in S3 yet)
-
-## Setup
-
-This recipe uses a custom vLLM image and carries a placeholder ECR account and region in `image:`. The image includes matched NCCL and `aws-ofi-nccl` versions; the EFA plugin is not required for this single-node deployment.
-
-1. [Create an ECR repository](https://docs.aws.amazon.com/AmazonECR/latest/userguide/repository-create.html) for the image.
-
-2. Build and push the custom vLLM image. [`job-build-image-kaniko.yaml`](../../../k8s/examples/job-build-image-kaniko.yaml) can build it in-cluster on a CPU node when local Docker is unavailable.
-
-3. Replace account `012345678901` and region `us-east-1` in the recipe's `image:` reference with the image you pushed.
 
 ## Quickstart
 
@@ -43,6 +34,7 @@ This recipe uses a custom vLLM image and carries a placeholder ECR account and r
 
    ```bash
    export AWS_REGION=<your-cluster-region>
+   export AWS_ACCOUNT_ID=<your-account-id>
    export EKS_CLUSTER_NAME=<your-cluster-name>
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-kimi-k3-mxfp4-p6-b300-baseline
@@ -58,45 +50,17 @@ This recipe uses a custom vLLM image and carries a placeholder ECR account and r
    ./scripts/install-prerequisites.sh
    ```
 
-3. Idempotently create the namespace-local `kimi-k3-bench` ServiceAccount and annotate it for EKS IRSA.
-
+3. Stage the published checkpoint from Hugging Face to S3; a rerun skips files already there.
    ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create serviceaccount kimi-k3-bench --dry-run=client -o yaml | kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f -
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" annotate serviceaccount kimi-k3-bench eks.amazonaws.com/role-arn="$KIMI_S3_ROLE_ARN" --overwrite
+   ./model-jobs/kimi-k3/mxfp4-model-download.sh
    ```
 
-4. Stage the published checkpoint from Hugging Face to S3 once; skip this step when an earlier run already did.
-   ```bash
-   sed -e "s|value: SUBSTITUTE-weights-bucket|value: ${WEIGHTS_BUCKET}|" \
-       -e "/name: AWS_REGION/{n;s|value: .*|value: ${WEIGHTS_REGION}|;}" \
-       model-jobs/kimi-k3/mxfp4-model-download.yaml \
-     | kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f -
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-       --for=condition=complete job/kimi-k3-mxfp4-hf-to-s3 --timeout=24h
-   ```
-5. Confirm the namespace, Ready GPU node, created IRSA ServiceAccount, and checkpoint are available.
-
-   ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" get namespace "$NAMESPACE"
-   kubectl --context "$EKS_CLUSTER_NAME" get nodes -l node.kubernetes.io/instance-type=p6-b300.48xlarge
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get serviceaccount kimi-k3-bench
-   aws s3 ls "s3://${WEIGHTS_BUCKET}/kimi-k3-mxfp4/" --region "$WEIGHTS_REGION" | head
-   ```
-
-6. Set the weights bucket and its region in the recipe.
-   ```bash
-   sed -i.bak -e "s|SUBSTITUTE-weights-bucket|${WEIGHTS_BUCKET}|" \
-       -e "/name: AWS_REGION/{n;s|value: .*|value: \"${WEIGHTS_REGION}\"|;}" \
-       vllm-recipes/kimi-k3/mxfp4-p6-b300.48xlarge-baseline.yaml \
-     && rm vllm-recipes/kimi-k3/mxfp4-p6-b300.48xlarge-baseline.yaml.bak
-   ```
-7. Deploy and validate the server. The init container syncs the S3 checkpoint into pod-local `emptyDir` storage before vLLM starts; Kubernetes does not guarantee that storage is instance NVMe, and replacing the pod requires another sync. The helper waits for the Deployment, checks `/v1/models` from its `vllm` container, reads live cache evidence, and validates the manifest.
-
+4. Deploy and validate the server.
    ```bash
    ./vllm-recipes/kimi-k3/mxfp4-p6-b300.48xlarge-baseline-deploy.sh
    ```
 
-8. Generate the accuracy gate (.JSON) required for the next step.
+5. Generate the accuracy gate (.JSON) required for the next step.
 
    ```bash
    eks-bench capture-reference \
@@ -108,7 +72,7 @@ This recipe uses a custom vLLM image and carries a placeholder ECR account and r
        --out-dir docs/results
    ```
 
-9. Dry-run the exact in-cluster benchmark.
+6. Dry-run the exact in-cluster benchmark.
 
    ```bash
    eks-bench measure \
@@ -123,7 +87,7 @@ This recipe uses a custom vLLM image and carries a placeholder ECR account and r
        --dry-run
    ```
 
-10. Run the identical benchmark without `--dry-run`.
+7. Run the identical benchmark without `--dry-run`.
 
    ```bash
    eks-bench measure \
@@ -150,7 +114,8 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/kim
 - **`test "$SZ" -ge 1400`** Fails before model loading if the staged checkpoint is incomplete.
 - **`--max-model-len 32768`** Pins the served context length.
 - **`--max-cudagraph-capture-size 512`** Covers the configured scheduler ceiling.
-- **No `--enable-prefix-caching`** Keeps prefix caching disabled for this configuration.
+- **`--no-enable-prefix-caching`** Turns off prefix caching, which vLLM enables by default. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
 - **`memory: 3000Gi`** Constrains page-cache pressure inside the pod cgroup while leaving node headroom.
-- **`emptyDir: { sizeLimit: 2000Gi }`** Is pod-local ephemeral storage rooted wherever kubelet stores `emptyDir`; the free-space check does not prove NVMe placement.
-- **`WEIGHTS_BUCKET` and `AWS_REGION` are placeholders in git.** The bucket and region step above fills in the values. 
+- **`emptyDir: { sizeLimit: 2000Gi }`** Is pod-local ephemeral storage rooted wherever kubelet stores `emptyDir`; the free-space check does not prove NVMe placement. A replaced pod syncs the checkpoint again.
+- **`vllm-kimi-k3-efa:nccl2.29.7-efa1.49.0`** Carries matched NCCL and `aws-ofi-nccl` versions, recorded in the tag; this single-node recipe does not use EFA.
+- **The bucket, its region and the image registry are placeholders in git.** The staging and deploy scripts fill them in from `WEIGHTS_BUCKET`, `WEIGHTS_REGION`, `AWS_ACCOUNT_ID` and `AWS_REGION` as they apply each manifest, so the files in git stay untouched.

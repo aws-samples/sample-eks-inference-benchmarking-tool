@@ -1,6 +1,6 @@
 # Gemma 4 31B at FP8 with an FP8 KV cache on one p6-b200.48xlarge: eight single-GPU replicas,
 # 32k context, text-only, FlashInfer attention. Weights are staged from S3.
-# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION, in both containers.
+# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION in the init container.
 ---
 # --language-model-only disables multimodal inputs, which FlashInfer requires for this model,
 # and skips the vision encoder.

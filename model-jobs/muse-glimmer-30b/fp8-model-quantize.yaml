@@ -1,7 +1,7 @@
 #
 # Quantizes meta-models/Muse-Glimmer-30B to ModelOpt FP8 on the shared claim. Apply before the muse-glimmer-30b FP8 recipes.
 #
-# SUBSTITUTE: 012345678901, us-east-1, and fsx-pvc.
+# SUBSTITUTE: fsx-pvc.
 apiVersion: batch/v1
 kind: Job
 metadata:

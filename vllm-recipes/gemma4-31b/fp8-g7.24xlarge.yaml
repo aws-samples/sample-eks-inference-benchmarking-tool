@@ -36,6 +36,7 @@ spec:
                 --gpu-memory-utilization ${GPU_MEM_UTIL} \
                 --max-model-len ${MAX_MODEL_LEN} \
                 --max-num-seqs ${MAX_NUM_SEQS} \
+                --no-enable-prefix-caching \
                 --max-num-batched-tokens ${MAX_NUM_BATCHED_TOKENS} \
                 --enable-chunked-prefill \
                 --port 8000

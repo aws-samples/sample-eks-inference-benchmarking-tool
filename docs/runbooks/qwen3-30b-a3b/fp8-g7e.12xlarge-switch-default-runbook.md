@@ -39,8 +39,6 @@ Create the following before you start.
 
 ## Quickstart
 
-Skip step 4 when the checkpoint is already on the claim.
-
 1. Set environment variables, using the same `NAMESPACE` and `GPU_NODE` for both arms.
    ```bash
    export AWS_REGION=<your-cluster-region>
@@ -56,44 +54,19 @@ Skip step 4 when the checkpoint is already on the claim.
    ./scripts/install-prerequisites.sh
    ```
 
-3. Confirm the pinned node advertises two GPUs and runs no other GPU workload.
+3. Stage the checkpoint onto the `g7e12-switch-model-storage` claim from the pinned node.
    ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" get node "$GPU_NODE" \
-       -o 'custom-columns=NODE:.metadata.name,TYPE:.metadata.labels.node\.kubernetes\.io/instance-type,GPU:.status.allocatable.nvidia\.com/gpu'
-   kubectl --context "$EKS_CLUSTER_NAME" get pods -A --field-selector "spec.nodeName=$GPU_NODE" -o wide
-   ```
-
-4. Create the `g7e12-switch-model-storage` claim and stage the checkpoint onto it from the pinned node.
-   ```bash
-   sed "s|ip-10-0-0-1.us-east-1.compute.internal|${GPU_NODE}|" \
-       model-jobs/qwen3-30b-a3b/fp8-model-download.yaml \
-     | kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f -
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-       --for=condition=complete job/download-qwen3-30b-a3b-fp8 --timeout=7200s
-   ```
-
-5. Confirm the claim is bound and the download Job found all 7 shards.
-   ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-       --for=jsonpath='{.status.phase}'=Bound pvc/g7e12-switch-model-storage --timeout=2m
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs job/download-qwen3-30b-a3b-fp8 | grep 'shards:'
+   ./model-jobs/qwen3-30b-a3b/fp8-model-download.sh
    ```
 
 ## Throughput test
 
-1. Pin the recipe to your node.
-   ```bash
-   sed -i.bak "s|ip-10-0-0-1.us-east-1.compute.internal|${GPU_NODE}|" \
-       vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml \
-     && rm vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml.bak
-   ```
-
-2. Deploy and validate the server, which mounts the staged checkpoint at `/models/qwen3-30b-a3b-fp8`.
+1. Deploy and validate the server, which mounts the staged checkpoint at `/models/qwen3-30b-a3b-fp8`.
    ```bash
    ./vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default-deploy.sh
    ```
 
-3. Confirm no transport override is set and NCCL chose P2P; the P2P count must be non-zero, SHM zero.
+2. Confirm no transport override is set and NCCL chose P2P; the P2P count must be non-zero, SHM zero.
    ```bash
    SERVER_LOG=$(kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs \
        deployment/qwen3-30b-a3b-g7e12-switch-default -c vllm)
@@ -102,7 +75,7 @@ Skip step 4 when the checkpoint is already on the claim.
    grep -cE 'via SHM/' <<<"$SERVER_LOG"
    ```
 
-4. Generate the accuracy gate (.JSON) with thinking disabled.
+3. Generate the accuracy gate (.JSON) with thinking disabled.
    ```bash
    eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -114,7 +87,7 @@ Skip step 4 when the checkpoint is already on the claim.
        --out-dir docs/results
    ```
 
-5. Dry-run the in-cluster benchmark, which renders the Job without creating it.
+4. Dry-run the in-cluster benchmark, which renders the Job without creating it.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -130,7 +103,7 @@ Skip step 4 when the checkpoint is already on the claim.
        --dry-run
    ```
 
-6. Warm the server with one unrecorded repetition, written outside `docs/results`.
+5. Warm the server with one unrecorded repetition, written outside `docs/results`.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -144,7 +117,7 @@ Skip step 4 when the checkpoint is already on the claim.
        --out-dir /tmp/qwen3-30b-a3b-switch-warmup/fp8-switch-default
    ```
 
-7. Benchmark in-cluster.
+6. Benchmark in-cluster.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -164,7 +137,6 @@ Skip step 4 when the checkpoint is already on the claim.
 ```bash
 kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete \
     -f vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml --ignore-not-found
-git checkout -- vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml
 ```
 
 Once both arms are measured, delete the shared claim and scale the node groups to zero. Deleting the claim deletes its EBS volume and every checkpoint staged on it.
@@ -182,18 +154,18 @@ aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-n
 
 ## Settings
 
-- **No NCCL transport override.** The recipe sets neither `NCCL_P2P_LEVEL` nor `NCCL_P2P_DISABLE`, so NCCL picks the transport itself. This arm is the negative control for the `PIX` arm: on a switch-local pair it should select P2P without being told to. Throughput step 3 checks the server log for P2P channels and no SHM channels; do not measure an arm that fails it.
-- **Both arms pin the same physical node.** Use the same `GPU_NODE` in both runbooks. A Spot reclaim or replacement node has a new name and a new GPU pair; re-substitute both recipes and treat it as a different host.
-- **The hostname is a placeholder in git.** Throughput step 1 fills it in your working copy and Tear down restores it with `git checkout`; keep the real node name out of commits. Quickstart step 4 pipes the download manifest through `sed` instead, leaving that file untouched.
+- **No NCCL transport override.** The recipe sets neither `NCCL_P2P_LEVEL` nor `NCCL_P2P_DISABLE`, so NCCL picks the transport itself. This arm is the negative control for the `PIX` arm: on a switch-local pair it should select P2P without being told to. Throughput step 2 checks the server log for P2P channels and no SHM channels; do not measure an arm that fails it.
+- **Both arms pin the same physical node.** Use the same `GPU_NODE` in both runbooks. A Spot reclaim or replacement node has a new name and a new GPU pair; export its name as `GPU_NODE` and treat it as a different host.
+- **The hostname is a placeholder in git.** The staging and deploy scripts substitute `GPU_NODE` as they apply each manifest, so the files in git stay untouched.
 - **`--config fp8-switch-default`** The study's config tag, so the result lands in `qwen3-30b-a3b-fp8-g7e.12xlarge-fp8-switch-default-corpus-legacy_corpus.txt` beside the `fp8-switch-pix` arm.
 - **The forced-SHM arm is not a recipe.** [`g7e12-switch-qwen3-30b-a3b-shm.yaml`](../../../experiments/g7e12-switch-qwen3-30b-a3b-shm.yaml) sets `NCCL_P2P_DISABLE=1` as a host-copy proxy and lives in `experiments/`. For the full three-arm study with its NCCL matrix, see the [PIX versus PHB-proxy study runbook](../studies/g7e.12xlarge-pix-vs-phb-proxy-runbook.md).
 - **Two GPUs on purpose.** The checkpoint fits one card. TP2 with `--enable-expert-parallel` splits attention heads and places whole experts across the switch-local pair, and `--all2all-backend allgather_reducescatter` exchanges tokens between them, so every layer crosses the PCIe switch. That traffic is what the transport pair compares.
 - **`--no-enable-prefix-caching`** The recipe passes it. `legacy_corpus` repeats a fixed prompt set, so a warm cache would measure cache hits rather than prefill. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
 - **`--kv-cache-dtype bfloat16`** A 16-bit KV cache keeps KV quantization out of the comparison.
 - **`--async-scheduling` and `--enable-chunked-prefill`** On in both arms and held constant between them.
-- **`NCCL_DEBUG=INFO` with `NCCL_DEBUG_SUBSYS=INIT,GRAPH,P2P,NET`** Makes NCCL log each channel's transport, which Throughput step 3 and the provenance `NCCL transport` line read. The container also prints `nvidia-smi topo -m` at start; the GPU0 to GPU1 cell should read `PIX`.
+- **`NCCL_DEBUG=INFO` with `NCCL_DEBUG_SUBSYS=INIT,GRAPH,P2P,NET`** Makes NCCL log each channel's transport, which Throughput step 2 and the provenance `NCCL transport` line read. The container also prints `nvidia-smi topo -m` at start; the GPU0 to GPU1 cell should read `PIX`.
 - **`CUDA_DEVICE_ORDER=PCI_BUS_ID`** Keeps CUDA device numbering in the same order as `nvidia-smi`.
-- **Thinking is disabled for the accuracy gate.** Qwen3 is hybrid-thinking, and with thinking on the gate's maths problems spend their budget on `<think>` and truncate. Throughput step 4 passes `--thinking off` to `capture-reference`; `measure` reads the mode back from the stored reference and rejects a `--thinking` flag of its own.
+- **Thinking is disabled for the accuracy gate.** Qwen3 is hybrid-thinking, and with thinking on the gate's maths problems spend their budget on `<think>` and truncate. Throughput step 3 passes `--thinking off` to `capture-reference`; `measure` reads the mode back from the stored reference and rejects a `--thinking` flag of its own.
 - **Benchmark requests carry no thinking override.** `legacy_corpus` posts chat requests capped at 150 output tokens, so a reasoning trace is truncated by the cap, as the protocol lock notes. Both arms share this.
 - **One unrecorded warmup, then five recorded repetitions.** This is the study's protocol. The warmup skips the accuracy gate, latency pass and provenance, and writes outside `docs/results` so it is never mistaken for a result.
 - **`--pod` names the server pod.** `measure` reads the image, KV pool and NCCL log from it. The two arms share the namespace, so name the pod explicitly.

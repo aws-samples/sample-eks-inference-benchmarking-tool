@@ -3,6 +3,9 @@ set -euo pipefail
 : "${EKS_CLUSTER_NAME:?Set EKS_CLUSTER_NAME before running this script}"
 : "${NAMESPACE:?Set NAMESPACE before running this script}"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# Confirm the vllm-sitecustomize ConfigMap the server mounts is present.
+echo "==> Checking ConfigMap vllm-sitecustomize"
+kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" get configmap vllm-sitecustomize
 # Deploy the Gemma 4 31B server.
 echo "==> Deploying Gemma 4 31B FP8 on g7.24xlarge"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f "$SCRIPT_DIR/fp8-g7.24xlarge.yaml"

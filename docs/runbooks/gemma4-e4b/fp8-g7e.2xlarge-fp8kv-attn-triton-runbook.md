@@ -27,6 +27,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
 - [Create a `g7e.2xlarge` node group](../../../k8s/examples/eksctl-nodegroup-g7e-2xl-spot.yaml) (give it every subnet in your FSx filesystem's availability zone)
 - [Create a `g7.2xlarge` node group for quantization](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (only if the checkpoint is not on the claim yet)
+- [Build and push the quantizer image](../../../k8s/examples/README.md#job-quantize-modelyaml) (only if the checkpoint is not on the claim yet)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
 - A node with more than 8 allocatable CPU for the benchmark client, which is not the GPU node (an 8 vCPU node offers 7910m, so the Job stays Pending)
 - [Export the checkpoint to S3](../../../model-jobs/gemma4-e4b/fp8-model-export.yaml) (only when the claim is in a region the checkpoint was not quantized in)
@@ -34,11 +35,10 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
 ## Quickstart
 
-The checkpoint outlives the Job that produced it, so skip step 4 when an earlier run already wrote it to the claim. Run step 5 either way.
-
 1. Set environment variables.
    ```bash
    export AWS_REGION=<your-cluster-region>
+   export AWS_ACCOUNT_ID=<your-account-id>
    export EKS_CLUSTER_NAME=<your-cluster-name>
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-gemma4-e4b-fp8kv-triton-g7e-2xlarge
@@ -50,32 +50,9 @@ The checkpoint outlives the Job that produced it, so skip step 4 when an earlier
    ./scripts/install-prerequisites.sh
    ```
 
-3. Confirm the claim is bound.
+3. Quantize the checkpoint onto the claim at `/models/quantized/gemma-4-E4B-it-fp8` on one g7.2xlarge GPU, and re-verify it; skip this when an earlier run already did.
    ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-       --for=jsonpath='{.status.phase}'=Bound pvc/fsx-pvc --timeout=2m
-   ```
-
-4. Quantize the checkpoint to `/models/quantized/gemma-4-E4B-it-fp8`, which takes about five minutes on the GPU.
-   ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create configmap quantizer-src \
-       --from-file=app/quantize/src/quantize.py \
-       --from-file=app/quantize/src/config.py \
-       --from-file=app/quantize/src/fix_amax.py \
-       --from-file=app/quantize/src/verify_checkpoint.py
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-jobs/gemma4-e4b/fp8-model-quantize.yaml
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-       --for=condition=complete job/quantize-gemma4-e4b-fp8 --timeout=30m
-   ```
-
-5. Confirm the checkpoint is really FP8; expect about 11 GiB, and a failed Job names each problem.
-   ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create configmap checkpoint-verifier \
-       --from-file=verify_checkpoint.py=app/quantize/src/verify_checkpoint.py
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-jobs/gemma4-e4b/fp8-model-verify.yaml
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-       --for=condition=complete job/verify-checkpoint --timeout=5m
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs job/verify-checkpoint
+   ./model-jobs/gemma4-e4b/fp8-model-quantize.sh
    ```
 
 ## Throughput test

@@ -1,6 +1,8 @@
 # Model jobs
 
-Jobs that put a checkpoint on a shared PVC, one directory per model. Apply the one your recipe needs before deploying it, once per filesystem.
+Jobs that stage a checkpoint on a shared claim or in S3, one directory per model. Run the one your recipe needs before deploying it, once per filesystem or bucket.
+
+Each Job a runbook uses has a script beside it with the same name, such as `fp8-model-download.sh` for `fp8-model-download.yaml`. The script fills in the Job's placeholders from the variables the runbook exports, applies it, waits for it, and fails unless the checkpoint it staged passes a check.
 
 A download stages weights that are already published. A quantize job produces a checkpoint that is not published, so it has no repository id and a recipe can only serve it by path. Recipes do not do either: each waits for a complete checkpoint to appear and starts serving when it does, so staging is a separate step you run first and reuse across every recipe that shares a model.
 

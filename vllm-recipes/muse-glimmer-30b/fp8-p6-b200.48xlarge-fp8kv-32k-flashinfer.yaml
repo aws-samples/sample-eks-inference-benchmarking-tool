@@ -1,6 +1,6 @@
 # Muse-Glimmer-30B at FP8 with an FP8 KV cache on one GPU of a p6-b200.48xlarge, 32k context,
 # FlashInfer attention backend. Weights are staged from S3.
-# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION, in both containers.
+# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION in the init container.
 ---
 apiVersion: apps/v1
 kind: Deployment

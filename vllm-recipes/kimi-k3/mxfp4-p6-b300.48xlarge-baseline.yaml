@@ -94,6 +94,7 @@ spec:
                 --moe-backend flashinfer_trtllm
                 --max-model-len "${MAX_MODEL_LEN}"
                 --max-num-seqs "${MAX_NUM_SEQS}"
+                --no-enable-prefix-caching
                 --gpu-memory-utilization 0.9
                 --max-cudagraph-capture-size 512
                 --kv-cache-dtype fp8

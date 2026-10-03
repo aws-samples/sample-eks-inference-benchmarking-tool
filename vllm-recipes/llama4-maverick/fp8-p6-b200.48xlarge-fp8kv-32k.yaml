@@ -1,6 +1,6 @@
 # Llama 4 Maverick 17B 128E Instruct at FP8 on one p6-b200.48xlarge, 8 GPUs, tensor parallel 8,
 # FP8 KV cache, 32k context, TRITON_ATTN attention backend.
-# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION, in both containers.
+# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION in the init container.
 ---
 apiVersion: apps/v1
 kind: Deployment

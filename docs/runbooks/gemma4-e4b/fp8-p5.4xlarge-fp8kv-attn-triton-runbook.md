@@ -30,15 +30,13 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 - [Create a `p5.4xlarge` Capacity Block node pool](../../../k8s/examples/karpenter-capacity-block-nodepool.yaml) (it mounts the instance store as RAID0)
 - [Create a benchmark-client node group](../../../k8s/examples/eksctl-nodegroup-bench-client.yaml) (the client Job does not tolerate the GPU taint)
 - [Install the EKS Pod Identity Agent add-on](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-agent-setup.html)
-- [Create an IAM role for Pod Identity that reads the S3 checkpoint prefix](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-role.html)
+- [Associate an S3 read role with the `gemma4-31b-bench` ServiceAccount in your namespace through Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-association.html)
 - [Build and push the quantizer image](../../../k8s/examples/README.md#job-quantize-modelyaml) (only if the checkpoint is not in S3 yet)
 - [Create a `g7.2xlarge` node group for quantization](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (only if the checkpoint is not in S3 yet)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (only if the checkpoint is not in S3 yet)
 - [Grant S3 write access to the staging Job](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-association.html) (only if the checkpoint is not in S3 yet)
 
 ## Quickstart
-
-Skip steps 4 to 7 when an earlier run already put the checkpoint in S3. Run step 8 either way.
 
 1. Set environment variables.
    ```bash
@@ -50,7 +48,6 @@ Skip steps 4 to 7 when an earlier run already put the checkpoint in S3. Run step
    export INSTANCE_TYPE=p5.4xlarge
    export WEIGHTS_BUCKET=<your-weights-bucket>
    export WEIGHTS_REGION=<your-weights-bucket-region>
-   export GEMMA_S3_ROLE_ARN=<your-gemma-s3-read-role-arn>
    ```
 
 2. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
@@ -58,82 +55,30 @@ Skip steps 4 to 7 when an earlier run already put the checkpoint in S3. Run step
    ./scripts/install-prerequisites.sh
    ```
 
-3. Create the `gemma4-31b-bench` ServiceAccount the recipe names and give it the S3 read role.
+3. Quantize the checkpoint onto the claim at `/models/quantized/gemma-4-E4B-it-fp8` on one g7.2xlarge GPU, and re-verify it; skip this and the next step when an earlier run already put the checkpoint in S3.
    ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create serviceaccount gemma4-31b-bench \
-       --dry-run=client -o yaml | kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f -
-   aws eks create-pod-identity-association --cluster-name "$EKS_CLUSTER_NAME" --region "$AWS_REGION" \
-       --namespace "$NAMESPACE" --service-account gemma4-31b-bench --role-arn "$GEMMA_S3_ROLE_ARN"
+   ./model-jobs/gemma4-e4b/fp8-model-quantize.sh
    ```
 
-4. Confirm the claim is bound.
+4. Copy the checkpoint from the claim to S3.
    ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-       --for=jsonpath='{.status.phase}'=Bound pvc/fsx-pvc --timeout=2m
-   ```
-
-5. Quantize the checkpoint onto the claim at `/models/quantized/gemma-4-E4B-it-fp8`, which takes about five minutes.
-   ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create configmap quantizer-src \
-       --from-file=app/quantize/src/quantize.py \
-       --from-file=app/quantize/src/config.py \
-       --from-file=app/quantize/src/fix_amax.py \
-       --from-file=app/quantize/src/verify_checkpoint.py
-   sed -e "s|012345678901.dkr.ecr.us-east-1|${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}|" \
-       model-jobs/gemma4-e4b/fp8-model-quantize.yaml \
-     | kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f -
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-       --for=condition=complete job/quantize-gemma4-e4b-fp8 --timeout=30m
-   ```
-
-6. Confirm the checkpoint is really FP8; expect about 11 GiB, and a failed Job names each problem.
-   ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create configmap checkpoint-verifier \
-       --from-file=verify_checkpoint.py=app/quantize/src/verify_checkpoint.py
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f model-jobs/gemma4-e4b/fp8-model-verify.yaml
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-       --for=condition=complete job/verify-checkpoint --timeout=5m
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs job/verify-checkpoint
-   ```
-
-7. Copy the checkpoint from the claim to S3; the Job fails on a shard-count mismatch.
-   ```bash
-   sed -e "s|value: SUBSTITUTE-weights-bucket|value: ${WEIGHTS_BUCKET}|" \
-       -e "/name: AWS_REGION/{n;s|value: .*|value: ${WEIGHTS_REGION}|;}" \
-       model-jobs/gemma4-e4b/fp8-model-fsx-to-s3.yaml \
-     | kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f -
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-       --for=condition=complete job/gemma4-e4b-fp8-fsx-to-s3 --timeout=1h
-   ```
-
-8. Confirm the checkpoint in S3 has one safetensors file and `hf_quant_config.json`.
-   ```bash
-   aws s3 ls "s3://${WEIGHTS_BUCKET}/gemma4-e4b-fp8-quantized/" --region "$WEIGHTS_REGION" \
-       | grep -E 'hf_quant_config\.json$|\.safetensors$'
+   ./model-jobs/gemma4-e4b/fp8-model-fsx-to-s3.sh
    ```
 
 ## Throughput test
 
-1. Set the weights bucket and its region in the recipe.
-   ```bash
-   sed -i.bak -e "s|SUBSTITUTE-weights-bucket|${WEIGHTS_BUCKET}|" \
-       -e "/name: AWS_REGION/{n;s|value: .*|value: \"${WEIGHTS_REGION}\"|;}" \
-       vllm-recipes/gemma4-e4b/fp8-p5.4xlarge-fp8kv-attn-triton.yaml \
-     && rm vllm-recipes/gemma4-e4b/fp8-p5.4xlarge-fp8kv-attn-triton.yaml.bak
-   ```
-
-2. Deploy the server; the script fails if the engine did not select `TRITON_ATTN`.
+1. Deploy the server; the script fails if the engine did not select `TRITON_ATTN`.
    ```bash
    ./vllm-recipes/gemma4-e4b/fp8-p5.4xlarge-fp8kv-attn-triton-deploy.sh
    ```
 
-3. Confirm `/models` is the NVMe RAID0 array, not the EBS root volume.
+2. Confirm `/models` is the NVMe RAID0 array, not the EBS root volume.
    ```bash
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" exec \
        deployment/gemma4-e4b-vllm-p5-4xl-fp8kv-triton -c vllm -- df -h /models
    ```
 
-4. Generate the accuracy gate (.JSON) that the benchmark checks against.
+3. Generate the accuracy gate (.JSON) that the benchmark checks against.
    ```bash
    eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -144,7 +89,7 @@ Skip steps 4 to 7 when an earlier run already put the checkpoint in S3. Run step
        --out-dir docs/results
    ```
 
-5. Dry-run the in-cluster benchmark, which renders the Job without creating it.
+4. Dry-run the in-cluster benchmark, which renders the Job without creating it.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -158,7 +103,7 @@ Skip steps 4 to 7 when an earlier run already put the checkpoint in S3. Run step
        --dry-run
    ```
 
-6. Benchmark in-cluster.
+5. Benchmark in-cluster.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -180,7 +125,7 @@ kubectl --context "$EKS_CLUSTER_NAME" delete nodepool bench-capacity-block --ign
 kubectl --context "$EKS_CLUSTER_NAME" delete ec2nodeclass bench-capacity-block --ignore-not-found
 ```
 
-Scale the quantization and benchmark-client node groups to zero too if you created them for this run. The checkpoint in S3 survives, so a later run skips steps 4 to 7.
+Scale the quantization and benchmark-client node groups to zero too if you created them for this run. The checkpoint in S3 survives, so a later run skips Quickstart steps 3 and 4.
 
 ---
 
@@ -193,7 +138,7 @@ Scale the quantization and benchmark-client node groups to zero too if you creat
 - **`--stream-interval 10`** The server streams in 10-token chunks. That changes inter-token latency only, so never compare ITL against a recipe with a different stream interval.
 - **`MAX_CUDAGRAPH=512`.** Matches the top concurrency level of the sweep, so every measured batch size is graph-captured and nothing is captured above it.
 - **Weights come from S3 into an `emptyDir`, not from the claim.** A pod restart re-downloads 11 GiB. The `fetch-weights` init container fails unless it finds `hf_quant_config.json`, exactly one shard and at least 10 GiB.
-- **The instance store must back the `emptyDir`.** The Capacity Block node class sets `instanceStorePolicy: RAID0`; without it the sync lands on the EBS root volume. Throughput step 3 confirms where `/models` is.
+- **The instance store must back the `emptyDir`.** The Capacity Block node class sets `instanceStorePolicy: RAID0`; without it the sync lands on the EBS root volume. Throughput step 2 confirms where `/models` is.
 - **`serviceAccountName: gemma4-31b-bench`** The recipe reuses the Gemma 4 31B ServiceAccount name for its pod-scoped S3 read through EKS Pod Identity. Any ServiceAccount with read access to the prefix works if you change the name in the recipe.
-- **`WEIGHTS_BUCKET` and `AWS_REGION` are placeholders in git.** The throughput step (step one) fills in the values.
+- **`WEIGHTS_BUCKET` and `AWS_REGION` are placeholders in git.** The staging and deploy scripts fill them in from `WEIGHTS_BUCKET` and `WEIGHTS_REGION` as they apply each manifest, so the files in git stay untouched.
 - **The S3 staging Job sets no ServiceAccount.** It runs as the namespace's `default` ServiceAccount, so that is the identity the write role must be associated with.

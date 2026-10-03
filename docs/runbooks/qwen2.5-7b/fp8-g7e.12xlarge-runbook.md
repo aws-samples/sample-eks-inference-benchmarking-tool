@@ -51,35 +51,18 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-3. Confirm the claim is bound.
-
+3. Quantize the checkpoint onto the claim at `/models/quantized/Qwen2.5-7B-Instruct-fp8`; skip this when an earlier run already did.
    ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-       --for=jsonpath='{.status.phase}'=Bound pvc/fsx-pvc --timeout=2m
+   ./model-jobs/qwen2.5-7b/fp8-model-quantize.sh
    ```
 
-4. Quantize the checkpoint onto the claim at `/models/quantized/Qwen2.5-7B-Instruct-fp8`.
-
-   ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create configmap quantizer-src \
-       --from-file=app/quantize/src/quantize.py \
-       --from-file=app/quantize/src/config.py \
-       --from-file=app/quantize/src/fix_amax.py \
-       --from-file=app/quantize/src/verify_checkpoint.py
-   sed -e "s|012345678901.dkr.ecr.us-east-1|${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}|" \
-       model-jobs/qwen2.5-7b/fp8-model-quantize.yaml \
-     | kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f -
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-       --for=condition=complete job/quantize-qwen25-7b-fp8 --timeout=1h
-   ```
-
-5. Deploy and validate the model server mounted to `fsx-pvc`.
+4. Deploy and validate the model server mounted to `fsx-pvc`.
 
    ```bash
    ./vllm-recipes/qwen2.5-7b/fp8-g7e.12xlarge-deploy.sh
    ```
 
-6. Generate the accuracy gate (.JSON) required for the next step.
+5. Generate the accuracy gate (.JSON) required for the next step.
 
    ```bash
    eks-bench capture-reference \
@@ -90,7 +73,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --out-dir docs/results
    ```
 
-7. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
+6. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
 
    ```bash
    eks-bench measure \
@@ -104,7 +87,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-8. Benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
+7. Benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
 
    ```bash
    eks-bench measure \
