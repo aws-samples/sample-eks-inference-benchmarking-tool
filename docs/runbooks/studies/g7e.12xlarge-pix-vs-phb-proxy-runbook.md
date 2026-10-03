@@ -254,7 +254,7 @@ Run one deployment at a time in this recorded order. The default arm is a negati
 | 5 | `vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml` | `qwen3-30b-a3b-g7e12-switch-pix` | `qwen3-30b-a3b` | `fp8-switch-pix` | `qwen3-30b-a3b-fp8` | same | `--thinking off` |
 | 6 | `experiments/g7e12-switch-qwen3-30b-a3b-shm.yaml` | `qwen3-30b-a3b-g7e12-switch-shm` | `qwen3-30b-a3b` | `fp8-switch-shm` | `qwen3-30b-a3b-fp8` | same | `--thinking off` |
 
-For each row, set the variables and run the function below. `RECIPE` is the manifest path from the repository root; only the arms under `vllm-recipes/` go through `validate-manifests`. Use `THINKING_ARGS=()` for Llama and `THINKING_ARGS=(--thinking off)` for Qwen.
+For each row, set the variables and run the function below. `RECIPE` is the manifest path from the repository root; only the arms under `vllm-recipes/` go through `validate-manifests`. Use `THINKING_ARGS=()` for Llama and `THINKING_ARGS=(--thinking off)` for Qwen. Only `capture-reference` takes it; `measure` reads the mode from the stored reference.
 
 ```bash
 run_arm() {
@@ -290,7 +290,7 @@ run_arm() {
     --model-tag "$MODEL_TAG" --config "$CONFIG" --quant fp8 \
     --model-id "$MODEL_ID" --tokenizer "$TOKENIZER" \
     --reps 1 --skip-accuracy --no-latency --no-provenance \
-    --out-dir "$warmup_dir" "${THINKING_ARGS[@]}" \
+    --out-dir "$warmup_dir" \
     | tee "$arm_artifacts/warmup-runner.log"
 
   .venv/bin/eks-bench measure \
@@ -298,7 +298,7 @@ run_arm() {
     --protocol corpus --profile legacy_corpus --instance g7e.12xlarge \
     --model-tag "$MODEL_TAG" --config "$CONFIG" --quant fp8 \
     --model-id "$MODEL_ID" --tokenizer "$TOKENIZER" \
-    --reps 5 --out-dir docs/results "${THINKING_ARGS[@]}" --dry-run \
+    --reps 5 --out-dir docs/results --dry-run \
     > "$arm_artifacts/measured-dry-run.txt"
 
   isolated_launch .venv/bin/eks-bench measure \
@@ -306,7 +306,7 @@ run_arm() {
     --protocol corpus --profile legacy_corpus --instance g7e.12xlarge \
     --model-tag "$MODEL_TAG" --config "$CONFIG" --quant fp8 \
     --model-id "$MODEL_ID" --tokenizer "$TOKENIZER" \
-    --reps 5 --out-dir docs/results "${THINKING_ARGS[@]}" \
+    --reps 5 --out-dir docs/results \
     | tee "$arm_artifacts/measured-runner.log"
 
   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get deployment \
