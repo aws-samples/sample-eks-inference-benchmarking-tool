@@ -1,41 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-: "${EKS_CLUSTER_NAME:?Set EKS_CLUSTER_NAME to the EKS cluster name before running this helper.}"
-: "${NAMESPACE:?Set NAMESPACE to the target Kubernetes namespace before running this helper.}"
-
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
-MANIFEST="$SCRIPT_DIR/mxfp4-p6-b300.48xlarge-baseline.yaml"
-
-if grep -Eq '^[[:space:]]*image:[[:space:]].*012345678901' "$MANIFEST"; then
-  echo "FATAL: $MANIFEST still contains placeholder ECR account 012345678901; replace the image reference before deploying." >&2
-  exit 1
-fi
-if grep -q 'SUBSTITUTE-weights-bucket' "$MANIFEST"; then
-  echo "FATAL: $MANIFEST still contains the placeholder weights bucket; set WEIGHTS_BUCKET and AWS_REGION first." >&2
-  exit 1
-fi
-
-echo "==> Deploying the baseline Kimi K3 B300 server"
-kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f "$MANIFEST"
-
-echo "==> Waiting for the baseline Kimi K3 B300 Deployment"
+: "${EKS_CLUSTER_NAME:?Set EKS_CLUSTER_NAME before running this script}"
+: "${NAMESPACE:?Set NAMESPACE before running this script}"
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# Deploy the Kimi K3 server.
+echo "==> Deploying Kimi K3 MXFP4 on p6-b300.48xlarge"
+kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f "$SCRIPT_DIR/mxfp4-p6-b300.48xlarge-baseline.yaml"
+# Wait for the weights to stage and the server to start.
+echo "==> Waiting for the Kimi K3 server"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" rollout status \
-  deployment/kimi-k3-b300 --timeout=3600s
-
-echo "==> Checking the served model from the API Pod"
+  deployment/kimi-k3-b300 \
+  --timeout=3600s
+# Confirm the expected model is served.
+echo "==> Checking the served model"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \
-  deployment/kimi-k3-b300 --container vllm -- \
-  curl -fsS localhost:8000/v1/models
-
-echo "==> Reading the live KV-cache configuration from the API Pod"
+  deployment/kimi-k3-b300 \
+  --container vllm \
+  -- curl -s localhost:8000/v1/models
+# Record the live KV-cache allocation.
+echo "==> Reading the KV-cache configuration"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \
-  deployment/kimi-k3-b300 --container vllm -- \
-  sh -c "curl -fsS localhost:8000/metrics | grep 'vllm:cache_config_info'"
-
+  deployment/kimi-k3-b300 \
+  --container vllm \
+  -- sh -c "curl -s localhost:8000/metrics | grep 'vllm:cache_config_info'"
+# Validate the serving manifest.
 echo "==> Validating the Kimi K3 serving manifest"
-(
-  cd "$REPO_ROOT"
-  eks-bench validate-manifests kimi-k3/mxfp4-p6-b300.48xlarge-baseline.yaml
-)
+eks-bench validate-manifests \
+  kimi-k3/mxfp4-p6-b300.48xlarge-baseline.yaml

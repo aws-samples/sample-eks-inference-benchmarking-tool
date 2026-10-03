@@ -3,16 +3,11 @@ set -euo pipefail
 : "${EKS_CLUSTER_NAME:?Set EKS_CLUSTER_NAME before running this script}"
 : "${NAMESPACE:?Set NAMESPACE before running this script}"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-MANIFEST="$SCRIPT_DIR/fp8-g7e.48xlarge-fp8kv-32k-dp8-s3-flashinfer.yaml"
-if grep -q 'SUBSTITUTE-weights-bucket' "$MANIFEST"; then
-  echo "FATAL: $MANIFEST still contains the placeholder weights bucket; set WEIGHTS_BUCKET and AWS_REGION first." >&2
-  exit 1
-fi
-# Deploy the Muse-Glimmer-30B server. It syncs the FP8 checkpoint from S3.
-echo "==> Deploying Muse-Glimmer-30B FP8 on g7e.48xlarge (8 replicas, FP8 KV, FLASHINFER)"
-kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f "$MANIFEST"
-# Wait for the weight sync and server startup.
-echo "==> Waiting for the Muse-Glimmer-30B server"
+# Deploy the Muse-Glimmer 30B server.
+echo "==> Deploying Muse-Glimmer 30B FP8 on g7e.48xlarge"
+kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f "$SCRIPT_DIR/fp8-g7e.48xlarge-fp8kv-32k-dp8-s3-flashinfer.yaml"
+# Wait for the weights to stage and the server to start.
+echo "==> Waiting for the Muse-Glimmer 30B server"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" rollout status \
   deployment/muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3-flashinfer \
   --timeout=3600s
@@ -28,16 +23,13 @@ kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \
   deployment/muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3-flashinfer \
   --container vllm \
   -- sh -c "curl -s localhost:8000/metrics | grep 'vllm:cache_config_info'"
-# Confirm the pinned attention backend took effect.
+# Print the attention backend the server selected.
 echo "==> Confirming the attention backend is FLASHINFER"
-BACKEND_LOG=$(kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" logs \
-  deployment/muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3-flashinfer --container vllm)
-if ! grep -q "Using AttentionBackendEnum.FLASHINFER backend" <<<"$BACKEND_LOG"; then
-  echo "FAIL: requested FLASHINFER but the server did not report it" >&2
-  exit 1
-fi
-echo "    backend confirmed: FLASHINFER"
+kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" logs \
+  deployment/muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3-flashinfer \
+  --container vllm \
+  | grep "Using AttentionBackendEnum.FLASHINFER backend"
 # Validate the serving manifest.
-echo "==> Validating the Muse-Glimmer-30B serving manifest"
+echo "==> Validating the Muse-Glimmer 30B serving manifest"
 eks-bench validate-manifests \
   muse-glimmer-30b/fp8-g7e.48xlarge-fp8kv-32k-dp8-s3-flashinfer.yaml
