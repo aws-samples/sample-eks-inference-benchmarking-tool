@@ -5,7 +5,7 @@ Use any one of the following runbook recipes to get started. For additional flag
 | Instance | Precision | Node | GPUs | TP | Runbook |
 | -------- | --------- | ---- | ---- | -- | ------- |
 | `g7e.2xlarge` | FP8, FP8 KV cache, Triton attention | Single node inference | 1 | unset | [Runbook](./fp8-g7e.2xlarge-fp8kv-attn-triton-runbook.md) |
-[`fp8-p5.4xlarge-fp8kv-attn-triton.yaml`](../../../vllm-recipes/gemma4-e4b/fp8-p5.4xlarge-fp8kv-attn-triton.yaml) is the same configuration on one H100 (p5.4xlarge). It has no runbook yet. It reads the same FP8 checkpoint from S3 rather than the FSx claim, staged by [`fp8-model-fsx-to-s3.yaml`](../../../model-jobs/gemma4-e4b/fp8-model-fsx-to-s3.yaml).
+| `p5.4xlarge` | FP8, FP8 KV cache, Triton attention | Single node inference | 1 | unset | [Runbook](./fp8-p5.4xlarge-fp8kv-attn-triton-runbook.md) |
 ## Results
 Each benchmark run saves a gitignored results file to `docs/results/`. The filename follows the recipe name of `gemma4-e4b-<quant>-<instance>[-<config>]-<protocol>[-<profile>]` to ensure results sort next to the recipe that produced them. The `<config>` segment is only included when it differs from `<quant>`, which it does for the recipes here. Open-loop runs add an `openloop` suffix.
 ## Known issues

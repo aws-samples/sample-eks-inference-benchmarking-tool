@@ -9,8 +9,7 @@ Use any one of the following runbook recipes to get started. For additional flag
 | Instance | Precision | Node | GPUs | TP | Runbook |
 | -------- | --------- | ---- | ---- | -- | ------- |
 | `g7.24xlarge` | FP8 | Single node inference | 4 | 4 | [Runbook](./fp8-g7.24xlarge-runbook.md) |
-
-[`fp8-p6-b200.48xlarge-fp8kv-32k-dp8-textonly-flashinfer.yaml`](../../../vllm-recipes/gemma4-31b/fp8-p6-b200.48xlarge-fp8kv-32k-dp8-textonly-flashinfer.yaml) serves this model as eight single-GPU replicas on one p6-b200.48xlarge for the `coding_repo_context` workload. It has no runbook yet; it reads the FP8 checkpoint from S3, staged by [`fp8-model-fsx-to-s3.yaml`](../../../model-jobs/gemma4-31b/fp8-model-fsx-to-s3.yaml).
+| `p6-b200.48xlarge` | FP8, FP8 KV cache, text only, FlashInfer attention | Single node, 8 replicas | 8 | unset | [Runbook](./fp8-p6-b200.48xlarge-fp8kv-32k-dp8-textonly-flashinfer-runbook.md) |
 
 The NCCL peer-to-peer study on `g7.24xlarge` is a study record, not a recipe. To learn more, see [Interconnect studies](../../../experiments/README.md#interconnect-studies).
 

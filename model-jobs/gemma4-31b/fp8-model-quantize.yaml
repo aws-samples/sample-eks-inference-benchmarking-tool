@@ -1,0 +1,78 @@
+#
+# Job that quantizes google/gemma-4-31b-it to ModelOpt FP8 and writes it to the shared claim, which the gemma4-31b FP8 recipes serve.
+#
+# SUBSTITUTE: 012345678901, us-east-1, and fsx-pvc.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: quantize-gemma4-31b-fp8
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      # The BF16 source is ~62 GB, more than one 32 GB RTX PRO 4500, so the Job takes all four
+      # GPUs of a g7.24xlarge and quantize.py shards the load across them with device_map="auto".
+      nodeSelector:
+        node.kubernetes.io/instance-type: "g7.24xlarge"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: quantizer
+          image: 012345678901.dkr.ecr.us-east-1.amazonaws.com/serving-sweep-quantizer:latest
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+              python -c "import transformers,modelopt;print('transformers',transformers.__version__)"
+              cd /app/src && exec python quantize.py
+          env:
+            - name: MODEL_ID
+              value: "google/gemma-4-31b-it"
+            - name: QUANTIZATION_FORMAT
+              value: "fp8"
+            # The default causal_lm auto-class cannot load this checkpoint.
+            - name: MODEL_LOADER
+              value: "image_text_to_text"
+            # Keep the vision tower, projector and head in 16-bit.
+            - name: QUANT_EXCLUDE_PATTERNS
+              value: "*vision_tower*,*embed_vision*,*multi_modal_projector*,*vision*,*lm_head*"
+            - name: MODEL_CACHE_DIR
+              value: "/models/cache"
+            - name: OUTPUT_DIR
+              value: "/models/quantized"
+            - name: MODELOPT_REAL_EXPORT
+              value: "1"
+            - name: CALIBRATE
+              value: "1"
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: HF_XET_HIGH_PERFORMANCE
+              value: "1"
+          resources:
+            limits:
+              nvidia.com/gpu: 4
+            requests:
+              cpu: "8"
+              memory: 80Gi
+          volumeMounts:
+            - { name: models, mountPath: /models }
+            - { name: dshm, mountPath: /dev/shm }
+            # Only needed when the image predates this repo's quantizer source. See the README.
+            - { name: src, mountPath: /app/src }
+      volumes:
+        - name: models
+          persistentVolumeClaim: { claimName: fsx-pvc }
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 16Gi }
+        - name: src
+          configMap: { name: quantizer-src }
