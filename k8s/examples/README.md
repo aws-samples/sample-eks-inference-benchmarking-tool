@@ -266,14 +266,10 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
   --for=jsonpath='{.status.phase}'=Bound pvc/fsx-pvc --timeout=2m
 ```
 
-Build and push the quantizer image. `scripts/push-image.sh` uses `AWS_ACCOUNT_ID` and `AWS_REGION` to publish `serving-sweep-quantizer:latest` to ECR, but it does not create the repository. Ensure the repository exists first:
+Build and push the quantizer image. `scripts/push-image.sh` uses `AWS_ACCOUNT_ID` and `AWS_REGION` to publish `serving-sweep-quantizer:latest` to ECR, and creates the repository first if it does not exist:
 
 ```bash
 export AWS_ACCOUNT_ID="012345678901"
-aws ecr describe-repositories --region "$AWS_REGION" \
-  --repository-names serving-sweep-quantizer >/dev/null 2>&1 \
-  || aws ecr create-repository --region "$AWS_REGION" \
-    --repository-name serving-sweep-quantizer >/dev/null
 ./scripts/push-image.sh
 ```
 

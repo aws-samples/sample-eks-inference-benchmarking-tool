@@ -16,6 +16,13 @@ echo "==> Waiting for the copy Job"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" wait \
   --for=condition=complete job/gemma4-31b-fp8-fsx-to-s3 \
   --timeout=4h
+# Confirm the checkpoint's config.json is in S3.
+echo "==> Checking s3://$WEIGHTS_BUCKET/gemma4-31b-fp8-quantized/config.json"
+aws s3 ls "s3://${WEIGHTS_BUCKET}/gemma4-31b-fp8-quantized/config.json" --region "$WEIGHTS_REGION"
 # Confirm the checkpoint's hf_quant_config.json is in S3.
-echo "==> Checking s3://$WEIGHTS_BUCKET/gemma4-31b-fp8-quantized/"
+echo "==> Checking s3://$WEIGHTS_BUCKET/gemma4-31b-fp8-quantized/hf_quant_config.json"
 aws s3 ls "s3://${WEIGHTS_BUCKET}/gemma4-31b-fp8-quantized/hf_quant_config.json" --region "$WEIGHTS_REGION"
+# Confirm S3 holds at least one shard.
+echo "==> Checking the shard count in S3"
+aws s3 ls "s3://${WEIGHTS_BUCKET}/gemma4-31b-fp8-quantized/" --region "$WEIGHTS_REGION" \
+  | grep -c '\.safetensors$'

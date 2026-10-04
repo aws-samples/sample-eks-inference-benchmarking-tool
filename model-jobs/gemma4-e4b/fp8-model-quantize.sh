@@ -43,3 +43,6 @@ echo "==> Waiting for the verify Job"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" wait \
   --for=condition=complete job/verify-checkpoint \
   --timeout=5m
+# Print the verifier's report.
+echo "==> Verifier report"
+kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" logs job/verify-checkpoint

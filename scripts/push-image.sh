@@ -1,5 +1,5 @@
 #!/bin/bash
-# push-image.sh — Build and push the quantizer image to ECR.
+# push-image.sh — Create the quantizer's ECR repository if needed, then build and push the image.
 #
 # Run this once before your first benchmark, and again any time
 # app/quantize/Dockerfile or app/quantize/src/quantize.py changes.
@@ -21,6 +21,11 @@ cd "$REPO_ROOT"
 ECR_IMAGE="${ECR_IMAGE:-${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/serving-sweep-quantizer:latest}"
 REGION="$AWS_REGION"
 ACCOUNT=$(echo "$ECR_IMAGE" | cut -d. -f1)
+REPOSITORY="${ECR_IMAGE#*/}"
+REPOSITORY="${REPOSITORY%:*}"
+echo "==> Creating ECR repository $REPOSITORY if it does not exist..."
+aws ecr describe-repositories --region "$REGION" --repository-names "$REPOSITORY" >/dev/null 2>&1 \
+  || aws ecr create-repository --region "$REGION" --repository-name "$REPOSITORY" >/dev/null
 
 echo "==> Authenticating Docker to ECR..."
 aws ecr get-login-password --region "$REGION" \

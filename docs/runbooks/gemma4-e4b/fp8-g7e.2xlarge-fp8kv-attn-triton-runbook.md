@@ -27,7 +27,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
 - [Create a `g7e.2xlarge` node group](../../../k8s/examples/eksctl-nodegroup-g7e-2xl-spot.yaml) (give it every subnet in your FSx filesystem's availability zone)
 - [Create a `g7.2xlarge` node group for quantization](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (only if the checkpoint is not on the claim yet)
-- [Build and push the quantizer image](../../../k8s/examples/README.md#job-quantize-modelyaml) (only if the checkpoint is not on the claim yet)
+- [Install Docker](https://docs.docker.com/get-started/get-docker/) (builds the quantizer image on your machine)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
 - A node with more than 8 allocatable CPU for the benchmark client, which is not the GPU node (an 8 vCPU node offers 7910m, so the Job stays Pending)
 - [Export the checkpoint to S3](../../../model-jobs/gemma4-e4b/fp8-model-export.yaml) (only when the claim is in a region the checkpoint was not quantized in)
@@ -57,7 +57,12 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-4. Quantize the model to ModelOpt FP8 on the `fsx-pvc` claim, then verify the checkpoint.
+4. Build the quantizer image and push it to your ECR repository, creating the repository if needed.
+   ```bash
+   ./scripts/push-image.sh
+   ```
+
+5. Quantize the model to ModelOpt FP8 on the `fsx-pvc` claim, then verify the checkpoint.
    ```bash
    ./model-jobs/gemma4-e4b/fp8-model-quantize.sh
    ```
@@ -134,7 +139,7 @@ Delete the benchmark-client node group too if you created one for this run. The 
 ## Settings
 
 - **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
-- **The checkpoint stays on the claim.** A later run can skip Quickstart step 4.
+- **The checkpoint stays on the claim.** A later run can skip Quickstart steps 4 and 5.
 - **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable. It logs `Unknown vLLM environment variable detected: VLLM_ATTENTION_BACKEND` and proceeds on its auto-selected backend. The deploy script fails unless the server log reports `TRITON_ATTN`.
 - **The backend is pinned rather than auto-selected** because vLLM's auto-priority tables are written for sm_10x B200. This card is sm_120, so leaving it unset makes the backend an unrecorded variable.
 - **Why `TRITON_ATTN`.** It is portable across GPU generations and head sizes. `FLASH_ATTN` refuses an FP8 KV cache on this GPU at startup (`FP8 KV cache requires FA3 on SM90 or FA4 on SM100`). `FLASHINFER` serves, but its XQA decode path rejects `head_dim=512` and falls back to a slower native decode for the full-attention layers.

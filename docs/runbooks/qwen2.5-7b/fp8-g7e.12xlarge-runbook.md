@@ -30,7 +30,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
 - [Create a `g7e.12xlarge` node group](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
-- [Build and push the quantizer image](../../../k8s/examples/README.md#job-quantize-modelyaml)
+- [Install Docker](https://docs.docker.com/get-started/get-docker/) (builds the quantizer image on your machine)
 
 ## Quickstart
 
@@ -58,18 +58,23 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-4. Quantize the model to ModelOpt FP8 and save the checkpoint to the `fsx-pvc` claim.
+4. Build the quantizer image and push it to your ECR repository, creating the repository if needed.
+   ```bash
+   ./scripts/push-image.sh
+   ```
+
+5. Quantize the model to ModelOpt FP8 and save the checkpoint to the `fsx-pvc` claim.
    ```bash
    ./model-jobs/qwen2.5-7b/fp8-model-quantize.sh
    ```
 
-5. Deploy the vLLM inference server and confirm it serves the model.
+6. Deploy the vLLM inference server and confirm it serves the model.
 
    ```bash
    ./vllm-recipes/qwen2.5-7b/fp8-g7e.12xlarge-deploy.sh
    ```
 
-6. Generate the accuracy gate (.JSON) that the benchmark checks against.
+7. Generate the accuracy gate (.JSON) that the benchmark checks against.
 
    ```bash
    eks-bench capture-reference \
@@ -80,7 +85,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --out-dir docs/results
    ```
 
-7. Dry-run the exact in-cluster benchmark.
+8. Dry-run the exact in-cluster benchmark.
 
    ```bash
    eks-bench measure \
@@ -94,7 +99,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-8. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
+9. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
 
    ```bash
    eks-bench measure \
@@ -119,7 +124,7 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/qwe
 ## Settings
 
 - **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
-- **The checkpoint stays on the claim.** A later run can skip Quickstart step 4.
+- **The checkpoint stays on the claim.** A later run can skip Quickstart steps 4 and 5.
 - **`QUANTIZATION=modelopt`** Serves the ModelOpt FP8 export the quantize step writes, using its `hf_quant_config.json` and calibrated input scales.
 - **16-bit KV cache.** The checkpoint carries no KV scales (`kv_cache_quant_algo` is `None`), and with `--kv-cache-dtype fp8_e4m3` the accuracy gate rejects the server because answers collapse into repetition.
 - **`--no-enable-prefix-caching`** `legacy_corpus` repeats five fixed prompts, so a cache-enabled server measures cache hits rather than prefill. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.

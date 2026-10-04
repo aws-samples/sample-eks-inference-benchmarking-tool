@@ -29,7 +29,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 - [Install the open NVIDIA kernel module if the node advertises no GPUs](../../../k8s/examples/pod-diagnostic-probe.yaml)
 - [Create the `vllm-sitecustomize` ConfigMap](../../../k8s/examples/configmap-vllm-sitecustomize.yaml)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
-- [Build and push the quantizer image](../../../k8s/examples/README.md#job-quantize-modelyaml) (only if the checkpoint is not on the claim yet)
+- [Install Docker](https://docs.docker.com/get-started/get-docker/) (builds the quantizer image on your machine)
 
 ## Quickstart
 
@@ -57,18 +57,23 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-4. Quantize the model to ModelOpt FP8 and save the checkpoint to the `fsx-pvc` claim.
+4. Build the quantizer image and push it to your ECR repository, creating the repository if needed.
+   ```bash
+   ./scripts/push-image.sh
+   ```
+
+5. Quantize the model to ModelOpt FP8 and save the checkpoint to the `fsx-pvc` claim.
    ```bash
    ./model-jobs/gemma4-31b/fp8-model-quantize.sh
    ```
 
-5. Deploy the vLLM inference server and confirm it serves the model.
+6. Deploy the vLLM inference server and confirm it serves the model.
 
    ```bash
    ./vllm-recipes/gemma4-31b/fp8-g7.24xlarge-deploy.sh
    ```
 
-6. Generate the accuracy gate (.JSON) that the benchmark checks against.
+7. Generate the accuracy gate (.JSON) that the benchmark checks against.
 
    ```bash
    eks-bench capture-reference \
@@ -79,7 +84,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --out-dir docs/results
    ```
 
-7. Dry-run the exact in-cluster benchmark.
+8. Dry-run the exact in-cluster benchmark.
 
    ```bash
    eks-bench measure \
@@ -93,7 +98,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-8. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
+9. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
 
    ```bash
    eks-bench measure \
@@ -106,7 +111,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --reps 3 --out-dir docs/results
    ```
 
-9. (Optional) Dry-run the NVIDIA AIPerf cross-client calibration.
+10. (Optional) Dry-run the NVIDIA AIPerf cross-client calibration.
 
    ```bash
    eks-bench measure \
@@ -120,7 +125,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-10. (Optional) Run the NVIDIA AIPerf cross-client calibration.
+11. (Optional) Run the NVIDIA AIPerf cross-client calibration.
 
    ```bash
    eks-bench measure \
@@ -133,7 +138,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --reps 3 --out-dir docs/results
    ```
 
-11. (Optional) Dry-run the open-loop latency test.
+12. (Optional) Dry-run the open-loop latency test.
 
    ```bash
    eks-bench measure \
@@ -147,7 +152,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-12. (Optional) Run the open-loop latency test.
+13. (Optional) Run the open-loop latency test.
 
    ```bash
    eks-bench measure \
@@ -173,9 +178,9 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/gem
 - **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
 - **`corpus_aiperf`** Runs the same workload through NVIDIA AIPerf as a second, independent load generator. The benchmark Job installs AIPerf itself.
 - **`server_qps`** Sends requests at fixed rates from 1 to 16 per second and reports, at each rate, whether TTFT p99 stays within 500 ms and TPOT p99 within 50 ms. Each rep holds 8 rates for at least 120 s each with 60 s between them, so 3 reps take at least 69 minutes.
-- **The checkpoint stays on the claim.** A later run can skip Quickstart step 4.
+- **The checkpoint stays on the claim.** A later run can skip Quickstart steps 4 and 5.
 - **`strategy: Recreate`** Stops the old pod before starting its replacement, so a redeploy never overlaps GPU claims.
-- **`--ttft-target` and `--tpot-target`** Step 12 runs at the shipped targets, TTFT p99 500 ms and TPOT p99 50 ms. An overridden value is appended to the result filename, so a run at different targets cannot overwrite one at the defaults. Read [Trusting the open-loop verdict](../../guides/REFERENCE.md#trusting-the-open-loop-verdict) before quoting a rate as sustainable.
+- **`--ttft-target` and `--tpot-target`** Step 13 runs at the shipped targets, TTFT p99 500 ms and TPOT p99 50 ms. An overridden value is appended to the result filename, so a run at different targets cannot overwrite one at the defaults. Read [Trusting the open-loop verdict](../../guides/REFERENCE.md#trusting-the-open-loop-verdict) before quoting a rate as sustainable.
 - **`Prefix cache hit`** Check this line in the result file's provenance block: anything other than 0% means prefill was skipped and throughput is inflated. On a pod that has been up for days the line rotates out of the log window and records as `(not found in server log)`, which is not the same as 0%.
 - **`strategy:`** This pod claims all 4 GPUs and at one replica maxUnavailable rounds to 0, so Kubernetes waits on a new pod that can never schedule while the old one holds every GPU. Any edit to this recipe would deadlock.
 

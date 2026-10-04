@@ -31,7 +31,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 - [Create a benchmark-client node group](../../../k8s/examples/eksctl-nodegroup-bench-client.yaml) (the client Job does not tolerate the GPU taint)
 - [Install the EKS Pod Identity Agent add-on](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-agent-setup.html)
 - [Associate an S3 read role with the `gemma4-31b-bench` ServiceAccount in your namespace through Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-association.html)
-- [Build and push the quantizer image](../../../k8s/examples/README.md#job-quantize-modelyaml) (only if the checkpoint is not in S3 yet)
+- [Install Docker](https://docs.docker.com/get-started/get-docker/) (builds the quantizer image on your machine)
 - [Create a `g7.2xlarge` node group for quantization](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (only if the checkpoint is not in S3 yet)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (only if the checkpoint is not in S3 yet)
 - [Grant S3 write access to the staging Job](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-association.html) (only if the checkpoint is not in S3 yet)
@@ -62,12 +62,17 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-4. Quantize the model to ModelOpt FP8 on the `fsx-pvc` claim, then verify the checkpoint.
+4. Build the quantizer image and push it to your ECR repository, creating the repository if needed.
+   ```bash
+   ./scripts/push-image.sh
+   ```
+
+5. Quantize the model to ModelOpt FP8 on the `fsx-pvc` claim, then verify the checkpoint.
    ```bash
    ./model-jobs/gemma4-e4b/fp8-model-quantize.sh
    ```
 
-5. Copy the quantized checkpoint from the claim to your S3 bucket.
+6. Copy the quantized checkpoint from the claim to your S3 bucket.
    ```bash
    ./model-jobs/gemma4-e4b/fp8-model-fsx-to-s3.sh
    ```
@@ -132,7 +137,7 @@ kubectl --context "$EKS_CLUSTER_NAME" delete nodepool bench-capacity-block --ign
 kubectl --context "$EKS_CLUSTER_NAME" delete ec2nodeclass bench-capacity-block --ignore-not-found
 ```
 
-Scale the quantization and benchmark-client node groups to zero too if you created them for this run. The checkpoint in S3 survives, so a later run skips Quickstart steps 4 and 5.
+Scale the quantization and benchmark-client node groups to zero too if you created them for this run. The checkpoint in S3 survives, so a later run skips Quickstart steps 4 to 6.
 
 ---
 
