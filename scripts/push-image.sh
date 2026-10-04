@@ -39,5 +39,3 @@ docker push "$ECR_IMAGE"
 
 echo ""
 echo "Done. Image pushed to: $ECR_IMAGE"
-echo "Make sure your quantize Job references this image URI "
-echo "(start from k8s/examples/job-quantize-model.yaml)."

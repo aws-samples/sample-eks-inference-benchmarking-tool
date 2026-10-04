@@ -39,9 +39,6 @@ Model ids like `Qwen/Qwen2.5-7B-Instruct` are real values and are left as-is, so
 | `eksctl-nodegroup-gpu-spot.yaml` | ClusterConfig | Single-node Spot GPU group with node-local weights, several AZs |
 | `persistentvolume-fsx-lustre.yaml` | PersistentVolume + PersistentVolumeClaim | Bind an FSx for Lustre filesystem and claim it as `fsx-pvc` |
 | `configmap-vllm-sitecustomize.yaml` | ConfigMap | The runtime patch every `vllm-recipes/` manifest mounts |
-| `job-download-weights-to-pvc.yaml` | Job | Download weights from Hugging Face onto a shared PVC, resumable |
-| `job-stage-weights-to-s3.yaml` | Job | Stage weights into S3 first, when the AZ is not yet decided |
-| `job-quantize-model.yaml` | Job | Quantize a model to FP8 with NVIDIA Model Optimizer |
 | `job-build-image-kaniko.yaml` | ConfigMap + Job | Build a derived serving image in-cluster and push to ECR |
 | `job-node-driver-fix.yaml` | Job | Rebuild the NVIDIA open kernel module when GPUs do not register |
 | `pod-diagnostic-probe.yaml` | Pod | The throwaway-pod pattern for answering one question about a cluster |
@@ -223,98 +220,6 @@ Create it from the tracked copy so the two stay in sync:
 
 ```bash
 kubectl create configmap vllm-sitecustomize --from-file=sitecustomize.py=k8s/examples/sitecustomize.py
-```
-
-### `job-download-weights-to-pvc.yaml`
-
-This is the template. For the models the recipes in this repo serve, [`model-jobs/`](../../model-jobs/README.md) already holds filled-in Jobs, so start there and use this template for a model it does not cover.
-
-Runs on a CPU node, because a download needs bandwidth and disk rather than GPU capacity billed by the hour. Re-applying resumes rather than restarting, by counting the shards already on disk against the index.
-
-`backoffLimit` is 0 deliberately: silent retries turn one diagnosable failure into an unbounded transfer cost. Keep the hub cache on the same volume, or the container's root disk fills. Verify against the index at the end, because a partial download can exit 0 and fail later at model load.
-
-Xet has been observed stalling and running out of memory on very large repositories, so it is disabled here. That carries a cost: `hf_transfer` has been removed from the hub client, so with Xet off there is no accelerated transfer path and downloads run over plain HTTP, measured at roughly 60 MB/s on a 15 GB checkpoint. The Jobs in [`model-jobs/`](../../model-jobs/README.md) make the opposite tradeoff and set `HF_XET_HIGH_PERFORMANCE=1`, matching NVIDIA's [Dynamo GLM recipe](https://github.com/ai-dynamo/dynamo/blob/main/recipes/glm-5.2/model-cache/model-download.yaml). Xet stays off in this template while the stall is only reproducible on very large repositories; revisiting it requires a measurement on one of those.
-
-Gated repositories need a Secret named `hf-token` with key `token`.
-
-### `job-stage-weights-to-s3.yaml`
-
-Use it when the zone is undecided: FSx is single-AZ and GPU capacity determines the zone, but S3 is regional, so an hours-long download can start before the filesystem exists. If the filesystem already exists, `job-download-weights-to-pvc.yaml` is one step shorter.
-
-Xet is disabled for the same reason as the download Job. `--only-show-errors` prevents a per-file line for a few hundred shards from obscuring a real error. Compare object counts rather than relying on sync's exit code, because a partial upload can appear successful and fail later at model load. The scratch volume holds only the checkpoint plus its hub cache, since S3 is the durable copy, so size both accordingly.
-
-Keep the bucket in the cluster's region. No Secret is needed, but the node's IAM role must be able to write to the bucket, which is worth confirming with `pod-diagnostic-probe.yaml` before starting a multi-hour transfer.
-
-### `job-quantize-model.yaml`
-
-Use this Job when the selected serving runbook requires a checkpoint that is not available through a published-checkpoint staging Job. Start with that runbook: export its values for `AWS_REGION`, `EKS_CLUSTER_NAME`, `HUGGING_FACE_HUB_TOKEN`, `NAMESPACE`, and `INSTANCE_TYPE`, then install the shared prerequisites. This configures the cluster context and creates the namespaced `hf-token` Secret consumed by the Job.
-
-```bash
-export AWS_REGION="us-east-1"
-export EKS_CLUSTER_NAME="my-cluster"
-read -rsp "Hugging Face token: " HUGGING_FACE_HUB_TOKEN && export HUGGING_FACE_HUB_TOKEN
-printf '\n'
-export NAMESPACE="vllm"
-export INSTANCE_TYPE="g7e.4xlarge"
-./scripts/install-prerequisites.sh
-```
-
-Confirm the shared claim is bound in that namespace before starting the quantization Job:
-
-```bash
-kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-  --for=jsonpath='{.status.phase}'=Bound pvc/fsx-pvc --timeout=2m
-```
-
-Build and push the quantizer image. `scripts/push-image.sh` uses `AWS_ACCOUNT_ID` and `AWS_REGION` to publish `serving-sweep-quantizer:latest` to ECR, and creates the repository first if it does not exist:
-
-```bash
-export AWS_ACCOUNT_ID="012345678901"
-./scripts/push-image.sh
-```
-
-Copy the example to a model-specific working manifest, then set the image account and region, `MODEL_ID`, the `fsx-pvc` claim name if yours differs, and the GPU limit. `QUANTIZATION_FORMAT` defaults to `fp8`; change it to `int8` or `awq` when required.
-
-```bash
-export QUANTIZE_JOB="/tmp/job-quantize-model.yaml"
-cp k8s/examples/job-quantize-model.yaml "$QUANTIZE_JOB"
-```
-
-A checkpoint does not depend on which GPU produced it, but the source model must fit on the GPU shape that runs the Job. When a heterogeneous cluster makes placement material, replace the copied manifest's generic GPU selector with the full instance type selected by the runbook:
-
-```yaml
-nodeSelector:
-  node.kubernetes.io/instance-type: g7e.4xlarge
-```
-
-Converting needs more memory than serving the result afterwards, so size both the instance type and GPU count for the conversion rather than for the output.
-
-Apply the copied manifest, wait for completion, and inspect the logs:
-
-```bash
-kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f "$QUANTIZE_JOB"
-kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-  --for=condition=complete job/quantize-model --timeout=3600s
-kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs -l job-name=quantize-model
-```
-
-`backoffLimit` is 0 because each attempt costs 20 to 40 minutes of GPU time, so a failure should be reviewed before repeating. Raise the GPU count to 4 when the model does not fit on one GPU. Calibration needs more shared memory than the 64 MB default. To rerun idempotently, delete the immutable completed or failed Job before applying the manifest again:
-
-```bash
-kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete job quantize-model --ignore-not-found=true
-kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f "$QUANTIZE_JOB"
-kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-  --for=condition=complete job/quantize-model --timeout=3600s
-kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs -l job-name=quantize-model
-```
-
-For a vision-language model, add both of these. Leaving the vision tower unquantized is the expected configuration: quantizing it costs quality with no throughput gain on a text benchmark.
-
-```yaml
-- name: MODEL_LOADER
-  value: "image_text_to_text"
-- name: QUANT_EXCLUDE_PATTERNS
-  value: "*vision_tower*,*embed_vision*,*multi_modal_projector*,*vision*,*lm_head*"
 ```
 
 ### `job-build-image-kaniko.yaml`

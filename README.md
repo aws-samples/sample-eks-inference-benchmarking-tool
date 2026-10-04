@@ -71,7 +71,7 @@ Choose a serving runbook from [vLLM recipes](#vllm-recipes). Each one stands on 
 
 Quantization reduces the size of the model weights, so a model can fit on fewer or smaller GPUs, allowing more KV cache headroom to run your workloads.
 
-Some runbooks stage published quantized checkpoints with Jobs from [`model-jobs/`](./model-jobs/README.md). Recipes without a usable published checkpoint require local FP8, INT8, or INT4-AWQ quantization with NVIDIA Model Optimizer. Follow the canonical [`job-quantize-model.yaml` workflow](./k8s/examples/README.md#job-quantize-modelyaml) for image preparation, checkpoint conversion, logs, and idempotent reruns.
+Some runbooks stage published quantized checkpoints with Jobs from [`model-jobs/`](./model-jobs/README.md). Recipes without a usable published checkpoint are quantized here to ModelOpt FP8 with [NVIDIA Model Optimizer](https://github.com/NVIDIA/Model-Optimizer). Each of those recipes has a quantize Job and script in [`model-jobs/`](./model-jobs/README.md), and its runbook's instructions run it.
 
 ---
 

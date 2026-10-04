@@ -31,4 +31,4 @@ Each download Job is three lines of shell, and everything that varies is in `env
 
 These Jobs differ from that recipe in one respect: `--local-dir`. Dynamo lets the weights sit in the hub cache and serves them by repository id. The recipes here serve a path, and some of those paths are `/models/quantized/...` checkpoints produced by a quantize job, which have no repository id to resolve. The Job therefore writes to an explicit directory that a recipe's poller can wait on.
 
-The generic templates these are derived from are [`job-download-weights-to-pvc.yaml`](../k8s/examples/job-download-weights-to-pvc.yaml) and [`job-quantize-model.yaml`](../k8s/examples/job-quantize-model.yaml). The Jobs here record the per-model values that a runbook would otherwise only describe in prose.
+
