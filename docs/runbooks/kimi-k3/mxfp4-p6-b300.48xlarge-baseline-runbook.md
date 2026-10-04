@@ -95,7 +95,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
        --dry-run
    ```
 
-8. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
+8. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
 
    ```bash
    eks-bench measure \

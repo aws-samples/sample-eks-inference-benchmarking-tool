@@ -73,6 +73,6 @@ Use these sentences for runbook steps, word for word, in the order the steps occ
 | Warmup | Warm up the server with one unrecorded benchmark run, saved outside `docs/results`. |
 | Accuracy gate | Generate the accuracy gate (.JSON) that the benchmark checks against. |
 | Dry run | Dry-run the exact in-cluster benchmark. |
-| Benchmark | Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. |
+| Benchmark | Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see `` [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags) ``. |
 | Optional pair | (Optional) Dry-run the NVIDIA AIPerf cross-client calibration. / (Optional) Run the NVIDIA AIPerf cross-client calibration. |
 | Optional pair | (Optional) Dry-run the open-loop latency test. / (Optional) Run the open-loop latency test. |
