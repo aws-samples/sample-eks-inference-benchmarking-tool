@@ -104,7 +104,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --tokenizer google/gemma-4-E4B-it \
        --pod "$(kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get pods \
            -l app=gemma4-e4b-vllm-g7e-2xl-fp8kv-triton -o jsonpath='{.items[0].metadata.name}')" \
-       --reps 3 --out-dir docs/results \
+       --out-dir docs/results \
+       --reps 3 \
        --dry-run
    ```
 
@@ -120,7 +121,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --tokenizer google/gemma-4-E4B-it \
        --pod "$(kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get pods \
            -l app=gemma4-e4b-vllm-g7e-2xl-fp8kv-triton -o jsonpath='{.items[0].metadata.name}')" \
-       --reps 3 --out-dir docs/results
+       --out-dir docs/results \
+       --reps 3
    ```
 
 ## Tear down

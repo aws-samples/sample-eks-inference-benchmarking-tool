@@ -94,7 +94,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config fp8 --quant fp8 \
        --model-id /models/quantized/gemma-4-31b-it-fp8 \
        --tokenizer google/gemma-4-31b-it \
-       --reps 3 --out-dir docs/results \
+       --out-dir docs/results \
+       --reps 3 \
        --dry-run
    ```
 
@@ -108,7 +109,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config fp8 --quant fp8 \
        --model-id /models/quantized/gemma-4-31b-it-fp8 \
        --tokenizer google/gemma-4-31b-it \
-       --reps 3 --out-dir docs/results
+       --out-dir docs/results \
+       --reps 3
    ```
 
 10. (Optional) Dry-run the NVIDIA AIPerf cross-client calibration.
@@ -121,7 +123,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config fp8 --quant fp8 \
        --model-id /models/quantized/gemma-4-31b-it-fp8 \
        --tokenizer google/gemma-4-31b-it \
-       --reps 3 --out-dir docs/results \
+       --out-dir docs/results \
+       --reps 3 \
        --dry-run
    ```
 
@@ -135,7 +138,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config fp8 --quant fp8 \
        --model-id /models/quantized/gemma-4-31b-it-fp8 \
        --tokenizer google/gemma-4-31b-it \
-       --reps 3 --out-dir docs/results
+       --out-dir docs/results \
+       --reps 3
    ```
 
 12. (Optional) Dry-run the open-loop latency test.
@@ -148,7 +152,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config fp8 --quant fp8 \
        --model-id /models/quantized/gemma-4-31b-it-fp8 \
        --tokenizer google/gemma-4-31b-it \
-       --reps 3 --out-dir docs/results \
+       --out-dir docs/results \
+       --reps 3 \
        --dry-run
    ```
 
@@ -162,7 +167,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config fp8 --quant fp8 \
        --model-id /models/quantized/gemma-4-31b-it-fp8 \
        --tokenizer google/gemma-4-31b-it \
-       --reps 3 --out-dir docs/results
+       --out-dir docs/results \
+       --reps 3
    ```
 
 ## Tear down

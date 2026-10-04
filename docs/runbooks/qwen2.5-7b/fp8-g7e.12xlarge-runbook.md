@@ -95,7 +95,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config fp8 --quant fp8 \
        --model-id /models/quantized/Qwen2.5-7B-Instruct-fp8 \
        --tokenizer Qwen/Qwen2.5-7B-Instruct \
-       --reps 3 --out-dir docs/results \
+       --out-dir docs/results \
+       --reps 3 \
        --dry-run
    ```
 
@@ -109,7 +110,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config fp8 --quant fp8 \
        --model-id /models/quantized/Qwen2.5-7B-Instruct-fp8 \
        --tokenizer Qwen/Qwen2.5-7B-Instruct \
-       --reps 3 --out-dir docs/results
+       --out-dir docs/results \
+       --reps 3
    ```
 
 ## Tear down

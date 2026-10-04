@@ -91,7 +91,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --model-id glm-5.2-nvfp4 \
        --tokenizer nvidia/GLM-5.2-NVFP4 \
        --thinking off \
-       --reps 3 --out-dir docs/results \
+       --out-dir docs/results \
+       --reps 3 \
        --dry-run
    ```
 
@@ -106,7 +107,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --model-id glm-5.2-nvfp4 \
        --tokenizer nvidia/GLM-5.2-NVFP4 \
        --thinking off \
-       --reps 3 --out-dir docs/results
+       --out-dir docs/results \
+       --reps 3
    ```
 
 ## Tear down

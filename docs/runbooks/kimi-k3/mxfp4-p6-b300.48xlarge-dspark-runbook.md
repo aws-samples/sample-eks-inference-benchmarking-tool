@@ -96,7 +96,8 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
        --model-id kimi-k3 \
        --tokenizer moonshotai/Kimi-K3 \
        --thinking off \
-       --reps 3 --out-dir docs/results \
+       --out-dir docs/results \
+       --reps 3 \
        --dry-run
    ```
 
@@ -111,7 +112,8 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
        --model-id kimi-k3 \
        --tokenizer moonshotai/Kimi-K3 \
        --thinking off \
-       --reps 3 --out-dir docs/results
+       --out-dir docs/results \
+       --reps 3
    ```
 
 ## Tear down

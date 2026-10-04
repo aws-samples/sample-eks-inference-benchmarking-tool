@@ -106,7 +106,8 @@ Create the following before you start.
        --tokenizer Qwen/Qwen3-30B-A3B-FP8 \
        --pod "$(kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get pods \
            -l app=qwen3-30b-a3b-g7e12-switch-pix -o jsonpath='{.items[0].metadata.name}')" \
-       --reps 5 --out-dir docs/results \
+       --out-dir docs/results \
+       --reps 5 \
        --dry-run
    ```
 
@@ -120,8 +121,9 @@ Create the following before you start.
        --config fp8-switch-pix --quant fp8 \
        --model-id qwen3-30b-a3b-fp8 \
        --tokenizer Qwen/Qwen3-30B-A3B-FP8 \
-       --reps 1 --skip-accuracy --no-latency --no-provenance \
-       --out-dir /tmp/qwen3-30b-a3b-switch-warmup/fp8-switch-pix
+       --skip-accuracy --no-latency --no-provenance \
+       --out-dir /tmp/qwen3-30b-a3b-switch-warmup/fp8-switch-pix \
+       --reps 1
    ```
 
 6. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
@@ -136,7 +138,8 @@ Create the following before you start.
        --tokenizer Qwen/Qwen3-30B-A3B-FP8 \
        --pod "$(kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get pods \
            -l app=qwen3-30b-a3b-g7e12-switch-pix -o jsonpath='{.items[0].metadata.name}')" \
-       --reps 5 --out-dir docs/results
+       --out-dir docs/results \
+       --reps 5
    ```
 
 ## Tear down

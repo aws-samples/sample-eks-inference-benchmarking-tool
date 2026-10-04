@@ -102,7 +102,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --tokenizer meta-models/Muse-Glimmer-30B \
        --pod "$(kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get pods \
            -l app=muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3 -o jsonpath='{.items[0].metadata.name}')" \
-       --reps 3 --out-dir docs/results \
+       --out-dir docs/results \
+       --reps 3 \
        --dry-run
    ```
 
@@ -118,7 +119,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --tokenizer meta-models/Muse-Glimmer-30B \
        --pod "$(kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get pods \
            -l app=muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3 -o jsonpath='{.items[0].metadata.name}')" \
-       --reps 3 --out-dir docs/results
+       --out-dir docs/results \
+       --reps 3
    ```
 
 ## Tear down

@@ -96,7 +96,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config fp8kv-32k-flashinfer --quant nvfp4 \
        --model-id nemotron-3-ultra \
        --tokenizer nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4 \
-       --reps 3 --out-dir docs/results \
+       --out-dir docs/results \
+       --reps 3 \
        --dry-run
    ```
 
@@ -110,7 +111,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config fp8kv-32k-flashinfer --quant nvfp4 \
        --model-id nemotron-3-ultra \
        --tokenizer nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4 \
-       --reps 3 --out-dir docs/results
+       --out-dir docs/results \
+       --reps 3
    ```
 
 ## Tear down

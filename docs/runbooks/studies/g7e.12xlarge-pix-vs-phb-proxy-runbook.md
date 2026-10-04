@@ -273,8 +273,9 @@ run_arm() {
     --protocol corpus --profile legacy_corpus --instance g7e.12xlarge \
     --model-tag "$MODEL_TAG" --config "$CONFIG" --quant fp8 \
     --model-id "$MODEL_ID" --tokenizer "$TOKENIZER" \
-    --reps 1 --skip-accuracy --no-latency --no-provenance \
+    --skip-accuracy --no-latency --no-provenance \
     --out-dir "$warmup_dir" \
+    --reps 1 \
     | tee "$arm_artifacts/warmup-runner.log"
 
   .venv/bin/eks-bench measure \
@@ -282,7 +283,9 @@ run_arm() {
     --protocol corpus --profile legacy_corpus --instance g7e.12xlarge \
     --model-tag "$MODEL_TAG" --config "$CONFIG" --quant fp8 \
     --model-id "$MODEL_ID" --tokenizer "$TOKENIZER" \
-    --reps 5 --out-dir docs/results --dry-run \
+    --out-dir docs/results \
+    --reps 5 \
+    --dry-run \
     > "$arm_artifacts/measured-dry-run.txt"
 
   isolated_launch .venv/bin/eks-bench measure \
@@ -290,7 +293,8 @@ run_arm() {
     --protocol corpus --profile legacy_corpus --instance g7e.12xlarge \
     --model-tag "$MODEL_TAG" --config "$CONFIG" --quant fp8 \
     --model-id "$MODEL_ID" --tokenizer "$TOKENIZER" \
-    --reps 5 --out-dir docs/results \
+    --out-dir docs/results \
+    --reps 5 \
     | tee "$arm_artifacts/measured-runner.log"
 
   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get deployment \

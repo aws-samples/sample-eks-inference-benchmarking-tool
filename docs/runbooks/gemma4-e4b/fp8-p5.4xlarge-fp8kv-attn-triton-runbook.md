@@ -111,7 +111,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config p5-fp8kv-attn-triton --quant fp8 \
        --model-id /models/quantized/gemma-4-E4B-it-fp8 \
        --tokenizer google/gemma-4-E4B-it \
-       --reps 3 --out-dir docs/results \
+       --out-dir docs/results \
+       --reps 3 \
        --dry-run
    ```
 
@@ -125,7 +126,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config p5-fp8kv-attn-triton --quant fp8 \
        --model-id /models/quantized/gemma-4-E4B-it-fp8 \
        --tokenizer google/gemma-4-E4B-it \
-       --reps 3 --out-dir docs/results
+       --out-dir docs/results \
+       --reps 3
    ```
 
 ## Tear down
