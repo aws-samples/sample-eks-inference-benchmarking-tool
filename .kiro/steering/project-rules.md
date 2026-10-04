@@ -59,7 +59,7 @@ Use these sentences for runbook steps, word for word, in the order the steps occ
 | Download to a claim | Download the published checkpoint from Hugging Face to the `<claim>` claim. |
 | Download to S3 | Copy the published checkpoint from Hugging Face to your S3 bucket. |
 | Download a draft to S3 | Copy the published DSpark draft model from Hugging Face to your S3 bucket. |
-| Quantizer image | Build the quantizer image and push it to your ECR repository, creating the repository if needed. |
+| Quantizer image | Before proceeding, **log-in to Docker**. Build the quantizer image, create the ECR repository if needed, and push the image to your repository. This step takes several minutes to complete. |
 | Quantize | Quantize the model to ModelOpt FP8 and save the checkpoint to the `fsx-pvc` claim. |
 | Quantize and verify | Quantize the model to ModelOpt FP8 on the `fsx-pvc` claim, then verify the checkpoint. |
 | Claim to S3 | Copy the quantized checkpoint from the claim to your S3 bucket. |

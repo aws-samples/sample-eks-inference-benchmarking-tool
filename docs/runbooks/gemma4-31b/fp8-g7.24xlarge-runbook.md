@@ -57,7 +57,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-4. Build the quantizer image and push it to your ECR repository, creating the repository if needed.
+4. Before proceeding, **log-in to Docker**. Build the quantizer image, create the ECR repository if needed, and push the image to your repository. This step takes several minutes to complete.
    ```bash
    ./scripts/push-image.sh
    ```

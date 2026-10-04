@@ -53,11 +53,17 @@ pip install -e '.[tokenizer]'
 eks-bench --help
 ```
 
-This puts `eks-bench` on your PATH, along with the longer alias `eks-inference-benchmarking-tool` (both behave identically).
+### 2. Log in
 
-### 2. Follow the selected runbook
+Many of the benchmarking recipes in this repository require Docker to build the quantizer image (e.g., in FP8). Either log-in to **Docker Desktop**, or log-in from the CLI:
 
-Choose a serving runbook from [vLLM recipes](#vllm-recipes). The runbook sets its recipe-specific environment, repeats the install above so it stands on its own, installs the shared cluster prerequisites, preserves any recipe-specific checks and weight staging, then calls the recipe-local deploy helper. Keep the visible `eks-bench` accuracy, dry-run, and benchmark commands in order; each real benchmark is paired with an otherwise identical `--dry-run` command.
+```bash
+docker login
+```
+
+### 3. Follow the selected runbook
+
+Choose a serving runbook from [vLLM recipes](#vllm-recipes). Each one stands on its own: it sets its environment, repeats the install above, stages weights with a script that fails on an incomplete checkpoint, and deploys a server whose model and flags are checked before use. Every benchmark runs behind the [correctness gate](#core-capabilities), follows an identical `--dry-run`, and records its own provenance. Run the steps in order.
 
 ---
 
