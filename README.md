@@ -20,9 +20,9 @@ Each capability names the tool it is built on. This repo does not reimplement wh
 | 🔀 [**Cross-client calibration**](./docs/guides/REFERENCE.md#what-may-be-compared-with-what) | Reruns the same workload through [NVIDIA AIPerf](https://github.com/ai-dynamo/aiperf) behind the same protocol seam, and replays committed agentic traces with real think-time gaps | Two independent clients on one server show whether a figure belongs to the server or to the client that measured it |
 | 📦 [**Weight staging**](./model-jobs/README.md) | One Job per model and precision, applied once per filesystem, that downloads the checkpoint to the shared claim | Recipes wait for weights rather than fetching them, so a serving run is not also a download, and a partial checkpoint fails before the GPU is booked |
 | 🗜️ [**Quantization pipeline**](#quantization) | Produces FP8, INT8 and INT4-AWQ checkpoints with [NVIDIA Model Optimizer](https://github.com/NVIDIA/Model-Optimizer), as a GPU Job in your own cluster | Public quantized checkpoints do not exist for every model, and converting one needs more memory than serving the result afterwards |
-| ⚙️ [**Serving-stack coverage**](#vllm-recipes) | Covers prefix caching, KV-cache scale configs, [FlashInfer](https://github.com/flashinfer-ai/flashinfer) attention, and multi-node tensor and pipeline parallelism over EFA, across Deployment, StatefulSet and [LeaderWorkerSet](https://github.com/kubernetes-sigs/lws) | The serving configuration is the object of study, so the knobs that move a number are already wired up |
+| ⚙️ [**Serving-stack coverage**](#vllm-recipes) | Covers prefix caching, KV-cache scale configs, [FlashInfer](https://github.com/flashinfer-ai/flashinfer) attention, and multi-node pipeline parallelism over EFA, across Deployment and StatefulSet | The serving configuration is the object of study, so the knobs that move a number are already wired up |
 | 🔬 [**Profiling and interconnect studies**](#profile-gpus-with-nsight-systems) | Captures [Nsight Systems](https://developer.nvidia.com/nsight-systems) traces, and isolates the interconnect with [nccl-tests](https://github.com/NVIDIA/nccl-tests) | Explains a ceiling that a sweep can only locate. A trace has already overturned a conclusion this repo had published |
-| 📚 [**Runbooks, not snippets**](#vllm-recipes) | Pairs every serving recipe with capacity sizing, prerequisites, verified steps and tear-down, from single-GPU `g6e` to `u-p6e-gb200x72` | The starting point is a working deployment rather than a blank manifest |
+| 📚 [**Runbooks, not snippets**](#vllm-recipes) | Pairs every serving recipe with capacity sizing, prerequisites, verified steps and tear-down, from single-GPU `g7e.2xlarge` to multi-node `p6-b200.48xlarge` | The starting point is a working deployment rather than a blank manifest |
 
 ## Prerequisites
 
@@ -53,11 +53,17 @@ pip install -e '.[tokenizer]'
 eks-bench --help
 ```
 
-This puts `eks-bench` on your PATH, along with the longer alias `eks-inference-benchmarking-tool` (both behave identically).
+### 2. Log in
 
-### 2. Follow the selected runbook
+Many of the benchmarking recipes in this repository require Docker to build the quantizer image (e.g., in FP8). Either log-in to **Docker Desktop**, or log-in from the CLI:
 
-Choose a serving runbook from [vLLM recipes](#vllm-recipes). The runbook sets its recipe-specific environment, installs the shared cluster prerequisites, preserves any recipe-specific checks and weight staging, then calls the recipe-local deploy helper. Keep the visible `eks-bench` accuracy, dry-run, and benchmark commands in order; each real benchmark is paired with an otherwise identical `--dry-run` command.
+```bash
+docker login
+```
+
+### 3. Follow the selected runbook
+
+Choose a serving runbook from [vLLM recipes](#vllm-recipes). Each one stands on its own: it sets its environment, repeats the install above, stages weights with a script that fails on an incomplete checkpoint, and deploys a server whose model and flags are checked before use. Every benchmark runs behind the [correctness gate](#core-capabilities), follows an identical `--dry-run`, and records its own provenance. Run the steps in order.
 
 ---
 
@@ -65,7 +71,7 @@ Choose a serving runbook from [vLLM recipes](#vllm-recipes). The runbook sets it
 
 Quantization reduces the size of the model weights, so a model can fit on fewer or smaller GPUs, allowing more KV cache headroom to run your workloads.
 
-Some runbooks stage published quantized checkpoints with Jobs from [`model-jobs/`](./model-jobs/README.md#fp8-weights-downloaded-or-quantized). Recipes without a usable published checkpoint require local FP8, INT8, or INT4-AWQ quantization with NVIDIA Model Optimizer. Follow the canonical [`job-quantize-model.yaml` workflow](./k8s/examples/README.md#job-quantize-modelyaml) for image preparation, checkpoint conversion, logs, and idempotent reruns.
+Some runbooks stage published quantized checkpoints with Jobs from [`model-jobs/`](./model-jobs/README.md). Recipes without a usable published checkpoint are quantized here to ModelOpt FP8 with [NVIDIA Model Optimizer](https://github.com/NVIDIA/Model-Optimizer). Each of those recipes has a quantize Job and script in [`model-jobs/`](./model-jobs/README.md), and its runbook's instructions run it.
 
 ---
 
@@ -79,16 +85,17 @@ The recipes in this section tune the server for throughput and real-time latency
 
 | Model | Precisions | Instance types | Model guide |
 | ----- | ---------- | -------------- | ----------- |
-| GLM-5.2 | FP8, NVFP4 | `p5en.48xlarge`, `p6-b200.48xlarge`, `p6-b300.48xlarge` | [README](./docs/runbooks/glm-5.2/README.md) |
-| Kimi K3 | MXFP4 | `p6-b200.48xlarge`, `p6-b300.48xlarge`, `u-p6e-gb200x72` | [README](./docs/runbooks/kimi-k3/README.md) |
-| Llama 3.3 70B Instruct | FP8 | `g7e.12xlarge` | [README](./docs/runbooks/llama3.3-70b/README.md) |
-| Qwen3-235B-A22B | FP8 | `g7e.12xlarge` | [README](./docs/runbooks/qwen3-235b/README.md) |
-| Qwen2.5-32B-Instruct | FP8 | `g7e.4xlarge` | [README](./docs/runbooks/qwen2.5-32b/README.md) |
-| Qwen2.5-7B-Instruct | BF16, FP8 | `g6e.4xlarge`, `g7e.12xlarge`, `p5en.48xlarge` | [README](./docs/runbooks/qwen2.5-7b/README.md) |
-| Gemma 4 31B | BF16, FP8 | `g6e.12xlarge`, `g7.24xlarge`, `g7e.4xlarge` | [README](./docs/runbooks/gemma4-31b/README.md) |
-| Gemma 4 E4B | BF16, FP8 | `g7.2xlarge`, `g7e.2xlarge` | [README](./docs/runbooks/gemma4-e4b/README.md) |
+| GLM-5.2 | FP8, NVFP4 | `p6-b200.48xlarge`, `p6-b300.48xlarge` | [README](./docs/runbooks/glm-5.2/README.md) |
+| Kimi K3 | MXFP4 | `p6-b200.48xlarge`, `p6-b300.48xlarge` | [README](./docs/runbooks/kimi-k3/README.md) |
+| Llama 4 Maverick | FP8 | `p6-b200.48xlarge` | [README](./docs/runbooks/llama4-maverick/README.md) |
+| Nemotron 3 Ultra | NVFP4 | `p6-b200.48xlarge` | [README](./docs/runbooks/nemotron-3-ultra/README.md) |
+| Muse-Glimmer 30B | FP8 | `g7e.48xlarge`, `p6-b200.48xlarge` | [README](./docs/runbooks/muse-glimmer-30b/README.md) |
+| Qwen2.5-7B-Instruct | FP8 | `g6e.12xlarge`, `g7e.12xlarge` | [README](./docs/runbooks/qwen2.5-7b/README.md) |
+| Qwen3-30B-A3B | FP8 | `g7e.12xlarge` | [README](./docs/runbooks/qwen3-30b-a3b/README.md) |
+| Gemma 4 31B | FP8 | `g7.24xlarge`, `p6-b200.48xlarge` | [README](./docs/runbooks/gemma4-31b/README.md) |
+| Gemma 4 E4B | FP8 | `g7e.2xlarge`, `p5.4xlarge` | [README](./docs/runbooks/gemma4-e4b/README.md) |
 
-Each model guide lists every recipe for that model and links its runbook. [`vllm-recipes/README.md`](./vllm-recipes/README.md) indexes all of them in one table, with instance, GPU count, parallelism, workload kind and serving image per recipe. Recipes whose purpose is to measure the interconnect rather than serving performance are documented under [Interconnect studies](./experiments/README.md#interconnect-studies) in [`experiments/`](./experiments/) instead, and are absent from the model guides for that reason.
+Each model guide lists every recipe for that model and links its runbook. [`vllm-recipes/README.md`](./vllm-recipes/README.md) indexes all of them in one table, with instance, GPU count, parallelism, workload kind and serving image per recipe. Recipes whose purpose is to measure the interconnect rather than serving performance are documented under [Interconnect studies](./experiments/README.md#interconnect-studies) in [`experiments/`](./experiments/) instead, and are absent from the model guides for that reason. The exception is Qwen3-30B-A3B: its default and `PIX` study arms are its top results, so they stay in `vllm-recipes/` and have runbooks in its model guide.
 
 ---
 

@@ -1,10 +1,5 @@
-#
-# Gemma 4 E4B at FP8 with an FP8 KV cache on one g7e.2xlarge, attention backend pinned to TRITON_ATTN.
-# Triton attention. Portable across any SM and head size, and the fallback if FlashInfer or FlashAttention reject sliding-window attention, GQA, or head_dim 512.
-# SUBSTITUTE: nothing. All arms of this A/B hold every flag but --attention-backend, and run at
-# --gpu-memory-utilization 0.90 rather than the 0.80 the fp8kv pair uses, so compare arms against
-# each other rather than against the fp8kv baseline.
-#
+# Gemma 4 E4B at FP8 with an FP8 KV cache on one g7e.2xlarge (1 GPU), Triton attention backend.
+# SUBSTITUTE: fsx-pvc if your claim is named differently.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -59,12 +54,7 @@ spec:
               value: "modelopt"
             - name: DTYPE
               value: "bfloat16"
-            # The one difference from the BF16-KV sibling. "bfloat16" is rejected by the engine
-            # and "auto" resolves through DTYPE to BF16, which is what the sibling serves.
-            # No --calculate-kv-scales here: v0.29.0 rejects it with "unrecognized arguments" and
-            # the engine will not start. The Qwen kvscales recipes pass it on vLLM 0.21.0. This
-            # server therefore runs uncalibrated and logs "Using KV cache scaling factor 1.0 for
-            # fp8_e4m3" at startup, which is a caveat on any accuracy claim taken from it.
+            # KV scales are uncalibrated (factor 1.0): vLLM 0.29.0 does not accept --calculate-kv-scales.
             - name: KV_CACHE_DTYPE
               value: "fp8"
             - name: MAX_MODEL_LEN
@@ -77,20 +67,13 @@ spec:
               value: "10"
             - name: SCHEDULING_POLICY
               value: "fcfs"
-            # Matches the canonical sweep's top level, so every measured batch size is
-            # graph-captured and nothing is captured above it.
+            # Largest batch size captured as a CUDA graph.
             - name: MAX_CUDAGRAPH
               value: "512"
-            # Held at the g7.2xlarge value so precision and instance are the only variables; this card has 96 GiB.
             - name: GPU_MEM_UTIL
               value: "0.90"
-            # Pinned rather than auto-selected: vLLM's auto priority tables are written for
-            # sm_10x B200 and this card is sm_120, so the kernel path is an A/B rather than a
-            # known default. Passed to the server as --attention-backend, not as
-            # VLLM_ATTENTION_BACKEND: v0.29.0 does not read that variable, logs "Unknown vLLM
-            # environment variable detected" for it, and carries no such name in vllm.envs, so
-            # setting it leaves the engine on whatever it auto-selects. Values are the names in
-            # vllm.v1.attention.backends.registry.AttentionBackendEnum.
+            # Passed as --attention-backend because vLLM 0.29.0 ignores VLLM_ATTENTION_BACKEND.
+            # Values are AttentionBackendEnum names in vllm.v1.attention.backends.registry.
             - name: ATTENTION_BACKEND
               value: "TRITON_ATTN"
             - name: INSTANCE_TYPE
@@ -99,9 +82,7 @@ spec:
               value: "/models"
             - name: PYTHONUNBUFFERED
               value: "1"
-            # INFO rather than WARNING so the chosen backend is visible in the server log.
-            # Which kernel served is the entire question these arms ask, and no result file
-            # records it. Set identically in all three arms, so it is not a variable.
+            # INFO logs the selected attention backend at startup.
             - name: VLLM_LOGGING_LEVEL
               value: "INFO"
           resources:

@@ -1,6 +1,6 @@
-#
-# Qwen2.5-7B-Instruct at FP8 on one g7e.12xlarge, a single GPU, reading the KV scales baked into the checkpoint. Use this as the primary g7e FP8 configuration.
-#
+# Qwen2.5-7B-Instruct at ModelOpt FP8 on one GPU of a g7e.12xlarge, with a 16-bit KV cache: the checkpoint
+# carries no KV scales, and an FP8 KV cache without them fails the accuracy gate.
+# SUBSTITUTE: fsx-pvc if your claim is named differently.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -31,12 +31,11 @@ spec:
               echo "=== starting vLLM on ${INSTANCE_TYPE}: $(date -u) ==="
               vllm serve ${MODEL_DIR} \
                 --quantization ${QUANTIZATION} \
-                --kv-cache-dtype fp8_e4m3 \
                 --tensor-parallel-size ${TP_SIZE} \
                 --gpu-memory-utilization ${GPU_MEM_UTIL} \
                 --max-num-seqs ${MAX_NUM_SEQS} \
                 --max-num-batched-tokens ${MAX_NUM_BATCHED_TOKENS} \
-                --enable-prefix-caching \
+                --no-enable-prefix-caching \
                 --enable-chunked-prefill \
                 --port 8000
           ports:
@@ -53,7 +52,7 @@ spec:
             - name: GPU_MEM_UTIL
               value: "0.95"
             - name: QUANTIZATION
-              value: "fp8"
+              value: "modelopt"
             - name: INSTANCE_TYPE
               value: "g7e.12xlarge"
             - name: HUGGING_FACE_HUB_TOKEN
@@ -61,10 +60,9 @@ spec:
                 secretKeyRef: { name: hf-token, key: token }
             - name: HF_HOME
               value: "/models"
-            - name: VLLM_ATTENTION_BACKEND
-              value: "FLASHINFER"
+            # INFO logs the KV cache size and prefix cache hit rate the provenance block reads.
             - name: VLLM_LOGGING_LEVEL
-              value: "WARNING"
+              value: "INFO"
           resources:
             limits:
               nvidia.com/gpu: 1

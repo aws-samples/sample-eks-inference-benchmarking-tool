@@ -1,17 +1,9 @@
 #
-# Job that copies the published ModelOpt FP8 checkpoint off the shared claim and into an S3 staging prefix, so a cluster in another region can serve the same bytes. Pairs with fp8-model-download.yaml, which loads it on the far side.
+# Copies the published ModelOpt FP8 checkpoint from the shared claim into an S3 staging prefix for another region.
+# fp8-model-download.yaml loads it there.
 #
-# Naming note: the two sanctioned names in this directory are <quant>-model-download.yaml and
-# <quant>-model-quantize.yaml. This Job is neither. It does not fetch published weights and it does
-# not produce a checkpoint, it exports one this repo already produced, so it takes a third name
-# rather than misfiling under either.
-#
-# Prefer exporting over re-quantizing in the second region. Calibration is data-dependent and this
-# checkpoint is not bit-reproducible, so a fresh quantize yields different weights and makes results
-# incomparable to every measurement taken on the original.
-#
-# The node role needs s3:PutObject and s3:ListBucket on the staging bucket only. Remove that grant
-# when the staging prefix is deleted.
+# The node role needs s3:PutObject and s3:ListBucket on the staging bucket only.
+# Remove that grant when you delete the staging prefix.
 #
 # SUBSTITUTE: my-checkpoint-bucket and fsx-pvc.
 apiVersion: batch/v1
@@ -23,7 +15,7 @@ spec:
   template:
     spec:
       restartPolicy: Never
-      # No GPU. This is a copy, so it runs anywhere that can mount the claim.
+      # Needs no GPU, only the claim mount.
       containers:
         - name: exporter
           image: public.ecr.aws/aws-cli/aws-cli:latest
@@ -43,8 +35,7 @@ spec:
               if [ "$shards" -gt 1 ]; then
                 test -s "$SRC/model.safetensors.index.json" || { echo "FAIL: $shards shards but no index"; exit 1; }
               fi
-              # A ModelOpt FP8 export carries per-tensor scales. Their absence means the
-              # directory holds unquantized weights under a quantized name.
+              # An FP8 export declares its quantization in config.json; without it the weights are unquantized.
               grep -q 'quantization_config\|quant_method' "$SRC/config.json" \
                 || { echo "FAIL: config.json declares no quantization; this is not an FP8 export"; exit 1; }
               echo "  shards: $shards"

@@ -1,0 +1,163 @@
+#
+# Stages the published moonshotai/Kimi-K3 MXFP4 checkpoint (~1,454 GiB) from Hugging Face into S3.
+# Streams one file at a time (download, upload, delete), so peak scratch is WORKERS x the largest shard.
+# Skips objects already in S3, so a retry resumes. Fails if any file failed or S3 holds under 98% of the repo's bytes.
+# Apply this file before dspark-draft-download.yaml, which reuses its ConfigMap.
+#
+# SUBSTITUTE: WEIGHTS_BUCKET, AWS_REGION, and the IRSA-annotated ServiceAccount.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kimi-k3-s3-stager
+data:
+  stage.py: |
+    """Stream a Hugging Face repo into S3 one file at a time, resumably."""
+    import os
+    import sys
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    import boto3
+    from botocore.config import Config as BotoConfig
+    from huggingface_hub import HfApi, hf_hub_download
+
+    REPO = os.environ["MODEL_REPO"]
+    BUCKET = os.environ["WEIGHTS_BUCKET"]
+    PREFIX = os.environ["PREFIX"].strip("/")
+    REGION = os.environ["AWS_REGION"]
+    TOKEN = os.environ.get("HUGGING_FACE_HUB_TOKEN") or None
+    WORKERS = int(os.environ.get("WORKERS", "4"))
+    SCRATCH = os.environ.get("SCRATCH", "/scratch")
+
+    s3 = boto3.client("s3", region_name=REGION,
+                      config=BotoConfig(retries={"max_attempts": 10, "mode": "adaptive"}))
+
+
+    def s3_sizes():
+        sizes = {}
+        for page in s3.get_paginator("list_objects_v2").paginate(Bucket=BUCKET, Prefix=PREFIX + "/"):
+            for obj in page.get("Contents", []):
+                sizes[obj["Key"]] = obj["Size"]
+        return sizes
+
+
+    info = HfApi().repo_info(REPO, token=TOKEN, files_metadata=True)
+    want = {s.rfilename: (s.size or 0) for s in info.siblings}
+    total = sum(want.values())
+    have = s3_sizes()
+    print(f"{REPO}: {len(want)} files, {total / 2**30:.1f} GiB; {len(have)} objects already in s3://{BUCKET}/{PREFIX}/", flush=True)
+
+    lock = threading.Lock()
+    failed = []
+
+
+    def stage(name):
+        key = f"{PREFIX}/{name}"
+        if want[name] and have.get(key) == want[name]:
+            return
+        local = None
+        try:
+            local = hf_hub_download(repo_id=REPO, filename=name, token=TOKEN,
+                                    local_dir=os.path.join(SCRATCH, "dl"))
+            s3.upload_file(local, BUCKET, key)
+            print(f"staged {name} ({want[name] / 2**30:.2f} GiB)", flush=True)
+        except Exception as exc:
+            with lock:
+                failed.append(f"{name}: {type(exc).__name__}: {exc}")
+        finally:
+            if local and os.path.exists(local):
+                os.remove(local)
+
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        list(pool.map(stage, sorted(want)))
+
+    for line in failed:
+        print(f"FAILED {line}", file=sys.stderr, flush=True)
+    staged = sum(s3_sizes().values())
+    print(f"S3 holds {staged / 2**30:.1f} GiB of {total / 2**30:.1f} GiB", flush=True)
+    if failed or staged < 0.98 * total:
+        sys.exit("FATAL: staging is incomplete")
+    print("=== staged ===", flush=True)
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kimi-k3-mxfp4-hf-to-s3
+spec:
+  # Retries resume from objects already in S3.
+  backoffLimit: 20
+  activeDeadlineSeconds: 86400
+  template:
+    metadata:
+      labels:
+        app: kimi-k3-mxfp4-hf-to-s3
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: kimi-k3-bench
+      # Requests no GPU; the toleration lets it place where every autoscaled pool is GPU-tainted.
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: stager
+          image: public.ecr.aws/docker/library/python:3.12-slim
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          command: ["bash", "-c"]
+          env:
+            - name: MODEL_REPO
+              value: moonshotai/Kimi-K3
+            - name: WEIGHTS_BUCKET
+              value: SUBSTITUTE-weights-bucket
+            - name: PREFIX
+              value: kimi-k3-mxfp4
+            - name: AWS_REGION
+              value: us-east-1
+            # ~16 GiB shards; 24 in flight keeps the Hugging Face download saturated. Lower it if the Hub throttles.
+            - name: WORKERS
+              value: "24"
+            - name: SCRATCH
+              value: /scratch
+            - name: HF_HOME
+              value: /scratch/.hf-cache
+            # Xet is disabled; it stalls on very large repositories.
+            - name: HF_HUB_DISABLE_XET
+              value: "1"
+            - name: HF_HUB_ENABLE_HF_TRANSFER
+              value: "1"
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          args:
+            - |
+              set -euo pipefail
+              pip install --no-cache-dir -q "huggingface_hub[hf_transfer]==1.28.0" boto3
+              df -h /scratch | tail -1
+              exec python3 /opt/stager/stage.py
+          volumeMounts:
+            - { name: stager, mountPath: /opt/stager }
+            - { name: scratch, mountPath: /scratch }
+          resources:
+            requests:
+              cpu: "24"
+              memory: 64Gi
+              ephemeral-storage: 600Gi
+            limits:
+              cpu: "48"
+              memory: 128Gi
+              ephemeral-storage: 1200Gi
+      volumes:
+        - name: stager
+          configMap: { name: kimi-k3-s3-stager }
+        - name: scratch
+          emptyDir: { sizeLimit: 1200Gi }

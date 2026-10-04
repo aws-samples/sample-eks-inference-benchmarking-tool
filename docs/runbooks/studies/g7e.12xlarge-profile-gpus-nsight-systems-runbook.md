@@ -13,52 +13,29 @@ Complete the following before you start. `nsys` must be the parent process of `v
 
 ## Quickstart
 
-This capture runs the public Qwen2.5-7B model in BF16 on g7e.12xlarge at TP=2. It does not require a Hugging Face token.
-
 1. Set environment variables.
 
    ```bash
-   export AWS_REGION="us-east-1"
-   export EKS_CLUSTER_NAME="<your-cluster-name>"
-   export NAMESPACE="vb-nsys-qwen25-7b-g7e-12xlarge"
-   export INSTANCE_TYPE="g7e.12xlarge"
+   export AWS_REGION=<your-cluster-region>
+   export EKS_CLUSTER_NAME=<your-cluster-name>
+   export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
+   export NAMESPACE=vb-nsys-qwen25-7b-g7e-12xlarge
+   export INSTANCE_TYPE=g7e.12xlarge
    ```
 
-2. Configure a kubeconfig context whose alias matches the cluster name, create the workload namespace idempotently, install NVIDIA device-plugin chart 0.20.0, wait for matching nodes to become Ready, and print the GPUs advertised by the plugin.
-
+2. Install the `eks-bench` CLI into a Python virtual environment.
    ```bash
-   aws eks update-kubeconfig \
-     --name "$EKS_CLUSTER_NAME" \
-     --region "$AWS_REGION" \
-     --alias "$EKS_CLUSTER_NAME"
-
-   kubectl --context "$EKS_CLUSTER_NAME" create namespace "$NAMESPACE" \
-     --dry-run=client -o yaml \
-     | kubectl --context "$EKS_CLUSTER_NAME" apply -f -
-
-   helm repo add nvdp https://nvidia.github.io/k8s-device-plugin --force-update
-   helm repo update nvdp
-   helm upgrade --install nvdp nvdp/nvidia-device-plugin \
-     --version 0.20.0 \
-     --namespace nvidia-device-plugin \
-     --create-namespace \
-     --kube-context "$EKS_CLUSTER_NAME" \
-     --atomic \
-     --wait \
-     --timeout 5m
-
-   kubectl --context "$EKS_CLUSTER_NAME" wait node \
-     -l "node.kubernetes.io/instance-type=$INSTANCE_TYPE" \
-     --for=condition=Ready \
-     --timeout=5m
-   kubectl --context "$EKS_CLUSTER_NAME" get nodes \
-     -l "node.kubernetes.io/instance-type=$INSTANCE_TYPE" \
-     -o custom-columns='NAME:.metadata.name,GPUS:.status.allocatable.nvidia\.com/gpu'
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -e '.[tokenizer]'
    ```
 
-3. Build the nsys-capable image once with Kaniko. Create user-edited copy `my-nsys-image-build.yaml`, replace its ConfigMap Dockerfile with the repository's `app/vllm-nsys/Dockerfile`, and set both the ECR destination and cache repository. The commands below make those edits only in the copy.
+3. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
+   ```bash
+   ./scripts/install-prerequisites.sh
+   ```
 
-   Before applying the Job, ensure the system-node IAM role used by the nodes labeled `role=system` can push images and cache layers to both ECR repositories. It needs ECR authorization plus layer upload and `PutImage` permissions; the example Job intentionally uses the system-node IAM role and does not configure a Kubernetes service account.
+4. Build a vLLM image with Nsight Systems and push it to ECR.
 
    ```bash
    export AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
@@ -105,7 +82,7 @@ This capture runs the public Qwen2.5-7B model in BF16 on g7e.12xlarge at TP=2. I
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs job/build-image
    ```
 
-4. Launch the server under `nsys`. Keep `my-nsys-profile.yaml` as a user-edited copy of the repository template and set `image:` to the exact destination step 3 pushed. The capture starts `NSYS_DELAY` seconds after launch and runs for `NSYS_DURATION`, so tune the delay if model startup takes longer than expected.
+5. Launch the vLLM server under `nsys` with a delayed capture window.
 
    ```bash
    cp k8s/examples/pod-profile-nsys.yaml my-nsys-profile.yaml
@@ -124,7 +101,7 @@ This capture runs the public Qwen2.5-7B model in BF16 on g7e.12xlarge at TP=2. I
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f my-nsys-profile.yaml
    ```
 
-5. Wait for the template's launch marker, then poll the server for up to six minutes. The marker confirms that the wrapper launched `nsys`; it does not mean the delayed capture window has started. If the server cannot become ready before the delayed capture is nearly over, stop and increase `NSYS_DELAY` in `my-nsys-profile.yaml` before retrying.
+6. Wait for the vLLM server to answer before the capture starts.
 
    ```bash
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs -f pod/profile-vllm -c vllm \
@@ -142,7 +119,7 @@ This capture runs the public Qwen2.5-7B model in BF16 on g7e.12xlarge at TP=2. I
    done
    ```
 
-6. Drive sustained load from inside the pod so it spans the rest of the delay and the complete capture window without a tunnel. Copy the repository's load-generator source into a repository-shaped path, then keep one concurrency level active until `nsys` stops vLLM at the end of capture. No package installation is required because aiohttp is already in the vLLM image.
+7. Send benchmark load from inside the pod until the capture ends.
 
    ```bash
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" exec pod/profile-vllm -c vllm -- \
@@ -193,14 +170,14 @@ This capture runs the public Qwen2.5-7B model in BF16 on g7e.12xlarge at TP=2. I
      exit "$rc"'
    ```
 
-7. Read the result. The pod prints the summary tables after the `CAPTURE COMPLETE` marker and then holds open, so the findings survive even if the binary trace is never copied off the node.
+8. Read the `nsys` summary tables from the pod log.
 
    ```bash
    kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs pod/profile-vllm -c vllm \
      | sed -n '/CAPTURE COMPLETE/,$p'
    ```
 
-8. Optional. Copy `/traces/vllm-trace.nsys-rep` for the GUI timeline. The trace is large and `.nsys-rep` is gitignored; keep it outside the repository or in S3.
+9. (Optional) Copy the `.nsys-rep` trace file to open in the Nsight Systems GUI.
 
    ```bash
    kubectl --context "$EKS_CLUSTER_NAME" cp \
@@ -232,6 +209,14 @@ Knobs: `TP`, `PORT`, `NSYS_DELAY` (default 180 s, must exceed model load and war
 
 ## Settings
 
+- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
+- **The walkthrough model.** Qwen2.5-7B-Instruct in BF16 at TP=2 on one g7e.12xlarge.
+- **The image build Job runs as the system-node IAM role.** The nodes labeled `role=system` need ECR authorization, layer upload and `PutImage` on both repositories; the Job configures no ServiceAccount.
+- **`my-nsys-image-build.yaml` and `my-nsys-profile.yaml` are your copies.** Steps 4 and 5 write the image name and Dockerfile into them, so the repository templates stay untouched.
+- **`NSYS_DELAY` and `NSYS_DURATION`** The capture starts `NSYS_DELAY` seconds after launch and runs for `NSYS_DURATION`. The log line `launching vLLM under nsys` means `nsys` started, not that the capture has. If the server is not ready before the capture is nearly over, raise `NSYS_DELAY` in `my-nsys-profile.yaml` and retry.
+- **Load runs inside the pod.** It reaches the server without a port-forward and keeps one concurrency level active until `nsys` stops vLLM. The vLLM image already has `aiohttp`, so nothing is installed.
+- **The pod stays up after the capture.** It prints the summary tables after `CAPTURE COMPLETE`, so the findings survive even if you never copy the trace. The `.nsys-rep` file is large and gitignored; keep it outside the repository or in S3.
+- **No Hugging Face token is used.** The model is public. `install-prerequisites.sh` still requires `HUGGING_FACE_HUB_TOKEN` and creates an `hf-token` secret that nothing here mounts.
 - **Do not `exec` the `nsys` command.** `nsys` stops the target when the capture closes, and with `exec` the shell is gone, so nothing runs afterwards to preserve the trace. One attempt lost the `.nsys-rep` when the kubelet reclaimed the `emptyDir` on container exit.
 - **Do not pipe `nsys stats` into `head`.** SIGPIPE plus `pipefail` kills the script before the remaining reports are written.
 - **Keep TP at 2 or more.** The manifest pins TP=2 so the collective exists to be measured.

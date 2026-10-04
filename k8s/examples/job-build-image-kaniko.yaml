@@ -8,16 +8,15 @@ metadata:
   name: image-dockerfile
 data:
   Dockerfile: |
-    # Replace with the image you need. This example adds a tool to a serving base without rebuilding
-    # it, the common case: profilers, EFA libraries, a newer NCCL.
+    # Replace with the image you need. This example adds a tool to a serving base image,
+    # such as a profiler, EFA libraries, or a newer NCCL.
     FROM public.ecr.aws/deep-learning-containers/vllm:0.21.0-gpu-py312
 
     RUN apt-get update -qq && \
         apt-get install -y --no-install-recommends some-package && \
         rm -rf /var/lib/apt/lists/*
 
-    # Fail the BUILD, not the run: a build failure costs seconds, the same failure at server start
-    # costs a GPU booking.
+    # Fails the build, not the run, if the tool is missing.
     RUN some-package --version
 ---
 apiVersion: batch/v1
@@ -33,7 +32,7 @@ spec:
         role: system
       containers:
         - name: kaniko
-          image: gcr.io/kaniko-project/executor:latest
+          image: ghcr.io/osscontainertools/kaniko:v1.28.5@sha256:738807f0e31daf07743f89260a95956dcc6ee4f62553f4f6344c990cabab8675
           args:
             - --dockerfile=/workspace/Dockerfile
             - --context=dir:///workspace

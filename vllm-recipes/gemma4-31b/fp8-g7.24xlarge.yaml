@@ -1,6 +1,5 @@
-#
-# Gemma 4 31B at FP8 on one g7.24xlarge, 4 GPUs, tensor parallel 4, prefix caching off. Use this for a publishable g7 throughput figure.
-#
+# Gemma 4 31B at FP8 on one g7.24xlarge, 4 GPUs, tensor parallel 4.
+# SUBSTITUTE: fsx-pvc if your claim is named differently.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -37,6 +36,7 @@ spec:
                 --gpu-memory-utilization ${GPU_MEM_UTIL} \
                 --max-model-len ${MAX_MODEL_LEN} \
                 --max-num-seqs ${MAX_NUM_SEQS} \
+                --no-enable-prefix-caching \
                 --max-num-batched-tokens ${MAX_NUM_BATCHED_TOKENS} \
                 --enable-chunked-prefill \
                 --port 8000

@@ -5,7 +5,6 @@ Indexed by error string. Each entry states the cause and the fix. Where a fix be
 - [A recipe applies cleanly but serves the wrong configuration](#a-recipe-applies-cleanly-but-serves-the-wrong-configuration)
 - [A GPU node reports `Ready` but advertises `nvidia.com/gpu: 0`](#a-gpu-node-reports-ready-but-advertises-nvidiacomgpu-0)
 - [`CUDA error: no kernel image is available for execution on the device` on g7e](#cuda-error-no-kernel-image-is-available-for-execution-on-the-device-on-g7e)
-- [Crash during CUDA-graph warmup on g7e](#crash-during-cuda-graph-warmup-on-g7e)
 - [`KeyError: 'layers.X.mlp.down_proj.weight_scale'` at vLLM startup](#keyerror-layersxmlpdown_projweight_scale-at-vllm-startup)
 - [vLLM crashes with `max_num_batched_tokens < max_model_len`](#vllm-crashes-with-max_num_batched_tokens--max_model_len)
 - [`PREFLIGHT FAIL: model ... not served`, or all requests return 404](#preflight-fail-model--not-served-or-all-requests-return-404)
@@ -32,10 +31,6 @@ For the middle case, installing the distribution's open-driver package is not su
 ## `CUDA error: no kernel image is available for execution on the device` on g7e
 
 For recipes pinned to `public.ecr.aws/deep-learning-containers/vllm:0.21.0-gpu-py312`, the tested XFormers path lacked usable `sm_120` kernels. Those affected old-image manifests set `VLLM_ATTENTION_BACKEND=FLASHINFER`, which supplies the needed kernels and supports an FP8 KV cache. This is not a family-wide g7e rule: current `vllm/vllm-openai:v0.26.0` g7e recipes run without a global backend override. Verify the exact GPU, model, dtype, and image, and use the override only when that stack reproduces the missing-kernel failure.
-
-## Crash during CUDA-graph warmup on g7e
-
-The retained workaround is specific to Qwen2.5-32B FP8 on the vLLM 0.21 DLC: `vllm-recipes/qwen2.5-32b/fp8-g7e.4xlarge.yaml` uses `--enforce-eager` after a reproduced graph-capture failure. Eager mode is a targeted fallback rather than a g7e default; current v0.26 g7e recipes keep graphs enabled. If a custom image fails during warmup, first verify backend/cubin support and memory sizing. Re-test before removing eager mode from the affected old-image recipe, and treat neither it nor `--max-num-seqs=256` as a general g7e setting.
 
 ## `KeyError: 'layers.X.mlp.down_proj.weight_scale'` at vLLM startup
 

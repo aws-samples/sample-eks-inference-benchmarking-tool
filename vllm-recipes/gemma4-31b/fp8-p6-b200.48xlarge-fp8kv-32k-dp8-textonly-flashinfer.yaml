@@ -1,28 +1,18 @@
-#
-# Gemma 4 31B at FP8 with an FP8 KV cache as EIGHT independent single-GPU replicas on one
-# p6-b200.48xlarge (8x B200 180 GB, sm_100), 32,768-token context each. No tensor parallelism:
-# each replica owns one GPU, so there is no interconnect tax at all, and each 180 GB card holds
-# ~14 full-length coding_repo_context sequences against ~4 on a 96 GB g7e card. Single node,
-# no EFA. Serves the checkpoint from S3 (this cluster has no FSx claim).
-#
-# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION, in both containers.
+# Gemma 4 31B at FP8 with an FP8 KV cache on one p6-b200.48xlarge: eight single-GPU replicas,
+# 32k context, text-only, FlashInfer attention. Weights are staged from S3.
+# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION in the init container.
 ---
-#
-# TEXT-ONLY ARM of fp8-p6-b200.48xlarge-fp8kv-32k-dp8.yaml.
-# --language-model-only sets every image/video limit to 0, which turns off vLLM's mm_prefix
-# attention mode (config/model.py) and so lifts the 'partial multimodal token full attention'
-# refusal that blocks FLASHINFER for this model. The coding workload is text-only, so this is a
-# production-valid setting. It also skips the vision encoder, which frees memory for KV cache:
-# compare text-only arms with each other, not with the multimodal TRITON_ATTN baseline.
+# --language-model-only disables multimodal inputs, which FlashInfer requires for this model,
+# and skips the vision encoder.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: gemma4-31b-vllm-b200-fp8kv-32k-dp8-textonly-flashinfer
   labels: { app: gemma4-31b-vllm-b200-fp8kv-32k-dp8-textonly-flashinfer }
 spec:
-  # The S3 weight sync outlasts the 600s default; without this, rollout status reports failure on a healthy load.
+  # The S3 weight sync outlasts the 600 s default progress deadline.
   progressDeadlineSeconds: 3600
-  # Eight single-GPU pods on the one 8-GPU node; the Service load-balances across them.
+  # One single-GPU replica per GPU; the Service load-balances across them.
   replicas: 8
   selector:
     matchLabels: { app: gemma4-31b-vllm-b200-fp8kv-32k-dp8-textonly-flashinfer }
@@ -92,18 +82,16 @@ spec:
           ports:
             - containerPort: 8000
           env:
-            # ModelOpt export; the vanilla fp8 loader mis-reads it (gemma incident).
+            # The checkpoint is a ModelOpt export; the plain fp8 loader does not read it correctly.
             - name: QUANTIZATION
               value: "modelopt"
             - name: KV_CACHE_DTYPE
               value: "fp8"
-            # Pinned for parity with every other measured config tonight; the deploy checks
-            # assert what actually served.
             - name: ATTENTION_BACKEND
               value: "FLASHINFER"
             - name: MAX_MODEL_LEN
               value: "32768"
-            # ~14 full-length sequences fit per 180 GB card at 480 KiB/token; 16 caps just above.
+            # About 14 full-length sequences fit in KV cache per GPU.
             - name: MAX_NUM_SEQS
               value: "16"
             - name: MAX_NUM_BATCHED_TOKENS

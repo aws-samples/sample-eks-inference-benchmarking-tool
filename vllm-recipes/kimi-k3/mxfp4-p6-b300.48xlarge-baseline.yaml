@@ -1,7 +1,5 @@
-#
-# Kimi K3 at MXFP4 on one p6-b300.48xlarge, 8 GPUs, tensor parallel 8. Use this as the single-node baseline that the dspark and ep variants are compared against.
-#
-# SUBSTITUTE: 012345678901 and us-east-1 in the image reference, and WEIGHTS_BUCKET.
+# Kimi K3 at MXFP4 on one p6-b300.48xlarge, 8 GPUs, tensor parallel 8, FlashInfer TRT-LLM MoE backend.
+# SUBSTITUTE: 012345678901 and us-east-1 in the image reference, and WEIGHTS_BUCKET and AWS_REGION in the init container.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -33,8 +31,7 @@ spec:
               aws configure set default.s3.max_queue_size 10000
 
               echo "weights sync start $(date -u)"; df -h /models | tail -1
-              # An emptyDir lands wherever kubelet's root is, which is not always the instance store.
-              # Check the space is really here before pulling a checkpoint this size onto a root disk.
+              # The emptyDir must be on the NVMe instance store; stop if it lacks the space.
               avail=$(df -Pk /models | awk 'NR==2 {print int($4/1048576)}')
               if [ "$avail" -lt "$MIN_FREE_GIB" ]; then
                 echo "FATAL: ${avail} GiB free at /models, need ${MIN_FREE_GIB} GiB." >&2
@@ -52,11 +49,11 @@ spec:
             - name: MIN_FREE_GIB
               value: "1500"
             - name: WEIGHTS_BUCKET
-              value: "kimi-k3-mxfp4-weights"
+              value: SUBSTITUTE-weights-bucket
             - name: WEIGHTS_PREFIX
               value: "kimi-k3-mxfp4"
             - name: AWS_REGION
-              value: "us-west-2"
+              value: "us-east-1"
           volumeMounts:
             - { name: models, mountPath: /models }
           resources:
@@ -97,6 +94,7 @@ spec:
                 --moe-backend flashinfer_trtllm
                 --max-model-len "${MAX_MODEL_LEN}"
                 --max-num-seqs "${MAX_NUM_SEQS}"
+                --no-enable-prefix-caching
                 --gpu-memory-utilization 0.9
                 --max-cudagraph-capture-size 512
                 --kv-cache-dtype fp8

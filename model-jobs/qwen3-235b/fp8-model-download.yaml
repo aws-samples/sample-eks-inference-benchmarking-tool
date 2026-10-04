@@ -1,5 +1,5 @@
 #
-# Job that downloads the Qwen3 235B A22B FP8 weights onto the shared PVC. Apply this once per filesystem before the qwen3-235b recipe, and expect a long transfer: the checkpoint is 48 shards.
+# Job that downloads the Qwen3 235B A22B FP8 weights onto the shared PVC. Apply this once per filesystem before the two-node NCCL study in experiments/g7e12-2node-qwen3-235b-lws.yaml, and expect a long transfer: the checkpoint is 48 shards.
 #
 # SUBSTITUTE: fsx-pvc.
 apiVersion: batch/v1

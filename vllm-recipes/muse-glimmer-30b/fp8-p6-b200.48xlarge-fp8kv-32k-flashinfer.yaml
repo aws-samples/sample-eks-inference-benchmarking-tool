@@ -1,22 +1,14 @@
-#
-# Muse-Glimmer-30B at FP8 with an FP8 KV cache on ONE B200 GPU of a p6-b200.48xlarge
-# (sm_100), 32,768-token context. Premium-silicon sibling of the g7e.2xlarge recipe: same
-# single-GPU serving shape, so the pair isolates what the GPU generation buys in TTFT/TPOT
-# for a compute-bound model. Single node, no EFA. Serves the checkpoint from S3.
-#
-# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION, in both containers.
+# Muse-Glimmer-30B at FP8 with an FP8 KV cache on one GPU of a p6-b200.48xlarge, 32k context,
+# FlashInfer attention backend. Weights are staged from S3.
+# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION in the init container.
 ---
-#
-# ATTENTION-BACKEND A/B ARM: identical to fp8-p6-b200.48xlarge-fp8kv-32k.yaml except --attention-backend FLASHINFER
-# (and resource names), so the pair isolates the attention kernel. Treat results from this
-# file as their own labelled config; never fold them into the TRITON_ATTN baseline.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: muse-glimmer-30b-vllm-b200-fp8kv-32k-flashinfer
   labels: { app: muse-glimmer-30b-vllm-b200-fp8kv-32k-flashinfer }
 spec:
-  # The S3 weight sync outlasts the 600s default; without this, rollout status reports failure on a healthy load.
+  # The S3 weight sync outlasts the 600 s default progress deadline.
   progressDeadlineSeconds: 3600
   replicas: 1
   strategy: { type: Recreate }
@@ -88,17 +80,15 @@ spec:
           ports:
             - containerPort: 8000
           env:
-            # ModelOpt export, as on the g7e sibling.
+            # The checkpoint is a ModelOpt FP8 export.
             - name: QUANTIZATION
               value: "modelopt"
             - name: KV_CACHE_DTYPE
               value: "fp8"
-            # Pinned for parity with the g7e sibling this recipe is read against.
             - name: ATTENTION_BACKEND
               value: "FLASHINFER"
             - name: MAX_MODEL_LEN
               value: "32768"
-            # Held at the g7e sibling's value so the batch ceiling is not a variable.
             - name: MAX_NUM_SEQS
               value: "64"
             - name: MAX_NUM_BATCHED_TOKENS

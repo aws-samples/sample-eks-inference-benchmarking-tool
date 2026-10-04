@@ -1,7 +1,6 @@
-#
-# Kimi K3 at MXFP4 on one p6-b300.48xlarge, 8 GPUs, with speculative decoding enabled. Run this back to back against the baseline to isolate what speculation buys.
-#
-# SUBSTITUTE: 012345678901 and us-east-1 in the image reference, and WEIGHTS_BUCKET.
+# Kimi K3 at MXFP4 on one p6-b300.48xlarge, 8 GPUs, tensor parallel 8, with DSpark speculative
+# decoding (7 draft tokens).
+# SUBSTITUTE: 012345678901 and us-east-1 in the image reference, and WEIGHTS_BUCKET and AWS_REGION in the init container.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -33,8 +32,7 @@ spec:
               aws configure set default.s3.max_queue_size 10000
 
               echo "weights sync start $(date -u)"
-              # An emptyDir lands wherever kubelet's root is, which is not always the instance store.
-              # Check the space is really here before pulling a checkpoint this size onto a root disk.
+              # The emptyDir must be on the NVMe instance store; stop if it lacks the space.
               avail=$(df -Pk /models | awk 'NR==2 {print int($4/1048576)}')
               if [ "$avail" -lt "$MIN_FREE_GIB" ]; then
                 echo "FATAL: ${avail} GiB free at /models, need ${MIN_FREE_GIB} GiB." >&2
@@ -53,20 +51,20 @@ spec:
               aws s3 sync "s3://${WEIGHTS_BUCKET}/${DRAFT_PREFIX}/" /models/kimi-k3-dspark/ \
                 --region "${AWS_REGION}" --only-show-errors
               test -n "$(ls -A /models/kimi-k3-dspark 2>/dev/null)" \
-                || (echo "FATAL: DSpark draft missing - run kimi-k3-dspark-hf-to-s3.yaml" >&2; exit 1)
+                || (echo "FATAL: DSpark draft missing - run model-jobs/kimi-k3/dspark-draft-download.yaml" >&2; exit 1)
               du -sh /models/kimi-k3-dspark
               echo "sync done $(date -u)"
           env:
             - name: MIN_FREE_GIB
               value: "1500"
             - name: WEIGHTS_BUCKET
-              value: "kimi-k3-mxfp4-weights"
+              value: SUBSTITUTE-weights-bucket
             - name: WEIGHTS_PREFIX
               value: "kimi-k3-mxfp4"
             - name: DRAFT_PREFIX
               value: "kimi-k3-dspark"
             - name: AWS_REGION
-              value: "us-west-2"
+              value: "us-east-1"
           volumeMounts:
             - { name: models, mountPath: /models }
           resources:
@@ -99,6 +97,7 @@ spec:
                 --moe-backend flashinfer_trtllm
                 --max-model-len "${MAX_MODEL_LEN}"
                 --max-num-seqs "${MAX_NUM_SEQS}"
+                --no-enable-prefix-caching
                 --gpu-memory-utilization 0.9
                 --max-cudagraph-capture-size 512
                 --kv-cache-dtype fp8

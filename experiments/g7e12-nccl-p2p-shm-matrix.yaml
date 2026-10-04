@@ -1,5 +1,4 @@
-# Controlled two-GPU NCCL matrix on one g7e.12xlarge PIX pair. The three arms
-# compare NCCL default selection, explicit PIX direct P2P, and forced SHM.
+# Two-GPU NCCL matrix on one g7e.12xlarge PIX pair: NCCL default, explicit PIX P2P, and forced SHM.
 # SUBSTITUTE: kubernetes.io/hostname. All arms of this study must pin the SAME node.
 apiVersion: batch/v1
 kind: Job

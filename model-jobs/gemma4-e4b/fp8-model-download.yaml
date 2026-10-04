@@ -1,9 +1,6 @@
 #
-# Job that loads the ModelOpt FP8 checkpoint from an S3 staging prefix onto the shared claim, for a cluster in a region the checkpoint was not produced in. Pairs with fp8-model-export.yaml, which writes the prefix.
-#
-# Every file is re-hashed against the SHA256SUMS the export wrote and the Job fails on any mismatch
-# or any missing file. The check has to live here rather than in the export, because the failure it
-# guards against is a truncated or partial transfer, which only the receiving side can observe.
+# Loads the ModelOpt FP8 checkpoint from an S3 staging prefix onto the shared claim, in a region that did not produce it.
+# Apply after fp8-model-export.yaml writes the prefix. Fails if any file is missing or does not match SHA256SUMS.
 #
 # The node role needs s3:GetObject and s3:ListBucket on the staging bucket only.
 #
@@ -17,7 +14,7 @@ spec:
   template:
     spec:
       restartPolicy: Never
-      # No GPU. Serving pins the instance type; this only needs to mount the claim.
+      # Needs no GPU, only the claim mount.
       containers:
         - name: downloader
           image: public.ecr.aws/aws-cli/aws-cli:latest
@@ -36,7 +33,7 @@ spec:
 
               echo "=== re-hashing every file against the manifest the export wrote ==="
               cd "$DEST"
-              # SHA256SUMS is not part of the checkpoint and was not hashed into itself.
+              # SHA256SUMS does not list itself.
               if ! sha256sum -c SHA256SUMS --quiet 2>/tmp/sha.err; then
                 echo "FAIL: checksum mismatch, the copy is not the checkpoint that was exported"
                 cat /tmp/sha.err

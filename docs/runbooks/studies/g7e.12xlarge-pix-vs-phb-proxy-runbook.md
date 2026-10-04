@@ -2,7 +2,7 @@
 
 This runbook reproduces the two-model study that compared switch-local direct P2P (`PIX`) with a no-direct-peer proxy (`NCCL_P2P_DISABLE=1`, NCCL `SHM`) on the same two GPUs. It runs Llama 3.3 70B FP8 with TP2 and Qwen3-30B-A3B FP8 with TP2+EP2.
 
-> **Scope:** the forced-SHM arm is a conservative software proxy for a switchless/PHB product question, not a physical PHB topology. A candidate PHB SKU still requires measurement on its actual motherboard, root-complex, NUMA, and PCIe configuration.
+> **Scope:** the forced-SHM arm is a conservative software proxy for a switchless/PHB product question, not a physical PHB topology. A PHB instance type still requires measurement on its actual motherboard, root-complex, NUMA, and PCIe configuration.
 
 The retained manifests are cleaned, functionally equivalent versions of the executed configurations. The post-run cleanup removed only a non-functional `TREATMENT` log label and converted YAML flow mappings to block style; model, image, resources, vLLM arguments, NCCL controls, storage, placement, and Kubernetes resource names are unchanged.
 
@@ -20,7 +20,7 @@ The retained manifests are cleaned, functionally equivalent versions of the exec
 
 ## Before you begin
 
-1. Run from the repository root with AWS, `kubectl`, Helm, Python 3, and `sha256sum` available. Setup step 1 creates `$NAMESPACE` idempotently and installs the pinned NVIDIA device plugin. No HF token is needed because both study checkpoints are public.
+1. Run from the repository root with AWS, `kubectl`, Helm, Python 3, and `sha256sum` available. Setup step 1 runs `scripts/install-prerequisites.sh`, which creates `$NAMESPACE`, installs the pinned NVIDIA device plugin and creates an `hf-token` secret. Both study checkpoints are public, so any value works for `HUGGING_FACE_HUB_TOKEN`.
 2. Use an idle GPU node. Do not repurpose a node that is running another workload.
 3. The eight executed manifests pin `kubernetes.io/hostname` to the placeholder `ip-10-0-0-1.us-east-1.compute.internal`. Every arm must land on the **same** physical node, or the comparison measures two different hosts rather than two transports. Substitute your own node name identically across all eight files before applying anything, and treat them as one versioned set. The namespace is not pinned in the manifests; it comes from `-n "$NAMESPACE"`.
 4. The storage manifest creates `g7e12-switch-model-storage`. 
@@ -39,7 +39,9 @@ pip install -e '.[tokenizer]'
 
 export AWS_REGION=<your-cluster-region>
 export EKS_CLUSTER_NAME=<your-cluster-name>
+export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
 export NAMESPACE=vb-g7e-12xlarge-switch-study
+export INSTANCE_TYPE=g7e.12xlarge
 export GPU_NODE=<your-gpu-node-name>
 export OTHER_PROTECTED_GPU_NODE=<your-second-gpu-node-name>
 export CLIENT_NODEGROUP=g7e12-switch-client-ondemand
@@ -47,25 +49,7 @@ export CLIENT_ROLE=g7e12-switch-client
 export ARTIFACT_ROOT=artifacts/g7e12-switch
 mkdir -p "$ARTIFACT_ROOT"
 
-aws eks update-kubeconfig \
-  --name "$EKS_CLUSTER_NAME" \
-  --region "$AWS_REGION" \
-  --alias "$EKS_CLUSTER_NAME"
-
-kubectl --context "$EKS_CLUSTER_NAME" create namespace "$NAMESPACE" \
-  --dry-run=client -o yaml \
-  | kubectl --context "$EKS_CLUSTER_NAME" apply -f -
-
-helm repo add nvdp https://nvidia.github.io/k8s-device-plugin --force-update
-helm repo update nvdp
-helm upgrade --install nvdp nvdp/nvidia-device-plugin \
-  --version 0.20.0 \
-  --namespace nvidia-device-plugin \
-  --create-namespace \
-  --kube-context "$EKS_CLUSTER_NAME" \
-  --atomic \
-  --wait \
-  --timeout 5m
+./scripts/install-prerequisites.sh
 
 kubectl --context "$EKS_CLUSTER_NAME" wait node "$GPU_NODE" \
   --for=condition=Ready \
@@ -77,12 +61,12 @@ git rev-parse HEAD > "$ARTIFACT_ROOT/git-revision.txt"
 MANIFESTS=(
   experiments/g7e12-switch-study-storage-and-model-stage.yaml
   experiments/g7e12-nccl-p2p-shm-matrix.yaml
-  vllm-recipes/llama3.3-70b/fp8-g7e.12xlarge-switch-default.yaml
-  vllm-recipes/llama3.3-70b/fp8-g7e.12xlarge-switch-pix.yaml
-  vllm-recipes/llama3.3-70b/fp8-g7e.12xlarge-switch-shm.yaml
+  experiments/g7e12-switch-llama3.3-70b-default.yaml
+  experiments/g7e12-switch-llama3.3-70b-pix.yaml
+  experiments/g7e12-switch-llama3.3-70b-shm.yaml
   vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml
   vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml
-  vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-shm.yaml
+  experiments/g7e12-switch-qwen3-30b-a3b-shm.yaml
 )
 sha256sum "${MANIFESTS[@]}" > "$ARTIFACT_ROOT/manifest-sha256.txt"
 ```
@@ -245,25 +229,27 @@ Run one deployment at a time in this recorded order. The default arm is a negati
 
 2. Deploy and measure the six arms in this order.
 
-| Order | Recipe | Deployment / Service | Model tag | Config | Model ID | Tokenizer | Extra |
+| Order | Manifest | Deployment / Service | Model tag | Config | Model ID | Tokenizer | Extra |
 |---:|---|---|---|---|---|---|---|
-| 1 | `llama3.3-70b/fp8-g7e.12xlarge-switch-default.yaml` | `llama33-70b-g7e12-switch-default` | `llama3.3-70b` | `fp8-switch-default` | `llama3.3-70b-fp8` | `nvidia/Llama-3.3-70B-Instruct-FP8` | none |
-| 2 | `llama3.3-70b/fp8-g7e.12xlarge-switch-pix.yaml` | `llama33-70b-g7e12-switch-pix` | `llama3.3-70b` | `fp8-switch-pix` | `llama3.3-70b-fp8` | same | none |
-| 3 | `llama3.3-70b/fp8-g7e.12xlarge-switch-shm.yaml` | `llama33-70b-g7e12-switch-shm` | `llama3.3-70b` | `fp8-switch-shm` | `llama3.3-70b-fp8` | same | none |
-| 4 | `qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml` | `qwen3-30b-a3b-g7e12-switch-default` | `qwen3-30b-a3b` | `fp8-switch-default` | `qwen3-30b-a3b-fp8` | `Qwen/Qwen3-30B-A3B-FP8` | `--thinking off` |
-| 5 | `qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml` | `qwen3-30b-a3b-g7e12-switch-pix` | `qwen3-30b-a3b` | `fp8-switch-pix` | `qwen3-30b-a3b-fp8` | same | `--thinking off` |
-| 6 | `qwen3-30b-a3b/fp8-g7e.12xlarge-switch-shm.yaml` | `qwen3-30b-a3b-g7e12-switch-shm` | `qwen3-30b-a3b` | `fp8-switch-shm` | `qwen3-30b-a3b-fp8` | same | `--thinking off` |
+| 1 | `experiments/g7e12-switch-llama3.3-70b-default.yaml` | `llama33-70b-g7e12-switch-default` | `llama3.3-70b` | `fp8-switch-default` | `llama3.3-70b-fp8` | `nvidia/Llama-3.3-70B-Instruct-FP8` | none |
+| 2 | `experiments/g7e12-switch-llama3.3-70b-pix.yaml` | `llama33-70b-g7e12-switch-pix` | `llama3.3-70b` | `fp8-switch-pix` | `llama3.3-70b-fp8` | same | none |
+| 3 | `experiments/g7e12-switch-llama3.3-70b-shm.yaml` | `llama33-70b-g7e12-switch-shm` | `llama3.3-70b` | `fp8-switch-shm` | `llama3.3-70b-fp8` | same | none |
+| 4 | `vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml` | `qwen3-30b-a3b-g7e12-switch-default` | `qwen3-30b-a3b` | `fp8-switch-default` | `qwen3-30b-a3b-fp8` | `Qwen/Qwen3-30B-A3B-FP8` | `--thinking off` |
+| 5 | `vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml` | `qwen3-30b-a3b-g7e12-switch-pix` | `qwen3-30b-a3b` | `fp8-switch-pix` | `qwen3-30b-a3b-fp8` | same | `--thinking off` |
+| 6 | `experiments/g7e12-switch-qwen3-30b-a3b-shm.yaml` | `qwen3-30b-a3b-g7e12-switch-shm` | `qwen3-30b-a3b` | `fp8-switch-shm` | `qwen3-30b-a3b-fp8` | same | `--thinking off` |
 
-For each row, set the variables and run the function below. `RECIPE` is relative to `vllm-recipes/`. Use `THINKING_ARGS=()` for Llama and `THINKING_ARGS=(--thinking off)` for Qwen.
+For each row, set the variables and run the function below. `RECIPE` is the manifest path from the repository root; only the arms under `vllm-recipes/` go through `validate-manifests`. Use `THINKING_ARGS=()` for Llama and `THINKING_ARGS=(--thinking off)` for Qwen. Only `capture-reference` takes it; `measure` reads the mode from the stored reference.
 
 ```bash
 run_arm() {
-  local recipe_path="vllm-recipes/$RECIPE"
+  local recipe_path="$RECIPE"
   local arm_artifacts="$ARTIFACT_ROOT/$MODEL_TAG/$CONFIG"
   local warmup_dir="/tmp/g7e12-switch-warmup/$MODEL_TAG/$CONFIG"
   mkdir -p "$arm_artifacts" "$warmup_dir"
 
-  .venv/bin/eks-bench validate-manifests "$RECIPE"
+  case "$RECIPE" in
+    vllm-recipes/*) .venv/bin/eks-bench validate-manifests "${RECIPE#vllm-recipes/}" ;;
+  esac
   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f "$recipe_path"
   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" rollout status \
     "deployment/$DEPLOYMENT" --timeout=3600s
@@ -287,8 +273,9 @@ run_arm() {
     --protocol corpus --profile legacy_corpus --instance g7e.12xlarge \
     --model-tag "$MODEL_TAG" --config "$CONFIG" --quant fp8 \
     --model-id "$MODEL_ID" --tokenizer "$TOKENIZER" \
-    --reps 1 --skip-accuracy --no-latency --no-provenance \
-    --out-dir "$warmup_dir" "${THINKING_ARGS[@]}" \
+    --skip-accuracy --no-latency --no-provenance \
+    --out-dir "$warmup_dir" \
+    --reps 1 \
     | tee "$arm_artifacts/warmup-runner.log"
 
   .venv/bin/eks-bench measure \
@@ -296,7 +283,9 @@ run_arm() {
     --protocol corpus --profile legacy_corpus --instance g7e.12xlarge \
     --model-tag "$MODEL_TAG" --config "$CONFIG" --quant fp8 \
     --model-id "$MODEL_ID" --tokenizer "$TOKENIZER" \
-    --reps 5 --out-dir docs/results "${THINKING_ARGS[@]}" --dry-run \
+    --out-dir docs/results \
+    --reps 5 \
+    --dry-run \
     > "$arm_artifacts/measured-dry-run.txt"
 
   isolated_launch .venv/bin/eks-bench measure \
@@ -304,7 +293,8 @@ run_arm() {
     --protocol corpus --profile legacy_corpus --instance g7e.12xlarge \
     --model-tag "$MODEL_TAG" --config "$CONFIG" --quant fp8 \
     --model-id "$MODEL_ID" --tokenizer "$TOKENIZER" \
-    --reps 5 --out-dir docs/results "${THINKING_ARGS[@]}" \
+    --out-dir docs/results \
+    --reps 5 \
     | tee "$arm_artifacts/measured-runner.log"
 
   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get deployment \
@@ -324,7 +314,7 @@ run_arm() {
 Example for the first row:
 
 ```bash
-export RECIPE=llama3.3-70b/fp8-g7e.12xlarge-switch-default.yaml
+export RECIPE=experiments/g7e12-switch-llama3.3-70b-default.yaml
 export DEPLOYMENT=llama33-70b-g7e12-switch-default
 export SERVICE=llama33-70b-g7e12-switch-default
 export MODEL_TAG=llama3.3-70b
@@ -357,12 +347,12 @@ Delete any remaining study Deployments/Services and Jobs by their explicit names
 
 ```bash
 for recipe in \
-  vllm-recipes/llama3.3-70b/fp8-g7e.12xlarge-switch-default.yaml \
-  vllm-recipes/llama3.3-70b/fp8-g7e.12xlarge-switch-pix.yaml \
-  vllm-recipes/llama3.3-70b/fp8-g7e.12xlarge-switch-shm.yaml \
+  experiments/g7e12-switch-llama3.3-70b-default.yaml \
+  experiments/g7e12-switch-llama3.3-70b-pix.yaml \
+  experiments/g7e12-switch-llama3.3-70b-shm.yaml \
   vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml \
   vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml \
-  vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-shm.yaml; do
+  experiments/g7e12-switch-qwen3-30b-a3b-shm.yaml; do
   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f "$recipe" --ignore-not-found=true
 done
 kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete job \

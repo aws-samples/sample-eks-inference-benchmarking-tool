@@ -8,9 +8,9 @@ A manifest belongs in `experiments/` when all three are true.
 
 - **It answers one question, once.** The artifact is a written finding, not a reusable file. If someone would apply it to serve a model, it is a recipe.
 - **It is a controlled comparison.** Several files that differ in exactly one variable are the normal shape here, because the comparison is the point. `k8s/examples/` deliberately collapses near-duplicates into one file per purpose; that would destroy a study.
-- **It does not run `vllm serve`.** Anything that does is a recipe by definition and lives in [`vllm-recipes/`](../vllm-recipes/), where `validate-manifests` can prove it passes the flags it claims. The serving arm of the NCCL study moved out for exactly this reason: it is now `vllm-recipes/gemma4-31b/fp8-g7.24xlarge-p2p.yaml`.
+- **It does not run `vllm serve`, unless vLLM is only the load for an interconnect study.** A manifest that serves a model to measure serving performance is a recipe and lives in [`vllm-recipes/`](../vllm-recipes/), where `validate-manifests` can prove it passes the flags it claims. The Gemma 4 31B, Qwen3-235B and Llama 3.3 70B arms and the Qwen3-30B-A3B forced-SHM arm live here. The Qwen3-30B-A3B default and `PIX` arms are the exception: they are the model's two best results, so they stay in `vllm-recipes/` as recipes.
 
-Nothing here is checked by `validate-manifests`, whose scope is `vllm-recipes/*.yaml`. That is correct for files with no `vllm serve` invocation to verify, and it is the reason the third rule matters.
+Nothing here is checked by `validate-manifests`, whose scope is `vllm-recipes/*/*.yaml`. That is correct for the microbenchmarks, which have no `vllm serve` invocation to verify. The Gemma 4 31B, Qwen3-235B, Llama 3.3 70B and Qwen3-30B-A3B arms here do run `vllm serve`, so their deploy helpers and the switch study runbook check the served model and the live KV-cache configuration instead. The Gemma 4 31B arm has neither, so check its server log by hand.
 
 ## The three directories
 
@@ -26,23 +26,30 @@ The PCIe-switch vs host-copy study: does peer-to-peer DMA between GPUs beat stag
 
 | File | Arm |
 |---|---|
-| `nccl-tests-p2p-job.yaml` | `all_reduce_perf` across 4 GPUs on one g7.24xlarge, which has no shared switch |
-| `nccl-tests-p2p-g7e.yaml` | `all_reduce_perf` across 2 GPUs on one g7e.12xlarge, whose GPUs are switch-local (`PIX`) |
+| `g724-nccl-tests-p2p-job.yaml` | `all_reduce_perf` across 4 GPUs on one g7.24xlarge, which has no shared switch |
+| `g7e12-nccl-tests-p2p.yaml` | `all_reduce_perf` across 2 GPUs on one g7e.12xlarge, whose GPUs are switch-local (`PIX`) |
+| `g7e12-nccl-p2p-shm-matrix.yaml` | The g7e.12xlarge pair in three arms: NCCL default selection, explicit `PIX` P2P, and forced SHM |
+| `g7e12-switch-study-storage-and-model-stage.yaml` | Shared storage and checkpoint staging for the g7e.12xlarge switch study; not an arm itself |
 
-Both are the clean interconnect signal, with no model and no vLLM stack. Sweep by changing `NCCL_P2P_LEVEL`, or setting `NCCL_P2P_DISABLE=1` for the host-staging lower bound, and compare `busbw`. Keep everything else identical between runs.
+The three NCCL files are the clean interconnect signal, with no model and no vLLM stack. Sweep by changing `NCCL_P2P_LEVEL`, or setting `NCCL_P2P_DISABLE=1` for the host-staging lower bound, and compare `busbw`. Keep everything else identical between runs.
 
 Measurements land in `docs/results/`, which is gitignored, so a fresh clone gives you the manifests and you run them yourself. Compare `busbw` between arms; the absolute number is less interesting than which transport wins.
 
 ## Interconnect studies
 
-NCCL is NVIDIA's collective communications library, and it moves tensors between GPUs on every step of a tensor-parallel forward pass. The microbenchmarks above isolate the interconnect with no model. These two run vLLM like a recipe, and by the third rule under [What belongs here](#what-belongs-here) they live in `vllm-recipes/` rather than here, but their purpose is to compare `NCCL_P2P_LEVEL` settings, not to measure serving performance, so they are studies first and their results are not serving benchmarks. Change only `NCCL_P2P_LEVEL` between runs of the same recipe; `--config` keeps each arm in its own results file.
+NCCL is NVIDIA's collective communications library, and it moves tensors between GPUs on every step of a tensor-parallel forward pass. The microbenchmarks above isolate the interconnect with no model. These run vLLM, but their purpose is to compare `NCCL_P2P_LEVEL` settings, not to measure serving performance, so they are studies first and their results are not serving benchmarks. Only the Qwen3-30B-A3B default and `PIX` arms stay in `vllm-recipes/`, where `validate-manifests` checks them; the rest live here. Change only `NCCL_P2P_LEVEL` between runs of the same manifest; `--config` keeps each arm in its own results file.
 
-| Model | Instance | Precision | Parallelism | What's swept | Recipe | Runbook |
+| Model | Instance | Precision | Parallelism | What's swept | Manifest | Runbook |
 |---|---|---|---|---|---|---|
-| Gemma 4 31B | `g7.24xlarge` | FP8 | TP4 | `NCCL_P2P_LEVEL` across four PCIe GPUs with no NVLink | [`fp8-g7.24xlarge-p2p.yaml`](../vllm-recipes/gemma4-31b/fp8-g7.24xlarge-p2p.yaml) | [Runbook](../docs/runbooks/gemma4-31b/fp8-g7.24xlarge-p2p-runbook.md) |
-| Qwen3-235B-A22B | `g7e.12xlarge` x2 | FP8 | TP2, PP2 | `NCCL_P2P_LEVEL` across two nodes, one 400 Gbps EFA card each, no NVLink | [`fp8-g7e.12xlarge-lws.yaml`](../vllm-recipes/qwen3-235b/fp8-g7e.12xlarge-lws.yaml) (`--config 2node`) | [Runbook](../docs/runbooks/qwen3-235b/fp8-g7e.12xlarge-multi-node-efa-runbook.md) |
+| Gemma 4 31B | `g7.24xlarge` | FP8 | TP4 | `NCCL_P2P_LEVEL` across four PCIe GPUs with no NVLink | [`g724-p2p-gemma4-31b.yaml`](./g724-p2p-gemma4-31b.yaml) | None |
+| Qwen3-235B-A22B | `g7e.12xlarge` x2 | FP8 | TP2, PP2 | `NCCL_P2P_LEVEL` across two nodes, one 400 Gbps EFA card each, no NVLink | [`g7e12-2node-qwen3-235b-lws.yaml`](./g7e12-2node-qwen3-235b-lws.yaml), deployed with [`g7e12-2node-qwen3-235b-lws-deploy.sh`](./g7e12-2node-qwen3-235b-lws-deploy.sh) (`--config 2node`) | None |
+| Llama 3.3 70B Instruct | `g7e.12xlarge` | FP8 | TP2 | NCCL default selection, explicit `PIX` P2P, and forced SHM on one switch-local GPU pair | [`g7e12-switch-llama3.3-70b-default.yaml`](./g7e12-switch-llama3.3-70b-default.yaml), [`-pix`](./g7e12-switch-llama3.3-70b-pix.yaml), [`-shm`](./g7e12-switch-llama3.3-70b-shm.yaml) | [Runbook](../docs/runbooks/studies/g7e.12xlarge-pix-vs-phb-proxy-runbook.md) |
+| Llama 3.3 70B Instruct | `g7e.12xlarge` | FP8 | TP2 | Nothing: single-arm baseline, NCCL defaults, checkpoint downloaded into node-local storage | [`g7e12-llama3.3-70b-tp2.yaml`](./g7e12-llama3.3-70b-tp2.yaml), deployed with [`g7e12-llama3.3-70b-tp2-deploy.sh`](./g7e12-llama3.3-70b-tp2-deploy.sh) | None |
+| Qwen3-30B-A3B | `g7e.12xlarge` | FP8 | TP2, expert parallel | NCCL default selection, explicit `PIX` P2P, and forced SHM on one switch-local GPU pair | [`g7e12-switch-qwen3-30b-a3b-shm.yaml`](./g7e12-switch-qwen3-30b-a3b-shm.yaml); default and `PIX` arms are [`vllm-recipes/qwen3-30b-a3b/`](../vllm-recipes/qwen3-30b-a3b/) | [Runbook](../docs/runbooks/studies/g7e.12xlarge-pix-vs-phb-proxy-runbook.md) |
 
-The Gemma arm forces a per-layer all-reduce across four PCIe GPUs with no NVLink, which is the thing being measured, not a tuned configuration. The Qwen3 arm splits a 235B model's all-reduce across two nodes with one EFA card each and no NVLink; the cross-node link, not GPU compute, sets the ceiling, and `--config 2node` keeps its results out of the single-node set for the same recipe.
+The Qwen3-235B weights are staged by [`model-jobs/qwen3-235b/fp8-model-download.yaml`](../model-jobs/qwen3-235b/fp8-model-download.yaml), which stays with the other checkpoint-staging Jobs.
+
+The Gemma arm forces a per-layer all-reduce across four PCIe GPUs with no NVLink, which is the thing being measured, not a tuned configuration. The Qwen3 arm splits a 235B model's all-reduce across two nodes with one EFA card each and no NVLink; the cross-node link, not GPU compute, sets the ceiling, and `--config 2node` labels its results so they are never mistaken for a serving benchmark. The Llama switch arms hold the model, node and GPU pair constant and change only the NCCL transport; their checkpoint is staged by `g7e12-switch-study-storage-and-model-stage.yaml`.
 
 ## Adding or removing a study
 

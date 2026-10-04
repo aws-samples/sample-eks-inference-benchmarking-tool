@@ -1,8 +1,6 @@
 #
-# Job that stages the published NVIDIA Nemotron 3 Ultra 550B A55B NVFP4 checkpoint from Hugging
-# Face into S3, once, so any cluster can pull it later. The checkpoint is ~328 GiB across 113
-# safetensors shards; the Job fails on a shard-count or size mismatch so an incomplete stage can
-# never exit 0.
+# Stages the published NVIDIA Nemotron 3 Ultra 550B A55B NVFP4 checkpoint (~328 GiB, 113 shards) from Hugging Face into S3, once.
+# Fails on a shard-count or size mismatch.
 #
 # SUBSTITUTE: WEIGHTS_BUCKET, AWS_REGION, and the IRSA-annotated ServiceAccount.
 apiVersion: batch/v1
@@ -19,8 +17,7 @@ spec:
     spec:
       restartPolicy: OnFailure
       serviceAccountName: nemotron-3-ultra-bench
-      # A cluster whose only autoscaled pool is GPU-tainted cannot place this pod without the
-      # toleration; the ephemeral-storage request rules out typical system CPU nodes anyway.
+      # The toleration lets it place on GPU-tainted pools; its ephemeral-storage request rules out most system nodes.
       tolerations:
         - key: nvidia.com/gpu
           operator: Exists
@@ -46,8 +43,7 @@ spec:
               value: /scratch/model
             - name: HF_HOME
               value: /scratch/.hf-cache
-            # Xet high-perf transfer OOM'd and stalled on an earlier large pull on this pattern;
-            # classic HTTP plus hf_transfer is the combination that completed.
+            # Xet is disabled; it stalls on very large repositories.
             - name: HF_HUB_DISABLE_XET
               value: "1"
             - name: HF_HUB_ENABLE_HF_TRANSFER
@@ -88,7 +84,7 @@ spec:
               aws s3 sync "$STAGE_DIR" "s3://$WEIGHTS_BUCKET/$PREFIX/" --region "$AWS_REGION" --only-show-errors
 
               echo "=== verifying S3 against local $(date -u) ==="
-              # Anchored: a substring match also counts model.safetensors.index.json and fails a complete stage.
+              # Anchored so model.safetensors.index.json does not count as a shard.
               s3_count=$(aws s3 ls "s3://$WEIGHTS_BUCKET/$PREFIX/" --region "$AWS_REGION" | awk '{print $NF}' | grep -c '\.safetensors$')
               echo "shards in S3: $s3_count"
               test "$local_count" -eq "$s3_count" || { echo "FATAL: shard count mismatch after upload" >&2; exit 1; }

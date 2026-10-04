@@ -1,0 +1,216 @@
+#
+# Qwen3-235B-A22B FP8 across two g7e.12xlarge nodes as a LeaderWorkerSet: tensor parallel 2 per node, pipeline parallel 2 across nodes.
+# Serving arm of the two-node NCCL_P2P_LEVEL study over EFA; an experiment, not a serving recipe.
+#
+---
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: qwen3-235b-lws
+spec:
+  replicas: 1
+  startupPolicy: LeaderCreated
+  leaderWorkerTemplate:
+    size: 2
+    restartPolicy: RecreateGroupOnPodRestart
+    leaderTemplate:
+      metadata:
+        labels:
+          app: qwen3-235b-lws
+          role: leader
+      spec:
+        nodeSelector:
+          role: g7e-efa
+        initContainers:
+          - name: wait-for-model
+            image: busybox
+            command:
+              - sh
+              - -c
+              - |
+                D=/models/qwen3-235b-a22b-fp8
+                echo "Waiting for a complete checkpoint at $D ..."
+                until [ -f "$D/config.json" ] && { [ -f "$D/model.safetensors.index.json" ] || [ -f "$D/model.safetensors" ]; }; do
+                  echo "  $(date -u) - metadata not present yet, waiting 20s ..."
+                  sleep 20
+                done
+                if [ -f "$D/model.safetensors.index.json" ]; then
+                  WANT=$(grep -o 'model-[0-9]\{5\}-of-[0-9]\{5\}' "$D/model.safetensors.index.json" | sort -u | wc -l)
+                else
+                  WANT=1
+                fi
+                while :; do
+                  HAVE=$(ls "$D"/*.safetensors 2>/dev/null | wc -l)
+                  PART=$(find "$D" -name '*.incomplete' 2>/dev/null | wc -l)
+                  echo "  $(date -u) - shards $HAVE/$WANT, incomplete $PART"
+                  if [ "$HAVE" -eq "$WANT" ] && [ "$PART" -eq 0 ]; then break; fi
+                  sleep 20
+                done
+                echo "Checkpoint complete: $HAVE shards, no partial files. Proceeding to vLLM startup."
+            volumeMounts:
+              - { name: models, mountPath: /models }
+        containers:
+          - name: vllm-leader
+            image: public.ecr.aws/deep-learning-containers/vllm:0.21.0-gpu-py312
+            command:
+              - bash
+              - -c
+              - |
+                set -e
+                /usr/local/bin/python -m pip install -q "$RAY_SPEC"
+                ray start --head --port=6379 --disable-usage-stats
+                echo "waiting for 4 GPUs to register in Ray..."
+                until /usr/local/bin/python -c "import ray;ray.init(address='auto');import sys;sys.exit(0 if ray.cluster_resources().get('GPU',0)>=4 else 1)"; do
+                  echo "  ... GPUs not all present yet"; sleep 5
+                done
+                echo "Ray cluster ready. Launching vLLM."
+                vllm serve /models/qwen3-235b-a22b-fp8 \
+                  --served-model-name qwen3-235b \
+                  --distributed-executor-backend ray \
+                  --tensor-parallel-size 2 \
+                  --pipeline-parallel-size 2 \
+                  --enable-expert-parallel \
+                  --gpu-memory-utilization 0.90 \
+                  --max-model-len 8192 \
+                  --max-num-seqs 512 \
+                  --no-enable-prefix-caching \
+                  --enable-chunked-prefill \
+                  --port 8000
+            ports:
+              - containerPort: 8000
+            resources:
+              limits:
+                nvidia.com/gpu: "2"
+                vpc.amazonaws.com/efa: "1"
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            startupProbe:
+              httpGet: { path: /health, port: 8000 }
+              periodSeconds: 15
+              failureThreshold: 240
+            readinessProbe:
+              httpGet: { path: /health, port: 8000 }
+              periodSeconds: 10
+              failureThreshold: 3
+            livenessProbe:
+              httpGet: { path: /health, port: 8000 }
+              periodSeconds: 30
+              failureThreshold: 6
+            env:
+              - name: RAY_SPEC
+                value: "ray>=2.40"
+              - name: VLLM_ATTENTION_BACKEND
+                value: "FLASHINFER"
+              - name: FI_PROVIDER
+                value: "efa"
+              - name: FI_EFA_USE_DEVICE_RDMA
+                value: "1"
+              - name: NCCL_DEBUG
+                value: "INFO"
+              - name: HF_HOME
+                value: "/models"
+              - name: HUGGING_FACE_HUB_TOKEN
+                valueFrom:
+                  secretKeyRef: { name: hf-token, key: token }
+              - name: PYTHONUNBUFFERED
+                value: "1"
+            volumeMounts:
+              - { name: models, mountPath: /models }
+              - { name: dshm, mountPath: /dev/shm }
+              - { name: sitecustomize, mountPath: /usr/local/lib/python3.12/dist-packages/sitecustomize.py, subPath: sitecustomize.py }
+        volumes:
+          - name: models
+            persistentVolumeClaim: { claimName: fsx-pvc }
+          - name: dshm
+            emptyDir: { medium: Memory, sizeLimit: 32Gi }
+          - name: sitecustomize
+            configMap: { name: vllm-sitecustomize }
+        terminationGracePeriodSeconds: 120
+    workerTemplate:
+      metadata:
+        labels:
+          app: qwen3-235b-lws
+          role: worker
+      spec:
+        nodeSelector:
+          role: g7e-efa
+        initContainers:
+          - name: wait-for-model
+            image: busybox
+            command:
+              - sh
+              - -c
+              - |
+                D=/models/qwen3-235b-a22b-fp8
+                echo "Waiting for a complete checkpoint at $D ..."
+                until [ -f "$D/config.json" ] && { [ -f "$D/model.safetensors.index.json" ] || [ -f "$D/model.safetensors" ]; }; do
+                  echo "  $(date -u) - metadata not present yet, waiting 20s ..."
+                  sleep 20
+                done
+                if [ -f "$D/model.safetensors.index.json" ]; then
+                  WANT=$(grep -o 'model-[0-9]\{5\}-of-[0-9]\{5\}' "$D/model.safetensors.index.json" | sort -u | wc -l)
+                else
+                  WANT=1
+                fi
+                while :; do
+                  HAVE=$(ls "$D"/*.safetensors 2>/dev/null | wc -l)
+                  PART=$(find "$D" -name '*.incomplete' 2>/dev/null | wc -l)
+                  echo "  $(date -u) - shards $HAVE/$WANT, incomplete $PART"
+                  if [ "$HAVE" -eq "$WANT" ] && [ "$PART" -eq 0 ]; then break; fi
+                  sleep 20
+                done
+                echo "Checkpoint complete: $HAVE shards, no partial files. Proceeding to vLLM startup."
+            volumeMounts:
+              - { name: models, mountPath: /models }
+        containers:
+          - name: vllm-worker
+            image: public.ecr.aws/deep-learning-containers/vllm:0.21.0-gpu-py312
+            command:
+              - bash
+              - -c
+              - |
+                set -e
+                /usr/local/bin/python -m pip install -q "$RAY_SPEC"
+                until ray start --address=${LWS_LEADER_ADDRESS}:6379 --block; do
+                  echo "leader not ready, retrying..."; sleep 5
+                done
+            resources:
+              limits:
+                nvidia.com/gpu: "2"
+                vpc.amazonaws.com/efa: "1"
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            env:
+              - name: RAY_SPEC
+                value: "ray>=2.40"
+              - name: FI_PROVIDER
+                value: "efa"
+              - name: FI_EFA_USE_DEVICE_RDMA
+                value: "1"
+              - name: NCCL_DEBUG
+                value: "INFO"
+              - name: HF_HOME
+                value: "/models"
+              - name: PYTHONUNBUFFERED
+                value: "1"
+            volumeMounts:
+              - { name: models, mountPath: /models }
+              - { name: dshm, mountPath: /dev/shm }
+        volumes:
+          - name: models
+            persistentVolumeClaim: { claimName: fsx-pvc }
+          - name: dshm
+            emptyDir: { medium: Memory, sizeLimit: 32Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qwen3-235b-lws
+spec:
+  selector:
+    app: qwen3-235b-lws
+    role: leader
+  ports:
+    - { protocol: TCP, port: 8000, targetPort: 8000 }

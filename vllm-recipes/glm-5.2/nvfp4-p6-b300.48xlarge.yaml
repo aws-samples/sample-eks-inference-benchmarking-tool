@@ -1,6 +1,4 @@
-#
-# GLM-5.2 at NVFP4 on one p6-b300.48xlarge, 8 GPUs, tensor parallel 8. Use this when you want the smaller weight format that frees most of the node for KV cache; NVFP4 is Blackwell only.
-#
+# GLM-5.2 at NVFP4 on one p6-b300.48xlarge, 8 GPUs, tensor parallel 8. NVFP4 requires Blackwell.
 # SUBSTITUTE: kubernetes.io/hostname, or remove it to schedule on any p6-b300.48xlarge.
 apiVersion: apps/v1
 kind: Deployment
@@ -33,8 +31,7 @@ spec:
               set -euo pipefail
               echo "=== disk before ==="; df -h "$MOUNT_ROOT"
 
-              # An emptyDir lands wherever kubelet's root is, which is not always the instance store.
-              # Check the space is actually here before pulling a checkpoint this size onto a root disk.
+              # The emptyDir must be on the NVMe instance store; stop if it lacks the space.
               avail=$(df -Pk "$MOUNT_ROOT" | awk 'NR==2 {print int($4/1048576)}')
               if [ "$avail" -lt "$MIN_FREE_GIB" ]; then
                 echo "FATAL: ${avail} GiB free at $MOUNT_ROOT, need ${MIN_FREE_GIB} GiB." >&2
@@ -110,14 +107,14 @@ spec:
                 --tool-call-parser glm47
                 --enable-auto-tool-choice
 
-                --max-model-len 32768        # pinned, not auto: fixes the KV budget
+                --max-model-len 32768        # pinned so the KV budget is fixed
                 --max-num-seqs 512
                 --max-num-batched-tokens 32768
                 --gpu-memory-utilization 0.90
 
                 --max-cudagraph-capture-size 512
 
-                --no-enable-prefix-caching   # honest baseline
+                --no-enable-prefix-caching
                 --port 8000
               )
               echo "=== resolved argv ==="

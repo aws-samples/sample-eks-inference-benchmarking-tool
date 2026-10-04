@@ -73,7 +73,6 @@ sample-eks-inference-benchmarking-tool/
 ├── app/
 │   ├── cli.py                         # Click command tree; styled help, then execs dispatcher.
 │   ├── utils.py                       # Command tree data, help rendering, and exec helper.
-│   ├── requirements-cli.txt           # CLI implementation dependency; installer consumes it.
 │   ├── quantize/                      # GPU quantization tool (nvidia-modelopt)
 │   │   ├── Dockerfile                 # Quantizer image (sm_89+)
 │   │   ├── requirements.txt           # nvidia-modelopt[torch], pinned
@@ -122,14 +121,9 @@ sample-eks-inference-benchmarking-tool/
 │       ├── Dockerfile                 # vLLM DLC + Nsight Systems CLI, multi-stage
 │       └── profile.sh                 # Launch-wraps `vllm serve` under nsys
 ├── scripts/
-│   ├── install-benchmark-client.sh    # One-shot .venv with the benchmark, tokenizer and CLI
-│                                      #   dependencies. It does not install the package, so
-│                                      #   `pip install -e '.[tokenizer]'` is the supported
-│                                      #   path and the one the README gives.
 │   ├── install-prerequisites.sh       # Configure EKS namespace, plugin, secret, and node check.
 │   ├── push-image.sh                  # Build and push the quantizer image to ECR
 │   ├── patch-efa-plugin.sh            # Fixes the EFA device plugin's stale allow-list
-│   └── repeat-sweep.sh                # Legacy NCCL noise study helper
 ├── k8s/examples/                      # Examples, not runnable as written. One per purpose,
 │                                      #   every identifier a placeholder. Cluster, node groups,
 │                                      #   FSx PV/PVC, weight staging, quantization, image

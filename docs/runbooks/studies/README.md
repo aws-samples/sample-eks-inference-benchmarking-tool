@@ -2,7 +2,7 @@
 
 The runbooks in this section are not scoped to a single model. A study answers one question about the platform, usually by holding the model constant and varying something underneath it; a technique applies to whatever recipe you point it at. Either way there is no single model directory these belong in, which is what distinguishes them from the recipes indexed in the [runbooks overview](../README.md).
 
-Model-specific investigations stay with their model. [`gemma4-31b/fp8-g7.24xlarge-p2p-runbook.md`](../gemma4-31b/fp8-g7.24xlarge-p2p-runbook.md) is an NCCL P2P study, but it only ever serves Gemma 4, so it lives under `gemma4-31b/`.
+NCCL interconnect studies that serve a model are recorded in [`experiments/`](../../../experiments/README.md#interconnect-studies) rather than here.
 
 ## Runbooks
 

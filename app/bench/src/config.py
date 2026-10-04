@@ -528,8 +528,4 @@ REQUIRED_FLAGS = {
         "--speculative-config", "--max-cudagraph-capture-size", "512",
         "--kv-cache-dtype", "fp8", "--reasoning-parser", "--port", "8000",
     ],
-    "kimi-k3/mxfp4-p6-b300.48xlarge-ep.yaml": [
-        "--enable-expert-parallel", "--all2all-backend", "--moe-backend",
-        "--max-cudagraph-capture-size", "512", "--port", "8000",
-    ],
 }

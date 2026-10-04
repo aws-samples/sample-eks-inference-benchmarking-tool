@@ -1,31 +1,5 @@
-# NCCL all-reduce microbenchmark — g7e.12xlarge arm of the PCIe-switch vs host-copy study.
-#
-# WHY THIS EXISTS: g7e.12xlarge is the ONLY instance in this study with a real PCIe switch
-# between its GPUs (its 2 GPUs are switch-local, `PIX` per `nvidia-smi topo -m`). The earlier
-# g7e runs only compared PIX vs PHB (both leave P2P ON, so they were identical). To measure the
-# actual PCIe-switch benefit we must contrast switch-local P2P against forced host-staging (SHM).
-# On g7.24xlarge (4 GPUs, no shared switch) SHM was ~37% FASTER than P2P; this run tests whether
-# a true single-switch topology flips that.
-#
-# Single node, 2 GPUs (intra-node), no EFA. This is the CLEAN interconnect signal (no model,
-# no vLLM stack).
-#
-# PREREQ:
-#   - A g7e.12xlarge node in the cluster reporting `nvidia.com/gpu: 2`.
-#     NOTE: unlike g7.24xlarge, g7e Blackwell registers out-of-the-box on the current EKS AL2023
-#     NVIDIA AMI — NO open-kernel-module rebuild needed (per the multi-node report).
-#   - Confirm 2 GPUs: `kubectl get nodes -l node.kubernetes.io/instance-type=g7e.12xlarge \
-#       -o custom-columns=NODE:.metadata.name,GPU:.status.allocatable.nvidia\.com/gpu`
-#
-# SWEEP — run TWICE, renaming metadata.name each time, and compare busbw:
-#   ARM 1 (switch-local P2P): leave NCCL_P2P_LEVEL unset (default/auto) — on g7e this selects
-#          direct P2P over the shared PCIe switch. (Setting it to "PIX" is equivalent here.)
-#   ARM 2 (host-staged SHM):  set NCCL_P2P_DISABLE="1" (and remove NCCL_P2P_LEVEL) to force the
-#          host-memory-copy path — the lower bound / no-P2P case.
-#   Delta (ARM 1 busbw − ARM 2 busbw) = the PCIe-switch benefit on this hardware.
-#
-# Confirm which transport NCCL actually chose from the logs (NCCL_DEBUG=INFO below): look for
-# "P2P/direct pointer" (P2P) vs "SHM/direct" (host-staged).
+# NCCL all-reduce microbenchmark on one g7e.12xlarge (2 GPUs behind one PCIe switch), without a model or vLLM.
+# Requires a g7e.12xlarge node that reports nvidia.com/gpu: 2. Re-apply under a new metadata.name for each arm below.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -42,7 +16,6 @@ spec:
         app: nccl-p2p-study
     spec:
       restartPolicy: Never
-      # Pin to a single g7e.12xlarge (2x RTX PRO 6000 Blackwell, 96 GB each, PCIe, no NVLink).
       nodeSelector:
         node.kubernetes.io/instance-type: g7e.12xlarge
       tolerations:
@@ -51,10 +24,8 @@ spec:
           effect: NoSchedule
       containers:
         - name: nccl-tests
-          # CUDA devel base; build nccl-tests from source (~2 min). This is the same image used
-          # for the working g7.24xlarge run. If you hit "no kernel image is available" on g7e
-          # Blackwell (sm_120), bump to a newer CUDA devel tag (>=12.8) and add 120 to the build
-          # arch list, e.g.  make ... NVCC_GENCODE="-gencode=arch=compute_120,code=sm_120".
+          # Builds nccl-tests from source (~2 min). On "no kernel image is available", use a CUDA >=12.8 devel tag
+          # and build with NVCC_GENCODE="-gencode=arch=compute_120,code=sm_120".
           image: nvidia/cuda:12.4.1-devel-ubuntu22.04
           command:
             - bash
@@ -69,17 +40,17 @@ spec:
               git clone -q https://github.com/NVIDIA/nccl-tests /tmp/nccl-tests
               make -C /tmp/nccl-tests -j MPI=0 CUDA_HOME=/usr/local/cuda
               echo "=== all_reduce_perf (2 GPUs, 8B -> 2GiB) ==="
-              # -g 2: single process drives both GPUs (intra-node). Report busbw (GB/s).
+              # -g 2: one process drives both GPUs.
               /tmp/nccl-tests/build/all_reduce_perf -b 8 -e 2G -f 2 -g 2
           env:
-            # ---- the variable under test ----
-            # ARM 1 (default/auto == switch-local P2P on g7e): leave both of the below unset.
+            # Variable under test.
+            # ARM 1 (switch-local P2P): leave both entries below commented out.
             # - name: NCCL_P2P_LEVEL
-            #   value: "PIX"          # equivalent to default on g7e's single-switch topology
-            # ARM 2 (host-staged SHM lower bound): uncomment to force no-P2P.
+            #   value: "PIX"          # same as the default on this single-switch topology
+            # ARM 2 (host-staged SHM): uncomment to disable P2P.
             # - name: NCCL_P2P_DISABLE
             #   value: "1"
-            # ---- diagnostics: prove which transport NCCL actually chose ----
+            # Diagnostics: NCCL logs "P2P/direct pointer" for P2P or "SHM/direct" for host staging.
             - name: NCCL_DEBUG
               value: "INFO"
             - name: NCCL_DEBUG_SUBSYS

@@ -1,4 +1,5 @@
-# Qwen3-30B-A3B FP8 g7e.12xlarge switch study: explicit PIX direct P2P.
+# Qwen3-30B-A3B at FP8 on one g7e.12xlarge, 2 GPUs, tensor parallel 2 with expert parallelism,
+# NCCL P2P pinned to PIX (direct P2P through the PCIe switch).
 # SUBSTITUTE: kubernetes.io/hostname. All arms of this study must pin the SAME node.
 apiVersion: apps/v1
 kind: Deployment

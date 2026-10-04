@@ -46,5 +46,6 @@ exec nsys profile \
   -o "$OUT" \
   vllm serve "$MODEL" \
     --tensor-parallel-size "$TP" \
+    --no-enable-prefix-caching \
     --port "$PORT" \
     $EXTRA_ARGS

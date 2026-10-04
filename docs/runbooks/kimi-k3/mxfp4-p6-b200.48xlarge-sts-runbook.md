@@ -4,7 +4,7 @@ Serves [`moonshotai/Kimi-K3`](https://huggingface.co/moonshotai/Kimi-K3) on p6-b
 
 ## Capacity sizing
 
-This recipe serves a locally quantized checkpoint on 16 B200 GPUs. Its size is not derivable from the model card, and the recipe enforces 1,500 GiB free at `/models` before it starts. KV cost per sequence is exact and appears below; the pool and concurrency are read from the server.
+This recipe serves the published MXFP4 checkpoint [`moonshotai/Kimi-K3`](https://huggingface.co/moonshotai/Kimi-K3) on 16 B200 GPUs. The checkpoint is about 1,454 GiB, and the recipe enforces 1,500 GiB free at `/models` before it starts. KV cost per sequence is exact and appears below; the pool and concurrency are read from the server.
 
 | Property | Value | Source |
 |---|---|---|
@@ -25,19 +25,10 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
 ## Before you begin
 
 - [Create two `p6-b200.48xlarge` nodes with EFA interfaces](../../../k8s/examples/eksctl-nodegroup-gpu-efa.yaml)
-- [Install the NVIDIA device plugin](../../../README.md)
+- [Create an ECR repository in your cluster's region](https://docs.aws.amazon.com/AmazonECR/latest/userguide/repository-create.html) for the custom vLLM image
+- [Build and push the custom vLLM image as `vllm-kimi-k3-efa:nccl2.29.7-efa1.49.0`](../../../k8s/examples/job-build-image-kaniko.yaml) (builds in-cluster on a CPU node)
 - [Install the EFA device plugin](https://github.com/aws/eks-charts/tree/master/stable/aws-efa-k8s-device-plugin) so each node advertises `vpc.amazonaws.com/efa: 8`
-- [Create an IAM role configured for EKS IRSA with read access to the S3 checkpoint prefix](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html)
-
-## Setup
-
-This recipe requires a custom vLLM image containing a matched `aws-ofi-nccl` plugin and uses a placeholder ECR account and region in `image:`. Without the plugin, NCCL can fall back to TCP while the server still starts, invalidating the measurement. The image tag records the NCCL and EFA versions so a mismatch remains visible.
-
-1. [Create an ECR repository](https://docs.aws.amazon.com/AmazonECR/latest/userguide/repository-create.html) for the image.
-
-2. Build and push the custom vLLM image with `aws-ofi-nccl` installed. [`job-build-image-kaniko.yaml`](../../../k8s/examples/job-build-image-kaniko.yaml) can build it in-cluster on a CPU node when local Docker is unavailable.
-
-3. Replace account `012345678901` and region `us-east-1` in the recipe's `image:` reference with the image you pushed. The deploy helper refuses to apply a manifest that still contains the placeholder account.
+- [Create an IAM role configured for EKS IRSA with read access to the S3 checkpoint prefix](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) (and write access, if the checkpoint is not in S3 yet)
 
 ## Quickstart
 
@@ -45,43 +36,40 @@ This recipe requires a custom vLLM image containing a matched `aws-ofi-nccl` plu
 
    ```bash
    export AWS_REGION=<your-cluster-region>
+   export AWS_ACCOUNT_ID=<your-account-id>
    export EKS_CLUSTER_NAME=<your-cluster-name>
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-kimi-k3-mxfp4-p6-b200-sts
    export INSTANCE_TYPE=p6-b200.48xlarge
+   export WEIGHTS_BUCKET=<your-weights-bucket>
+   export WEIGHTS_REGION=<your-weights-bucket-region>
    export KIMI_S3_ROLE_ARN=<your-kimi-s3-read-role-arn>
    ```
 
-2. Configure the EKS context and namespace, install the NVIDIA Kubernetes device plugin, and create the `hf-token` secret.
+2. Install the `eks-bench` CLI into a Python virtual environment.
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -e '.[tokenizer]'
+   ```
+
+3. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
 
    ```bash
    ./scripts/install-prerequisites.sh
    ```
 
-3. Idempotently create the namespace-local `kimi-k3-bench` ServiceAccount and annotate it for EKS IRSA.
-
+4. Copy the published checkpoint from Hugging Face to your S3 bucket.
    ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" create serviceaccount kimi-k3-bench --dry-run=client -o yaml | kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f -
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" annotate serviceaccount kimi-k3-bench eks.amazonaws.com/role-arn="$KIMI_S3_ROLE_ARN" --overwrite
+   ./model-jobs/kimi-k3/mxfp4-model-download.sh
    ```
 
-4. Confirm the namespace, two Ready GPU nodes, EFA resources, created IRSA ServiceAccount, and S3 checkpoint are available.
-
-   ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" get namespace "$NAMESPACE"
-   kubectl --context "$EKS_CLUSTER_NAME" get nodes -l node.kubernetes.io/instance-type=p6-b200.48xlarge
-   kubectl --context "$EKS_CLUSTER_NAME" get nodes -l node.kubernetes.io/instance-type=p6-b200.48xlarge -o custom-columns='NAME:.metadata.name,EFA:.status.allocatable.vpc\.amazonaws\.com/efa'
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get serviceaccount kimi-k3-bench
-   aws s3 ls s3://kimi-k3-mxfp4-weights/kimi-k3-mxfp4/ | head
-   ```
-
-5. Deploy and validate the server. Both StatefulSet pods independently sync the S3 checkpoint into pod-local `emptyDir` storage before vLLM starts; Kubernetes does not guarantee that storage is instance NVMe, and replacing a pod requires another sync. The helper waits for the StatefulSet, checks `/v1/models` from rank 0 (`pod/kimi-k3-b200-0`), reads live cache evidence there, and validates the manifest.
-
+5. Deploy the vLLM inference server and confirm it serves the model.
    ```bash
    ./vllm-recipes/kimi-k3/mxfp4-p6-b200.48xlarge-sts-deploy.sh
    ```
 
-6. Generate the accuracy gate (.JSON) required for the next step.
+6. Generate the accuracy gate (.JSON) that the benchmark checks against.
 
    ```bash
    eks-bench capture-reference \
@@ -93,7 +81,7 @@ This recipe requires a custom vLLM image containing a matched `aws-ofi-nccl` plu
        --out-dir docs/results
    ```
 
-7. Dry-run the exact in-cluster benchmark through the rank-0 API Service.
+7. Dry-run the exact in-cluster benchmark.
 
    ```bash
    eks-bench measure \
@@ -104,11 +92,12 @@ This recipe requires a custom vLLM image containing a matched `aws-ofi-nccl` plu
        --model-id kimi-k3 \
        --tokenizer moonshotai/Kimi-K3 \
        --thinking off \
-       --reps 3 --out-dir docs/results \
+       --out-dir docs/results \
+       --reps 3 \
        --dry-run
    ```
 
-8. Run the identical benchmark without `--dry-run`.
+8. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
 
    ```bash
    eks-bench measure \
@@ -119,7 +108,8 @@ This recipe requires a custom vLLM image containing a matched `aws-ofi-nccl` plu
        --model-id kimi-k3 \
        --tokenizer moonshotai/Kimi-K3 \
        --thinking off \
-       --reps 3 --out-dir docs/results
+       --out-dir docs/results \
+       --reps 3
    ```
 
 ## Tear down
@@ -130,13 +120,18 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/kim
 
 ## Settings
 
+- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
+- **The checkpoint stays in S3.** A later run can skip Quickstart step 4; rerunning only copies files that are missing.
 - **`publishNotReadyAddresses: true`** Publishes rank DNS before readiness and avoids a circular rendezvous wait.
 - **`Service/kimi-k3-b200-api`** Selects only `kimi-k3-b200-0`, the rank that owns the API server.
 - **`RANK="${HOSTNAME##*-}"`** Uses the StatefulSet ordinal as the distributed node rank.
 - **`--headless`** Keeps the follower from starting another API server or driving collective RPC.
 - **`TP_SIZE=8`, `PP_SIZE=2`** Keeps tensor parallelism within each NVLink node and crosses EFA only at pipeline boundaries.
+- **`--no-enable-prefix-caching`** Turns off prefix caching, which vLLM enables by default. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
 - **`MAX_NUM_SEQS=128`** Pins the scheduler ceiling used by this recipe.
 - **`memory: 1500Gi`** Constrains page-cache pressure inside the pod cgroup.
-- **`emptyDir: { sizeLimit: 2000Gi }`** Is pod-local ephemeral storage rooted wherever kubelet stores `emptyDir`; the free-space check does not prove NVMe placement.
+- **`emptyDir: { sizeLimit: 2000Gi }`** Is pod-local ephemeral storage rooted wherever kubelet stores `emptyDir`; the free-space check does not prove NVMe placement. A replaced pod syncs the checkpoint again.
 - **`NCCL_DEBUG=INFO`** Records whether NCCL selected OFI/EFA rather than sockets.
 - **`add: ["IPC_LOCK"]`** Supplies the capability required by EFA/libfabric.
+- **`vllm-kimi-k3-efa:nccl2.29.7-efa1.49.0`** Carries matched NCCL and `aws-ofi-nccl` versions, recorded in the tag. Without the plugin NCCL can fall back to TCP while the server still starts.
+- **The bucket, its region and the image registry are placeholders in git.** The staging and deploy scripts fill them in from `WEIGHTS_BUCKET`, `WEIGHTS_REGION`, `AWS_ACCOUNT_ID` and `AWS_REGION` as they apply each manifest, so the files in git stay untouched.

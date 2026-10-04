@@ -1,0 +1,83 @@
+#
+# Claim and Job that download the published Qwen/Qwen3-30B-A3B-FP8 checkpoint onto the gp3 claim the qwen3-30b-a3b switch recipes mount. Apply this once per claim before either recipe. The Job fails unless config.json and all 7 shards are present and no partial file remains.
+#
+# The claim is ReadWriteOnce EBS, so it binds in the availability zone of the first pod that mounts it. The Job pins the same node the recipes pin, so the volume lands where they run.
+#
+# SUBSTITUTE: kubernetes.io/hostname, the same node both switch recipes pin.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: g7e12-switch-model-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 300Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: download-qwen3-30b-a3b-fp8
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: download-qwen3-30b-a3b-fp8
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: ip-10-0-0-1.us-east-1.compute.internal
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: downloader
+          image: python:3.12-slim
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          command: ["bash", "-c"]
+          env:
+            - name: MODEL_REPO
+              value: Qwen/Qwen3-30B-A3B-FP8
+            - name: MODEL_DIR
+              value: /models/qwen3-30b-a3b-fp8
+            - name: EXPECTED_SHARDS
+              value: "7"
+            - name: HF_HUB_VERSION
+              value: "1.28.0"
+            - name: HF_HOME
+              value: /models/.cache
+            - name: HF_XET_HIGH_PERFORMANCE
+              value: "1"
+          args:
+            - |
+              set -euo pipefail
+              pip install --no-cache-dir -q "huggingface_hub==$HF_HUB_VERSION"
+              hf download "$MODEL_REPO" --local-dir "$MODEL_DIR"
+              shards=$(find "$MODEL_DIR" -maxdepth 1 -name '*.safetensors' | wc -l)
+              partials=$(find "$MODEL_DIR" -name '*.incomplete' | wc -l)
+              echo "shards: $shards/$EXPECTED_SHARDS, partial files: $partials"
+              test -f "$MODEL_DIR/config.json" || { echo "FATAL: no config.json" >&2; exit 1; }
+              test "$shards" -eq "$EXPECTED_SHARDS" || { echo "FATAL: expected $EXPECTED_SHARDS shards" >&2; exit 1; }
+              test "$partials" -eq 0 || { echo "FATAL: $partials partial files remain" >&2; exit 1; }
+              du -sh "$MODEL_DIR"
+          volumeMounts:
+            - name: models
+              mountPath: /models
+          resources:
+            requests:
+              cpu: "8"
+              memory: 16Gi
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: g7e12-switch-model-storage

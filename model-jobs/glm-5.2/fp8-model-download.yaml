@@ -1,5 +1,5 @@
 #
-# Job that downloads the published GLM 5.2 FP8 weights onto the shared PVC. Apply this once per filesystem before the glm-5.2-fp8 recipe that mounts a PVC, and expect a long transfer: the checkpoint is 141 shards.
+# Downloads the published GLM 5.2 FP8 weights onto the shared PVC. Apply once per filesystem before the glm-5.2-fp8 PVC recipe. The Job fails unless config.json and all 141 shards are present and no partial file remains.
 #
 # SUBSTITUTE: fsx-pvc.
 apiVersion: batch/v1
@@ -29,6 +29,8 @@ spec:
               value: zai-org/GLM-5.2-FP8
             - name: MODEL_DIR
               value: /models/glm-5.2-fp8
+            - name: EXPECTED_SHARDS
+              value: "141"
             - name: HF_HUB_VERSION
               value: "1.28.0"
             - name: HF_HOME
@@ -42,9 +44,16 @@ spec:
                   key: token
           args:
             - |
-              set -eux
+              set -euo pipefail
               pip install --no-cache-dir -q "huggingface_hub==$HF_HUB_VERSION"
               hf download "$MODEL_REPO" --local-dir "$MODEL_DIR"
+              shards=$(find "$MODEL_DIR" -maxdepth 1 -name '*.safetensors' | wc -l)
+              partials=$(find "$MODEL_DIR" -name '*.incomplete' | wc -l)
+              echo "shards: $shards/$EXPECTED_SHARDS, partial files: $partials"
+              test -f "$MODEL_DIR/config.json" || { echo "FATAL: no config.json" >&2; exit 1; }
+              test "$shards" -eq "$EXPECTED_SHARDS" || { echo "FATAL: expected $EXPECTED_SHARDS shards" >&2; exit 1; }
+              test "$partials" -eq 0 || { echo "FATAL: $partials partial files remain" >&2; exit 1; }
+              du -sh "$MODEL_DIR"
           volumeMounts:
             - name: models
               mountPath: /models

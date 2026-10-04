@@ -28,6 +28,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
 - [Install the open NVIDIA kernel module if the node advertises no GPUs](../../../k8s/examples/pod-diagnostic-probe.yaml)
 - [Create the `vllm-sitecustomize` ConfigMap](../../../k8s/examples/configmap-vllm-sitecustomize.yaml)
+- [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
+- [Install Docker](https://docs.docker.com/get-started/get-docker/) (builds the quantizer image on your machine)
 
 ## Quickstart
 
@@ -35,32 +37,43 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
    ```bash
    export AWS_REGION=<your-cluster-region>
+   export AWS_ACCOUNT_ID=<your-account-id>
    export EKS_CLUSTER_NAME=<your-cluster-name>
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-gemma4-31b-fp8-g7-24xlarge
    export INSTANCE_TYPE=g7.24xlarge
    ```
 
-2. Configure the EKS context and namespace, install the NVIDIA Kubernetes device plugin, and create the `hf-token` secret.
+2. Install the `eks-bench` CLI into a Python virtual environment.
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -e '.[tokenizer]'
+   ```
+
+3. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
 
    ```bash
    ./scripts/install-prerequisites.sh
    ```
 
-3. Confirm the FSx claim containing the ModelOpt-quantized weights and the sitecustomize ConfigMap exist in the namespace.
-
+4. Before proceeding, **log-in to Docker**. Build the quantizer image, create the ECR repository if needed, and push the image to your repository. This step takes several minutes to complete.
    ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get pvc fsx-pvc
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get configmap vllm-sitecustomize
+   ./scripts/push-image.sh
    ```
 
-4. Deploy and validate the model server. The server mounts `/models/quantized/gemma-4-31b-it-fp8` from `fsx-pvc`; update `claimName` first if your weights use a differently named PVC. The recipe uses `Recreate`, so reapplying it causes a gap with no server rather than overlapping GPU claims.
+5. Quantize the model to ModelOpt FP8 and save the checkpoint to the `fsx-pvc` claim.
+   ```bash
+   ./model-jobs/gemma4-31b/fp8-model-quantize.sh
+   ```
+
+6. Deploy the vLLM inference server and confirm it serves the model.
 
    ```bash
    ./vllm-recipes/gemma4-31b/fp8-g7.24xlarge-deploy.sh
    ```
 
-5. Generate the accuracy gate (.JSON) required for the next step.
+7. Generate the accuracy gate (.JSON) that the benchmark checks against.
 
    ```bash
    eks-bench capture-reference \
@@ -71,7 +84,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --out-dir docs/results
    ```
 
-6. Dry-run the in-cluster benchmark. This validates and renders the Job without creating cluster resources.
+8. Dry-run the exact in-cluster benchmark.
 
    ```bash
    eks-bench measure \
@@ -81,11 +94,12 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config fp8 --quant fp8 \
        --model-id /models/quantized/gemma-4-31b-it-fp8 \
        --tokenizer google/gemma-4-31b-it \
-       --reps 3 --out-dir docs/results \
+       --out-dir docs/results \
+       --reps 3 \
        --dry-run
    ```
 
-7. Benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`.
+9. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
 
    ```bash
    eks-bench measure \
@@ -95,10 +109,11 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config fp8 --quant fp8 \
        --model-id /models/quantized/gemma-4-31b-it-fp8 \
        --tokenizer google/gemma-4-31b-it \
-       --reps 3 --out-dir docs/results
+       --out-dir docs/results \
+       --reps 3
    ```
 
-8. Dry-run the optional NVIDIA AIPerf cross-client calibration with identical arguments.
+10. (Optional) Dry-run the NVIDIA AIPerf cross-client calibration.
 
    ```bash
    eks-bench measure \
@@ -108,11 +123,12 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config fp8 --quant fp8 \
        --model-id /models/quantized/gemma-4-31b-it-fp8 \
        --tokenizer google/gemma-4-31b-it \
-       --reps 3 --out-dir docs/results \
+       --out-dir docs/results \
+       --reps 3 \
        --dry-run
    ```
 
-9. Run the optional NVIDIA AIPerf cross-client calibration. It uses the same server, profile, and canonical levels and requires the AIPerf extras.
+11. (Optional) Run the NVIDIA AIPerf cross-client calibration.
 
    ```bash
    eks-bench measure \
@@ -122,10 +138,11 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config fp8 --quant fp8 \
        --model-id /models/quantized/gemma-4-31b-it-fp8 \
        --tokenizer google/gemma-4-31b-it \
-       --reps 3 --out-dir docs/results
+       --out-dir docs/results \
+       --reps 3
    ```
 
-10. Dry-run the optional interactive capacity search with identical arguments. The full run can take several hours for 3 reps.
+12. (Optional) Dry-run the open-loop latency test.
 
    ```bash
    eks-bench measure \
@@ -135,11 +152,12 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config fp8 --quant fp8 \
        --model-id /models/quantized/gemma-4-31b-it-fp8 \
        --tokenizer google/gemma-4-31b-it \
-       --reps 3 --out-dir docs/results \
+       --out-dir docs/results \
+       --reps 3 \
        --dry-run
    ```
 
-11. Run the optional interactive capacity search.
+13. (Optional) Run the open-loop latency test.
 
    ```bash
    eks-bench measure \
@@ -149,7 +167,8 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --config fp8 --quant fp8 \
        --model-id /models/quantized/gemma-4-31b-it-fp8 \
        --tokenizer google/gemma-4-31b-it \
-       --reps 3 --out-dir docs/results
+       --out-dir docs/results \
+       --reps 3
    ```
 
 ## Tear down
@@ -158,24 +177,25 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/gemma4-31b/fp8-g7.24xlarge.yaml
 ```
 
-## Notes
-
-* Step 7 runs at the shipped targets, TTFT p99 500 ms and TPOT p99 50 ms. `--ttft-target` and `--tpot-target` override them, and an overridden value is appended to the result filename so a run at different targets cannot overwrite one at the defaults. Read [Trusting the open-loop verdict](../../guides/REFERENCE.md#trusting-the-open-loop-verdict) before quoting a rate as sustainable.
-**This recipe serves without `--enable-prefix-caching`, and `legacy_corpus` repeats five fixed prompts.** Those two facts go together: a repeating prompt set against a cache-enabled server measures cache hits rather than serving, so the flag is off here and the throughput figure reflects prefill actually being done. The other Gemma recipes, on g6e.12xlarge and g7e.4xlarge, still serve with the flag on, so their `corpus` numbers are not directly comparable to this recipe's. Add the flag back for a serving deployment, and leave it off for a measured one.
-Check the `Prefix cache hit` line in the result file's provenance block regardless: anything other than 0% means prefill was skipped and throughput is inflated. On a pod that has been up for days that line rotates out of the log window and records as `(not found in server log)`, which is not the same as 0%, so a fresh server is worth more than it looks.
-
 ---
-
 
 ## Settings
 
+- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
+- **`corpus_aiperf`** Runs the same workload through NVIDIA AIPerf as a second, independent load generator. The benchmark Job installs AIPerf itself.
+- **`server_qps`** Sends requests at fixed rates from 1 to 16 per second and reports, at each rate, whether TTFT p99 stays within 500 ms and TPOT p99 within 50 ms. Each rep holds 8 rates for at least 120 s each with 60 s between them, so 3 reps take at least 69 minutes.
+- **The checkpoint stays on the claim.** A later run can skip Quickstart steps 4 and 5.
+- **`strategy: Recreate`** Stops the old pod before starting its replacement, so a redeploy never overlaps GPU claims.
+- **`--ttft-target` and `--tpot-target`** Step 13 runs at the shipped targets, TTFT p99 500 ms and TPOT p99 50 ms. An overridden value is appended to the result filename, so a run at different targets cannot overwrite one at the defaults. Read [Trusting the open-loop verdict](../../guides/REFERENCE.md#trusting-the-open-loop-verdict) before quoting a rate as sustainable.
+- **`Prefix cache hit`** Check this line in the result file's provenance block: anything other than 0% means prefill was skipped and throughput is inflated. On a pod that has been up for days the line rotates out of the log window and records as `(not found in server log)`, which is not the same as 0%.
 - **`strategy:`** This pod claims all 4 GPUs and at one replica maxUnavailable rounds to 0, so Kubernetes waits on a new pod that can never schedule while the old one holds every GPU. Any edit to this recipe would deadlock.
 
 - **`- --quantization=modelopt`** Real modelopt FP8 export (float8_e4m3fn weights + hf_quant_config.json + static input_scale). Served via vLLM's modelopt loader, NOT the vanilla "fp8" loader. The old "fp8" value mis-read the (previously mislabeled) checkpoint and produced garbage output.
 
 - **`- --gpu-memory-utilization=0.90`** Left at 0.90 rather than tuned for this precision, so precision is the only variable in a comparison. No FP8 KV cache: vLLM 0.21 with Gemma 4 raises the q_scale assertion when the KV cache is quantized.
 
-- **`- --enable-chunked-prefill`** No --enable-prefix-caching: the corpus protocols repeat a five-prompt set, so a warm cache skips prefill and measures caching rather than serving. Turn it on for a serving deployment, off for a measured one.
+- **`--no-enable-prefix-caching`** Turns off prefix caching, which vLLM enables by default. The corpus protocols repeat a five-prompt set, so a warm cache skips prefill and measures caching rather than serving.
+- **`--enable-chunked-prefill`** Breaks long prefills into chunks so they share a step with decodes.
 
 - **`- --port=8000`** No --enforce-eager: CUDA graphs on (Blackwell sm_120, FlashInfer cubins).
 - **`nvidia.com/gpu: 4`** g7.24xlarge = 4x NVIDIA RTX PRO 4500 Blackwell, 32GB each (sm_120)

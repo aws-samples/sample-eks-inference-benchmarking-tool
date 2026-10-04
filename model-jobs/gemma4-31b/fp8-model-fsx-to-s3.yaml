@@ -1,7 +1,6 @@
 #
-# Job that stages the locally quantized Gemma 4 31B FP8 checkpoint from the FSx claim into S3,
-# so a cluster without this filesystem can serve it. The Job fails on an empty source or a
-# shard-count mismatch after upload, so an incomplete stage can never exit 0.
+# Stages the locally quantized Gemma 4 31B FP8 checkpoint from the FSx claim into S3.
+# Fails on an empty source or a shard-count mismatch after upload.
 #
 # SUBSTITUTE: WEIGHTS_BUCKET, AWS_REGION, and fsx-pvc if your claim is named differently.
 apiVersion: batch/v1

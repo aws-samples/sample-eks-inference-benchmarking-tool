@@ -1,61 +1,77 @@
 # vLLM recipes
 
-One manifest per row. Each serves exactly one model on one instance type at one precision, and pairs with the runbook that runs it.
+One manifest per row. Each serves exactly one model on one instance type at one precision, and pairs with the runbook that runs it. Each model lists up to three recipes: the configurations with the best combination of latency and throughput. Attention backend is `Auto` where the recipe pins none and vLLM chooses.
 
-Every supported ordinary serving recipe is validated by its sibling deploy helper before measurement. Run `eks-bench validate-manifests <model>/<recipe>.yaml` directly when you only need to prove that one recipe—including a specialized study recipe—passes the flags it is written to pass.
+Every recipe passes `--no-enable-prefix-caching`, so its benchmarks measure uncached prefill. Each recipe's deploy script runs `eks-bench validate-manifests` on it after deploying; run `eks-bench validate-manifests <model>/<recipe>.yaml` yourself to check a recipe without deploying it.
 
-An unset `Parallelism` cell means the recipe passes no `--tensor-parallel-size`, so vLLM defaults to one GPU.
+## Recipes
 
-| Model | Precision | Instance | GPUs | Parallelism | Workload | Image | Runbook | Notes |
-|---|---|---|---|---|---|---|---|---|
-| **[Qwen2.5-7B](qwen2.5-7b/bf16-g6e.4xlarge.yaml)** | BF16 | `g6e.4xlarge` | 1x L40S | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/bf16-g6e.4xlarge-runbook.md) | 16-bit KV cache; weights from the shared claim |
-| **[Qwen2.5-7B](qwen2.5-7b/bf16-g7e.12xlarge.yaml)** | BF16 | `g7e.12xlarge` | 1x RTX PRO 6000 | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/bf16-g7e.12xlarge-runbook.md) | 16-bit KV cache; weights from the shared claim |
-| **[Qwen2.5-7B](qwen2.5-7b/bf16-p5en.48xlarge.yaml)** | BF16 | `p5en.48xlarge` | 1x H200 | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/bf16-p5en.48xlarge-runbook.md) | 16-bit KV cache; weights from the shared claim |
-| **[Qwen2.5-7B](qwen2.5-7b/fp8-g6e.4xlarge.yaml)** | FP8 | `g6e.4xlarge` | 1x L40S | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/fp8-g6e.4xlarge-runbook.md) | FP8 KV cache; quantize first; derives KV scales at load |
-| **[Qwen2.5-7B](qwen2.5-7b/fp8-g7e.12xlarge-kvscales.yaml)** | FP8 | `g7e.12xlarge` | 1x RTX PRO 6000 | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/fp8-g7e.12xlarge-kvscales-runbook.md) | FP8 KV cache; quantize first; derives KV scales at load |
-| **[Qwen2.5-7B](qwen2.5-7b/fp8-g7e.12xlarge.yaml)** | FP8 | `g7e.12xlarge` | 1x RTX PRO 6000 | TP1 | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/fp8-g7e.12xlarge-runbook.md) | FP8 KV cache; quantize first |
-| **[Qwen2.5-7B](qwen2.5-7b/fp8-p5en.48xlarge.yaml)** | FP8 | `p5en.48xlarge` | 1x H200 | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-7b/fp8-p5en.48xlarge-runbook.md) | FP8 KV cache; quantize first; derives KV scales at load |
-| **[Qwen2.5-32B](qwen2.5-32b/fp8-g7e.4xlarge.yaml)** | FP8 | `g7e.4xlarge` | 1x RTX PRO 6000 | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/qwen2.5-32b/fp8-g7e.4xlarge-runbook.md) | FP8 KV cache; quantize first; keeps `--enforce-eager`; derives KV scales at load |
-| **[Gemma 4 E4B](gemma4-e4b/bf16-g7.2xlarge-throughput.yaml)** | BF16 | `g7.2xlarge` | 1x RTX PRO 4500 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-e4b/bf16-g7.2xlarge-runbook.md) | throughput-tuned: 16384 batched tokens, prefix caching OFF; downloads its own weights |
-| **[Gemma 4 E4B](gemma4-e4b/bf16-g7.2xlarge-latency.yaml)** | BF16 | `g7.2xlarge` | 1x RTX PRO 4500 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-e4b/bf16-g7.2xlarge-runbook.md) | latency-tuned: 2048 batched tokens, per-token streaming, prefix caching OFF |
-| **[Gemma 4 E4B](gemma4-e4b/fp8-g7.2xlarge-throughput.yaml)** | FP8 | `g7.2xlarge` | 1x RTX PRO 4500 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-e4b/fp8-g7.2xlarge-runbook.md) | throughput-tuned; ModelOpt FP8 weights from FSx, 16-bit KV cache; quantize first |
-| **[Gemma 4 E4B](gemma4-e4b/fp8-g7.2xlarge-latency.yaml)** | FP8 | `g7.2xlarge` | 1x RTX PRO 4500 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-e4b/fp8-g7.2xlarge-runbook.md) | latency-tuned; ModelOpt FP8 weights from FSx, 16-bit KV cache; quantize first |
-| **[Gemma 4 E4B](gemma4-e4b/fp8-g7.2xlarge-ngram-throughput.yaml)** | FP8 | `g7.2xlarge` | 1x RTX PRO 4500 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-e4b/fp8-g7.2xlarge-runbook.md) | throughput-tuned plus GPU n-gram speculative decoding; pair with fp8-g7.2xlarge-throughput.yaml to isolate speculation |
-| **[Gemma 4 E4B](gemma4-e4b/fp8-g7.2xlarge-ngram-latency.yaml)** | FP8 | `g7.2xlarge` | 1x RTX PRO 4500 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-e4b/fp8-g7.2xlarge-runbook.md) | latency-tuned plus GPU n-gram speculative decoding; ITL is bursty under speculation, so compare only within this config |
-| **[Gemma 4 E4B](gemma4-e4b/fp8-g7e.2xlarge-throughput.yaml)** | FP8 | `g7e.2xlarge` | 1x RTX PRO 6000 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-e4b/fp8-g7e.2xlarge-runbook.md) | throughput-tuned; ModelOpt FP8 weights from FSx, 16-bit KV cache; 96 GiB card |
-| **[Gemma 4 E4B](gemma4-e4b/fp8-g7e.2xlarge-latency.yaml)** | FP8 | `g7e.2xlarge` | 1x RTX PRO 6000 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-e4b/fp8-g7e.2xlarge-runbook.md) | latency-tuned; ModelOpt FP8 weights from FSx, 16-bit KV cache; 96 GiB card |
-| **[Gemma 4 E4B](gemma4-e4b/fp8-g7e.2xlarge-ngram-throughput.yaml)** | FP8 | `g7e.2xlarge` | 1x RTX PRO 6000 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-e4b/fp8-g7e.2xlarge-runbook.md) | throughput-tuned plus GPU n-gram speculative decoding; pair with fp8-g7e.2xlarge-throughput.yaml |
-| **[Gemma 4 E4B](gemma4-e4b/fp8-g7e.2xlarge-ngram-latency.yaml)** | FP8 | `g7e.2xlarge` | 1x RTX PRO 6000 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-e4b/fp8-g7e.2xlarge-runbook.md) | latency-tuned plus GPU n-gram speculative decoding; ITL comparable only within this config |
-| **[Gemma 4 E4B](gemma4-e4b/fp8-g7e.2xlarge-fp8kv-throughput.yaml)** | FP8 | `g7e.2xlarge` | 1x RTX PRO 6000 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-e4b/fp8-g7e.2xlarge-fp8kv-runbook.md) | throughput-tuned with an FP8 KV cache; pair with fp8-g7e.2xlarge-throughput.yaml to isolate KV precision. Runs uncalibrated scales on vLLM 0.29.0 |
-| **[Gemma 4 E4B](gemma4-e4b/fp8-g7e.2xlarge-fp8kv-latency.yaml)** | FP8 | `g7e.2xlarge` | 1x RTX PRO 6000 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-e4b/fp8-g7e.2xlarge-fp8kv-runbook.md) | latency-tuned with an FP8 KV cache; pair with fp8-g7e.2xlarge-latency.yaml. Runs uncalibrated scales on vLLM 0.29.0 |
-| **[Gemma 4 E4B](gemma4-e4b/fp8-g7e.2xlarge-fp8kv-attn-flashinfer.yaml)** | FP8 | `g7e.2xlarge` | 1x RTX PRO 6000 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-e4b/fp8-g7e.2xlarge-fp8kv-attn-runbook.md) | FLASHINFER pinned; attention backend A/B arm 1; FP8 KV, memory fraction 0.90; compare only against the other attn arms |
-| **[Gemma 4 E4B](gemma4-e4b/fp8-g7e.2xlarge-fp8kv-attn-flashattn.yaml)** | FP8 | `g7e.2xlarge` | 1x RTX PRO 6000 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-e4b/fp8-g7e.2xlarge-fp8kv-attn-runbook.md) | FLASH_ATTN pinned; attention backend A/B arm 2; FP8 KV, memory fraction 0.90; compare only against the other attn arms |
-| **[Gemma 4 E4B](gemma4-e4b/fp8-g7e.2xlarge-fp8kv-attn-triton.yaml)** | FP8 | `g7e.2xlarge` | 1x RTX PRO 6000 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-e4b/fp8-g7e.2xlarge-fp8kv-attn-runbook.md) | TRITON_ATTN pinned; attention backend A/B arm 3; FP8 KV, memory fraction 0.90; portable fallback |
-| **[Gemma 4 31B](gemma4-31b/bf16-g6e.12xlarge.yaml)** | BF16 | `g6e.12xlarge` | 4x L40S | TP4 | Deployment | AWS DLC | [Runbook](../docs/runbooks/gemma4-31b/bf16-g6e.12xlarge-runbook.md) | 16-bit KV cache; weights from the shared claim |
-| **[Gemma 4 31B](gemma4-31b/bf16-g7.24xlarge.yaml)** | BF16 | `g7.24xlarge` | 4x RTX PRO 4500 | TP4 | Deployment | AWS DLC | [Runbook](../docs/runbooks/gemma4-31b/bf16-g7.24xlarge-runbook.md) | 16-bit KV cache; weights from the shared claim |
-| **[Gemma 4 31B](gemma4-31b/bf16-g7e.2xlarge.yaml)** | BF16 | `g7e.2xlarge` | 1x RTX PRO 6000 | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/gemma4-31b/bf16-g7e.2xlarge-runbook.md) | 16-bit KV cache; downloads its own weights |
-| **[Gemma 4 31B](gemma4-31b/bf16-g7e.4xlarge.yaml)** | BF16 | `g7e.4xlarge` | 1x RTX PRO 6000 | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/gemma4-31b/bf16-g7e.4xlarge-runbook.md) | 16-bit KV cache; weights from the shared claim |
-| **[Gemma 4 31B](gemma4-31b/fp8-g6e.12xlarge.yaml)** | FP8 | `g6e.12xlarge` | 4x L40S | TP4 | Deployment | AWS DLC | [Runbook](../docs/runbooks/gemma4-31b/fp8-g6e.12xlarge-runbook.md) | 16-bit KV cache; quantize first |
-| **[Gemma 4 31B](gemma4-31b/fp8-g7.24xlarge-p2p.yaml)** | FP8 | `g7.24xlarge` | 4x RTX PRO 4500 | TP4 | Deployment | AWS DLC | [Runbook](../docs/runbooks/gemma4-31b/fp8-g7.24xlarge-p2p-runbook.md) | 16-bit KV cache; quantize first |
-| **[Gemma 4 31B](gemma4-31b/fp8-g7.24xlarge.yaml)** | FP8 | `g7.24xlarge` | 4x RTX PRO 4500 | TP4 | Deployment | AWS DLC | [Runbook](../docs/runbooks/gemma4-31b/fp8-g7.24xlarge-runbook.md) | 16-bit KV cache; quantize first; no prefix caching |
-| **[Gemma 4 31B](gemma4-31b/fp8-g7e.4xlarge.yaml)** | FP8 | `g7e.4xlarge` | 1x RTX PRO 6000 | unset | Deployment | AWS DLC | [Runbook](../docs/runbooks/gemma4-31b/fp8-g7e.4xlarge-runbook.md) | 16-bit KV cache; quantize first |
-| **[Gemma 4 31B](gemma4-31b/fp8-g7e.4xlarge-fp8kv-32k.yaml)** | FP8 | `g7e.4xlarge` | 1x RTX PRO 6000 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-31b/fp8-g7e.4xlarge-fp8kv-32k-runbook.md) | FP8 KV cache, uncalibrated scales; 32k context; backend pinned TRITON_ATTN (the only backend this configuration admits); no prefix caching; quantize first |
-| **[Gemma 4 31B](gemma4-31b/fp8-g7e.2xlarge-fp8kv-32k.yaml)** | FP8 | `g7e.2xlarge` | 1x RTX PRO 6000 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/gemma4-31b/fp8-g7e.2xlarge-fp8kv-32k-runbook.md) | Capacity sibling of the g7e.4xlarge 32k recipe, same GPU on a smaller host; FP8 KV; TRITON_ATTN; quantize first |
-| **[Muse-Glimmer-30B](muse-glimmer-30b/fp8-g7e.2xlarge-fp8kv-32k.yaml)** | FP8 | `g7e.2xlarge` | 1x RTX PRO 6000 | unset | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/muse-glimmer-30b/fp8-g7e.2xlarge-fp8kv-32k-runbook.md) | FP8 KV cache, uncalibrated scales; 32k context; TRITON_ATTN pinned; counterpart of the gemma4-31b 32k recipe; drafter deliberately off; quantize first |
-| **[Llama 3.3 70B Instruct](llama3.3-70b/fp8-g7e.12xlarge.yaml)** | FP8 | `g7e.12xlarge` | 2x RTX PRO 6000 | TP2 | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/llama3.3-70b/fp8-g7e.12xlarge-runbook.md) | 16-bit KV cache; downloads its own weights; no prefix caching |
-| **[Qwen3-235B-A22B](qwen3-235b/fp8-g7e.12xlarge-lws.yaml)** | FP8 | `g7e.12xlarge` | 4x RTX PRO 6000 | TP2, PP2 | LeaderWorkerSet | AWS DLC | [Runbook](../docs/runbooks/qwen3-235b/fp8-g7e.12xlarge-lws-runbook.md) | 16-bit KV cache; weights from the shared claim; expert parallel; 2 nodes |
-| **[GLM-5.2](glm-5.2/fp8-p5en.48xlarge.yaml)** | FP8 | `p5en.48xlarge` | 8x H200 | TP8 | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/glm-5.2/fp8-p5en.48xlarge-runbook.md) | 16-bit KV cache; weights from a node directory |
-| **[GLM-5.2](glm-5.2/fp8-p6-b200.48xlarge.yaml)** | FP8 | `p6-b200.48xlarge` | 8x B200 | TP8 | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/glm-5.2/fp8-p6-b200.48xlarge-runbook.md) | FP8 KV cache; weights from the shared claim |
-| **[GLM-5.2](glm-5.2/nvfp4-p6-b200.48xlarge.yaml)** | NVFP4 | `p6-b200.48xlarge` | 8x B200 | TP8 | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/glm-5.2/nvfp4-p6-b200.48xlarge-runbook.md) | 16-bit KV cache; weights from the shared claim |
-| **[GLM-5.2](glm-5.2/nvfp4-p6-b300.48xlarge.yaml)** | NVFP4 | `p6-b300.48xlarge` | 8x B300 | TP8 | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/glm-5.2/nvfp4-p6-b300.48xlarge-runbook.md) | 16-bit KV cache; downloads its own weights |
-| **[Kimi K3](kimi-k3/mxfp4-p6-b200.48xlarge-lws-dspark.yaml)** | MXFP4 | `p6-b200.48xlarge` x2 | 16x B200 | TP16 | LeaderWorkerSet | Upstream vLLM | [Runbook](../docs/runbooks/kimi-k3/mxfp4-p6-b200.48xlarge-lws-dspark-runbook.md) | FP8 KV cache; weights from the shared claim; 2 nodes |
-| **[Kimi K3](kimi-k3/mxfp4-p6-b200.48xlarge-lws.yaml)** | MXFP4 | `p6-b200.48xlarge` x2 | 16x B200 | TP16 | LeaderWorkerSet | Custom ECR | [Runbook](../docs/runbooks/kimi-k3/mxfp4-p6-b200.48xlarge-lws-runbook.md) | build the EFA NCCL image first, see the runbook's Setup; FP8 KV cache; weights from S3 to node-local; no prefix caching; 2 nodes |
-| **[Kimi K3](kimi-k3/mxfp4-p6-b200.48xlarge-sts-latency.yaml)** | MXFP4 | `p6-b200.48xlarge` x2 | 16x B200 | TP8, PP2 | StatefulSet | Custom ECR | [Runbook](../docs/runbooks/kimi-k3/mxfp4-p6-b200.48xlarge-sts-latency-runbook.md) | build the EFA NCCL image first, see the runbook's Setup; FP8 KV cache; weights from S3 to node-local; 2 nodes |
-| **[Kimi K3](kimi-k3/mxfp4-p6-b200.48xlarge-sts.yaml)** | MXFP4 | `p6-b200.48xlarge` x2 | 16x B200 | TP8, PP2 | StatefulSet | Custom ECR | [Runbook](../docs/runbooks/kimi-k3/mxfp4-p6-b200.48xlarge-sts-runbook.md) | build the EFA NCCL image first, see the runbook's Setup; FP8 KV cache; weights from S3 to node-local; no prefix caching; 2 nodes |
-| **[Kimi K3](kimi-k3/mxfp4-p6-b300.48xlarge-baseline.yaml)** | MXFP4 | `p6-b300.48xlarge` | 8x B300 | TP8 | Deployment | Custom ECR | [Runbook](../docs/runbooks/kimi-k3/mxfp4-p6-b300.48xlarge-baseline-runbook.md) | build the EFA NCCL image first, see the runbook's Setup; FP8 KV cache; weights from S3 to node-local; expert parallel; no prefix caching |
-| **[Kimi K3](kimi-k3/mxfp4-p6-b300.48xlarge-dspark.yaml)** | MXFP4 | `p6-b300.48xlarge` | 8x B300 | TP8 | Deployment | Custom ECR | [Runbook](../docs/runbooks/kimi-k3/mxfp4-p6-b300.48xlarge-dspark-runbook.md) | build the EFA NCCL image first, see the runbook's Setup; FP8 KV cache; weights from S3 to node-local; no prefix caching |
-| **[Kimi K3](kimi-k3/mxfp4-p6-b300.48xlarge-ep.yaml)** | MXFP4 | `p6-b300.48xlarge` | 8x B300 | TP8 | Deployment | Custom ECR | [Runbook](../docs/runbooks/kimi-k3/mxfp4-p6-b300.48xlarge-ep-runbook.md) | build the EFA NCCL image first, see the runbook's Setup; FP8 KV cache; weights from S3 to node-local; expert parallel; no prefix caching |
-| **[Kimi K3](kimi-k3/mxfp4-u-p6e-gb200x72.yaml)** | MXFP4 | `u-p6e-gb200x72` | 16x GB200 | TP16 | Deployment | Upstream vLLM | [Runbook](../docs/runbooks/kimi-k3/mxfp4-u-p6e-gb200x72-runbook.md) | FP8 KV cache; weights from the shared claim |
+### GLM-5.2
+
+| Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| [Runbook](../docs/runbooks/glm-5.2/fp8-p6-b200.48xlarge-runbook.md) | `p6-b200.48xlarge` | FP8 | FP8 | Auto | 8x B200 | TP8 | Deployment, Service | Upstream vLLM |
+| [Runbook](../docs/runbooks/glm-5.2/nvfp4-p6-b300.48xlarge-runbook.md) | `p6-b300.48xlarge` | NVFP4 | 16-bit | Auto | 8x B300 | TP8 | Deployment, Service | Upstream vLLM |
+
+### Kimi K3
+
+| Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| [Runbook](../docs/runbooks/kimi-k3/mxfp4-p6-b200.48xlarge-sts-runbook.md) | `p6-b200.48xlarge` x2 | MXFP4 | FP8 | Auto; `FLASHINFER` for MLA prefill | 16x B200 | TP8, PP2 | StatefulSet, 2 Services | Custom ECR |
+| [Runbook](../docs/runbooks/kimi-k3/mxfp4-p6-b300.48xlarge-baseline-runbook.md) | `p6-b300.48xlarge` | MXFP4 | FP8 | Auto; `FLASHINFER` for MLA prefill | 8x B300 | TP8, expert parallel | Deployment, Service | Custom ECR |
+| [Runbook](../docs/runbooks/kimi-k3/mxfp4-p6-b300.48xlarge-dspark-runbook.md) | `p6-b300.48xlarge` | MXFP4 | FP8 | Auto; `FLASHINFER` for MLA prefill | 8x B300 | TP8 | Deployment, Service | Custom ECR |
+
+### Llama 4 Maverick
+
+| Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| [Runbook](../docs/runbooks/llama4-maverick/fp8-p6-b200.48xlarge-fp8kv-32k-runbook.md) | `p6-b200.48xlarge` | FP8 | FP8 | `TRITON_ATTN` | 8x B200 | TP8 | Deployment, Service | Upstream vLLM |
+| [Runbook](../docs/runbooks/llama4-maverick/fp8-p6-b200.48xlarge-fp8kv-32k-flashattn-runbook.md) | `p6-b200.48xlarge` | FP8 | FP8 | `FLASH_ATTN` | 8x B200 | TP8 | Deployment, Service | Upstream vLLM |
+| [Runbook](../docs/runbooks/llama4-maverick/fp8-p6-b200.48xlarge-fp8kv-32k-flashinfer-runbook.md) | `p6-b200.48xlarge` | FP8 | FP8 | `FLASHINFER` | 8x B200 | TP8 | Deployment, Service | Upstream vLLM |
+
+### Nemotron 3 Ultra
+
+| Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| [Runbook](../docs/runbooks/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-runbook.md) | `p6-b200.48xlarge` | NVFP4 | FP8 | `TRITON_ATTN` | 8x B200 | TP8 | Deployment, Service | Upstream vLLM |
+| [Runbook](../docs/runbooks/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-flashattn-runbook.md) | `p6-b200.48xlarge` | NVFP4 | FP8 | `FLASH_ATTN` | 8x B200 | TP8 | Deployment, Service | Upstream vLLM |
+| [Runbook](../docs/runbooks/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-flashinfer-runbook.md) | `p6-b200.48xlarge` | NVFP4 | FP8 | `FLASHINFER` | 8x B200 | TP8 | Deployment, Service | Upstream vLLM |
+
+### Muse-Glimmer 30B
+
+| Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| [Runbook](../docs/runbooks/muse-glimmer-30b/fp8-g7e.48xlarge-fp8kv-32k-dp8-s3-runbook.md) | `g7e.48xlarge` | FP8 | FP8 | `TRITON_ATTN` | 8x RTX PRO 6000 | N/A | Deployment, Service | Upstream vLLM |
+| [Runbook](../docs/runbooks/muse-glimmer-30b/fp8-g7e.48xlarge-fp8kv-32k-dp8-s3-flashinfer-runbook.md) | `g7e.48xlarge` | FP8 | FP8 | `FLASHINFER` | 8x RTX PRO 6000 | N/A | Deployment, Service | Upstream vLLM |
+| [Runbook](../docs/runbooks/muse-glimmer-30b/fp8-p6-b200.48xlarge-fp8kv-32k-flashinfer-runbook.md) | `p6-b200.48xlarge` | FP8 | FP8 | `FLASHINFER` | 1x B200 | N/A | Deployment, Service | Upstream vLLM |
+
+### Qwen2.5-7B-Instruct
+
+| Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| [Runbook](../docs/runbooks/qwen2.5-7b/fp8-g6e.12xlarge-runbook.md) | `g6e.12xlarge` | FP8 | 16-bit | Auto | 1x L40S | TP1 | Deployment, Service | AWS DLC |
+| [Runbook](../docs/runbooks/qwen2.5-7b/fp8-g7e.12xlarge-runbook.md) | `g7e.12xlarge` | FP8 | 16-bit | Auto | 1x RTX PRO 6000 | TP1 | Deployment, Service | AWS DLC |
+
+### Qwen3-30B-A3B
+
+| Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| [Runbook](../docs/runbooks/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default-runbook.md) | `g7e.12xlarge` | FP8 | BF16 | Auto | 2x RTX PRO 6000 | TP2, expert parallel | Deployment, Service | Upstream vLLM |
+| [Runbook](../docs/runbooks/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix-runbook.md) | `g7e.12xlarge` | FP8 | BF16 | Auto | 2x RTX PRO 6000 | TP2, expert parallel | Deployment, Service | Upstream vLLM |
+
+### Gemma 4 31B
+
+| Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| [Runbook](../docs/runbooks/gemma4-31b/fp8-g7.24xlarge-runbook.md) | `g7.24xlarge` | FP8 | 16-bit | Auto | 4x RTX PRO 4500 | TP4 | Deployment, Service | AWS DLC |
+| [Runbook](../docs/runbooks/gemma4-31b/fp8-p6-b200.48xlarge-fp8kv-32k-dp8-textonly-flashinfer-runbook.md) | `p6-b200.48xlarge` | FP8 | FP8 | `FLASHINFER` | 8x B200 | N/A | Deployment, Service | Upstream vLLM |
+
+### Gemma 4 E4B
+
+| Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| [Runbook](../docs/runbooks/gemma4-e4b/fp8-g7e.2xlarge-fp8kv-attn-triton-runbook.md) | `g7e.2xlarge` | FP8 | FP8 | `TRITON_ATTN` | 1x RTX PRO 6000 | N/A | Deployment, Service | Upstream vLLM |
+| [Runbook](../docs/runbooks/gemma4-e4b/fp8-p5.4xlarge-fp8kv-attn-triton-runbook.md) | `p5.4xlarge` | FP8 | FP8 | `TRITON_ATTN` | 1x H100 | N/A | Deployment, Service | Upstream vLLM |
 
 ## Naming
 

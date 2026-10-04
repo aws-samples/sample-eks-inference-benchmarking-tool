@@ -1,0 +1,119 @@
+#
+# Llama 3.3 70B Instruct, ModelOpt FP8 with 16-bit KV, TP2 on one g7e.12xlarge. Downloads the public checkpoint into node ephemeral storage.
+# Baseline for the g7e.12xlarge NCCL switch study; an experiment, not a serving recipe.
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llama33-70b-vllm-g7e-fp8
+  labels: { app: llama33-70b-vllm-g7e-fp8 }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: llama33-70b-vllm-g7e-fp8 }
+  template:
+    metadata:
+      labels: { app: llama33-70b-vllm-g7e-fp8 }
+    spec:
+      nodeSelector:
+        node.kubernetes.io/instance-type: g7e.12xlarge
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+        - key: workload
+          operator: Equal
+          value: bench
+          effect: NoSchedule
+        - key: capacity-reservation
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.26.0
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              echo "=== starting vLLM on ${INSTANCE_TYPE}: $(date -u) ==="
+              vllm serve "${MODEL_ID}" \
+                --served-model-name "${SERVED_MODEL_NAME}" \
+                --kv-cache-dtype "${KV_CACHE_DTYPE}" \
+                --tensor-parallel-size "${TP_SIZE}" \
+                --gpu-memory-utilization "${GPU_MEM_UTIL}" \
+                --max-model-len "${MAX_MODEL_LEN}" \
+                --max-num-seqs "${MAX_NUM_SEQS}" \
+                --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}" \
+                --async-scheduling \
+                --enable-chunked-prefill \
+                --no-enable-prefix-caching \
+                --port 8000
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MODEL_ID
+              value: nvidia/Llama-3.3-70B-Instruct-FP8
+            - name: SERVED_MODEL_NAME
+              value: llama3.3-70b-fp8
+            - name: KV_CACHE_DTYPE
+              value: bfloat16
+            - name: TP_SIZE
+              value: "2"
+            - name: GPU_MEM_UTIL
+              value: "0.90"
+            - name: MAX_MODEL_LEN
+              value: "8192"
+            - name: MAX_NUM_SEQS
+              value: "512"
+            - name: MAX_NUM_BATCHED_TOKENS
+              value: "8192"
+            - name: INSTANCE_TYPE
+              value: g7e.12xlarge
+            - name: HF_HOME
+              value: /models
+            - name: HF_XET_HIGH_PERFORMANCE
+              value: "1"
+            - name: VLLM_LOGGING_LEVEL
+              value: WARNING
+            - name: NCCL_DEBUG
+              value: INFO
+            - name: NCCL_DEBUG_SUBSYS
+              value: INIT,GRAPH,P2P,NET
+          resources:
+            requests:
+              ephemeral-storage: 100Gi
+            limits:
+              ephemeral-storage: 140Gi
+              nvidia.com/gpu: "2"
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 15
+            failureThreshold: 120
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 30
+            failureThreshold: 6
+          volumeMounts:
+            - { name: model-storage, mountPath: /models }
+            - { name: dshm, mountPath: /dev/shm }
+      volumes:
+        - name: model-storage
+          emptyDir: { sizeLimit: 140Gi }
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 16Gi }
+      terminationGracePeriodSeconds: 120
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llama33-70b-vllm-g7e-fp8
+spec:
+  selector: { app: llama33-70b-vllm-g7e-fp8 }
+  ports:
+    - { protocol: TCP, port: 8000, targetPort: 8000 }

@@ -1,5 +1,5 @@
 #
-# ConfigMap carrying sitecustomize.py, mounted by every recipe that runs the vllm:0.21.0-gpu-py312 image. Apply it before deploying one of those recipes, or the pod fails at startup on a repo-id validation error.
+# ConfigMap carrying sitecustomize.py for recipes that run the vllm:0.21.0-gpu-py312 image. Apply it first, or the pod fails at startup on a repo-id validation error.
 #
 apiVersion: v1
 kind: ConfigMap

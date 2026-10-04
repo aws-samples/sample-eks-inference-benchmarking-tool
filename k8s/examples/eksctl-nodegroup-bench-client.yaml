@@ -1,7 +1,6 @@
 #
-# eksctl On-Demand node group for the benchmark client. Use this alongside any GPU node group: the measurement Job requests 8 dedicated CPUs, and an 8 vCPU node advertises about 7910m allocatable after kubelet reservations, so on a small system node the Job stays Pending with no obvious cause.
-#
-# m5.4xlarge is the smallest size that leaves room. It runs no GPU workload and needs no GPU label or taint.
+# eksctl On-Demand node group for the benchmark client. The measurement Job requests 8 dedicated CPUs, more than an 8 vCPU node can allocate.
+# m5.4xlarge is the smallest size that fits. It needs no GPU label or taint.
 #
 # SUBSTITUTE: my-cluster, us-east-1, and the subnet in your GPU node's availability zone.
 apiVersion: eksctl.io/v1alpha5

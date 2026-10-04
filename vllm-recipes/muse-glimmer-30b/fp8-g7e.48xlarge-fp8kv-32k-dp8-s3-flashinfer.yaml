@@ -1,29 +1,16 @@
-#
-# Muse-Glimmer-30B at FP8 with an FP8 KV cache as EIGHT independent single-GPU replicas on one
-# g7e.48xlarge (8x RTX PRO 6000 Blackwell, sm_120, PCIe, no NVLink), 32,768-token context each,
-# behind one Service. Eight-copy sibling of fp8-g7e.24xlarge-fp8kv-32k-dp4-s3-flashinfer.yaml: same per-copy values,
-# and per-replica serving values identical to the single-card fp8-g7e.2xlarge-fp8kv-32k.yaml, so
-# it measures how independent copies scale where TP4 over PCIe scaled only 1.4x. Single node, no EFA.
-#
-# The Service spreads load per TCP connection, and the benchmark client keeps one persistent
-# connection per in-flight request, so at low concurrency the split across replicas can be
-# uneven. Record per-replica request counts alongside any result from this recipe.
-#
+# Muse-Glimmer-30B at FP8 with an FP8 KV cache on one g7e.48xlarge: eight single-GPU replicas,
+# 32k context, FLASHINFER attention backend. Weights are staged from S3.
 # SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION (the bucket's region) in the init container.
-#
-#
-# ATTENTION-BACKEND A/B ARM: identical to fp8-g7e.24xlarge-fp8kv-32k-dp4-s3.yaml except --attention-backend FLASHINFER
-# (and resource names), so the pair isolates the attention kernel. Treat results from this
-# file as their own labelled config; never fold them into the TRITON_ATTN baseline.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3-flashinfer
   labels: { app: muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3-flashinfer }
 spec:
-  # Each replica syncs weights from S3 before vLLM starts; allow for it beyond the 600s default.
+  # Each replica's S3 weight sync can outlast the 600 s default progress deadline.
   progressDeadlineSeconds: 3600
-  # Eight single-GPU pods fill the node's eight GPUs; Recreate so an update never waits on a ninth.
+  # One single-GPU replica per GPU; Recreate keeps a rollout from waiting on a ninth GPU.
+  # The Service balances per TCP connection, so load can be uneven at low concurrency.
   replicas: 8
   strategy: { type: Recreate }
   selector:
@@ -32,7 +19,7 @@ spec:
     metadata:
       labels: { app: muse-glimmer-30b-vllm-g7e-48xl-fp8kv-32k-dp8-s3-flashinfer }
     spec:
-      # Pod-scoped S3 read via EKS Pod Identity; node roles on these clusters block pod IMDS (hop limit 1).
+      # S3 read access comes from EKS Pod Identity, not the node role.
       serviceAccountName: muse-glimmer-30b-bench
       nodeSelector:
         node.kubernetes.io/instance-type: "g7e.48xlarge"
@@ -96,40 +83,29 @@ spec:
           env:
             - name: MODEL_DIR
               value: "/models/quantized/Muse-Glimmer-30B-fp8"
-            # Real ModelOpt export (float8_e4m3fn weights, hf_quant_config.json, static
-            # input_scale), produced by model-jobs/muse-glimmer-30b/fp8-model-quantize.yaml.
+            # ModelOpt FP8 export produced by model-jobs/muse-glimmer-30b/fp8-model-quantize.yaml.
             - name: QUANTIZATION
               value: "modelopt"
             - name: DTYPE
               value: "bfloat16"
-            # The KV precision under test. Uncalibrated scales, as on every 0.29.0 FP8-KV recipe
-            # here: the engine rejects --calculate-kv-scales and logs "Using KV cache scaling
-            # factor 1.0 for fp8_e4m3" at startup, a caveat on any accuracy claim.
+            # KV scales are uncalibrated (factor 1.0): vLLM 0.29.0 does not accept --calculate-kv-scales.
             - name: KV_CACHE_DTYPE
               value: "fp8"
-            # Pinned so the kernel that served is on record. TRITON_ATTN to match the gemma4-31b
-            # 32k recipe this one is read against; the model carries a perception encoder, and on
-            # that recipe the engine refused FLASHINFER for the multimodal token pattern and
-            # refuses FLASH_ATTN for FP8 KV on sm_120. The deploy script asserts what actually
-            # served and fails otherwise.
+            # Passed as --attention-backend because vLLM 0.29.0 ignores VLLM_ATTENTION_BACKEND.
+            # FLASH_ATTN does not support an FP8 KV cache on sm_120.
             - name: ATTENTION_BACKEND
               value: "FLASHINFER"
-            # Same window as the gemma4-31b 32k recipe: fits the coding_repo_context profile
-            # (20.3k wire median + 1,024 output) with room at the top of its range.
+            # Fits the coding_repo_context profile (about 20k prompt tokens plus 1,024 output).
             - name: MAX_MODEL_LEN
               value: "32768"
-            # The pool holds roughly 60 full-length sequences at this model's KV geometry
-            # (~0.74 GiB per 32k sequence at FP8 across all 52 layers), so 64 is reachable
-            # here, unlike on gemma4-31b. Held at 64 to match that recipe and the graph
-            # capture ceiling below.
+            # About 60 full-length sequences fit in KV cache; 64 matches MAX_CUDAGRAPH.
             - name: MAX_NUM_SEQS
               value: "64"
-            # A full 21k-token prompt prefills in one chunk. Held at the gemma4-31b value.
+            # A full 21k-token prompt prefills in one chunk.
             - name: MAX_NUM_BATCHED_TOKENS
               value: "32768"
             - name: MAX_CUDAGRAPH
               value: "64"
-            # Held at the gemma4-31b 32k value so memory fraction is not a variable between them.
             - name: GPU_MEM_UTIL
               value: "0.95"
             - name: INSTANCE_TYPE
@@ -138,8 +114,7 @@ spec:
               value: "/models"
             - name: PYTHONUNBUFFERED
               value: "1"
-            # INFO so the backend selection and KV-scale lines land in the server log; the deploy
-            # script reads both.
+            # INFO logs the selected attention backend and KV scale factor at startup.
             - name: VLLM_LOGGING_LEVEL
               value: "INFO"
           resources:
@@ -161,7 +136,7 @@ spec:
             - { name: dshm, mountPath: /dev/shm }
             - { name: model-storage, mountPath: /models }
       volumes:
-        # One GPU per pod, no NCCL; bounded so four replicas cannot exhaust node memory.
+        # One GPU per pod and no NCCL, so a small bounded /dev/shm is enough.
         - name: dshm
           emptyDir: { medium: Memory, sizeLimit: 16Gi }
         - name: model-storage
