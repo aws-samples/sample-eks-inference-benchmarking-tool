@@ -41,6 +41,7 @@ Model ids like `Qwen/Qwen2.5-7B-Instruct` are real values and are left as-is, so
 | `configmap-vllm-sitecustomize.yaml` | ConfigMap | The runtime patch every `vllm-recipes/` manifest mounts |
 | `job-build-image-kaniko.yaml` | ConfigMap + Job | Build a derived serving image in-cluster and push to ECR |
 | `job-node-driver-fix.yaml` | Job | Rebuild the NVIDIA open kernel module when GPUs do not register |
+| `pod-nvme-raid0.yaml` | Pod | Assemble a running node's NVMe instance store as RAID0 at `/mnt/nvme-raid0` |
 | `pod-diagnostic-probe.yaml` | Pod | The throwaway-pod pattern for answering one question about a cluster |
 | `pod-profile-nsys.yaml` | Pod | Run vLLM under Nsight Systems to see where step time goes |
 
@@ -259,6 +260,10 @@ env:
 ```
 
 Two further notes apply before editing them. The build cannot be replaced with `dkms build`: on kernel 6.12 it runs its hardcoded fallback target `make -j2 module` instead of the `modules` target `dkms.conf` declares, and fails. State lives in `/var/lib/nvidia-open-fix`, holding a per-kernel success marker, a failure counter, and a copy of the driver sources, so deleting the marker allows a node to retry. The two scripts are intentional copies so each manifest applies independently; changes should be made to both.
+
+### `pod-nvme-raid0.yaml`
+
+Use it on a GPU node whose launch template did not set nodeadm `localStorage.strategy: RAID0`, when a recipe reads weights from `/mnt/nvme-raid0` through a hostPath. It is privileged and enters the host's namespaces to run `mdadm`, so apply it only to a node you own. Each step is skipped when already done, so re-applying is safe. The array does not survive a node replacement. For new node groups, prefer `nodeconfig-local-nvme-raid0.yaml`, which also moves kubelet storage onto the array.
 
 ### `pod-diagnostic-probe.yaml`
 

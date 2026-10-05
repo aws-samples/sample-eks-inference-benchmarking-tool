@@ -24,6 +24,7 @@ A download stages weights that are already published. A quantize job produces a 
 | [`kimi-k3/mxfp4-model-download.yaml`](kimi-k3/mxfp4-model-download.yaml) | Stage the published checkpoint from Hugging Face to S3 file by file, resumably, and fail if any file is missing |
 | [`kimi-k3/dspark-draft-download.yaml`](kimi-k3/dspark-draft-download.yaml) | Stage the published DSpark draft to S3 with the same stager |
 | [`llama4-maverick/fp8-model-download.yaml`](llama4-maverick/fp8-model-download.yaml) | Stage the published checkpoint from Hugging Face to S3, and fail on a shard-count or size mismatch |
+| [`mistral-large-3/fp8-model-download.yaml`](mistral-large-3/fp8-model-download.yaml) | Stage the published checkpoint from Hugging Face to S3 through the GPU node's NVMe RAID0, and fail on a shard-count or size mismatch |
 | [`nemotron-3-ultra/nvfp4-model-download.yaml`](nemotron-3-ultra/nvfp4-model-download.yaml) | Stage the published NVFP4 checkpoint from Hugging Face to S3, and fail on a shard-count or size mismatch |
 | [`muse-glimmer-30b/fp8-model-fsx-to-s3.yaml`](muse-glimmer-30b/fp8-model-fsx-to-s3.yaml) | Copy the quantized checkpoint from the claim to S3, and fail on a shard-count mismatch |
 

@@ -1,0 +1,47 @@
+#
+# One-shot Pod that stripes a running GPU node's local NVMe instance-store volumes into one RAID0 array and mounts it at
+# /mnt/nvme-raid0, for nodes whose launch template did not set nodeadm localStorage RAID0. Recipes that read
+# /mnt/nvme-raid0 through a hostPath, such as mistral-large-3/fp8-p5en.48xlarge.yaml, need it. Safe to re-apply: each
+# step is skipped when already done. The array does not survive a node replacement; apply it again to a new node.
+#
+# SUBSTITUTE: GPU_NODE.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nvme-raid0
+  labels: { app: nvme-raid0 }
+spec:
+  nodeName: SUBSTITUTE-gpu-node
+  hostPID: true
+  restartPolicy: Never
+  tolerations:
+    - operator: Exists
+  containers:
+    - name: raid0
+      image: public.ecr.aws/docker/library/busybox:1.36
+      securityContext:
+        privileged: true
+      command:
+        - nsenter
+        - -t
+        - "1"
+        - -m
+        - -u
+        - -n
+        - --
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          devs=$(lsblk -d -n -o NAME,MODEL | awk '/Instance Storage/ {print "/dev/"$1}' | sort)
+          count=$(echo $devs | wc -w)
+          echo "instance-store volumes: $count"
+          test "$count" -gt 0
+          command -v mdadm >/dev/null || dnf install -y -q mdadm
+          test -e /dev/md0 || mdadm --create /dev/md0 --level=0 --raid-devices="$count" --run $devs
+          blkid /dev/md0 >/dev/null 2>&1 || mkfs.xfs -q /dev/md0
+          mkdir -p /mnt/nvme-raid0
+          mountpoint -q /mnt/nvme-raid0 || mount /dev/md0 /mnt/nvme-raid0
+          mkdir -p /mnt/nvme-raid0/models
+          findmnt -n -o SOURCE /mnt/nvme-raid0
+          df -h /mnt/nvme-raid0 | tail -1

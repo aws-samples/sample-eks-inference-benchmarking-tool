@@ -1,0 +1,180 @@
+# Mistral Large 3 675B Instruct at FP8 on one p5en.48xlarge, 8 H200 GPUs, tensor parallel 8,
+# 16-bit KV cache, 32k context, FLASH_ATTN_MLA attention backend.
+# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION in the init container, GPU_NODE, and the ServiceAccount with S3 read access.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mistral-large-3-vllm-p5en
+  labels: { app: mistral-large-3-vllm-p5en }
+spec:
+  # The S3 weight sync outlasts the 600 s default progress deadline.
+  progressDeadlineSeconds: 7200
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: mistral-large-3-vllm-p5en }
+  template:
+    metadata:
+      labels: { app: mistral-large-3-vllm-p5en }
+    spec:
+      serviceAccountName: SUBSTITUTE-service-account
+      # Pinned to the node whose instance-store NVMe is assembled as RAID0 at /mnt/nvme-raid0.
+      nodeSelector:
+        kubernetes.io/hostname: SUBSTITUTE-gpu-node
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      initContainers:
+        - name: fetch-weights
+          image: public.ecr.aws/aws-cli/aws-cli:latest
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              aws configure set default.s3.max_concurrent_requests 64
+              aws configure set default.s3.multipart_chunksize 64MB
+              aws configure set default.s3.max_queue_size 10000
+              echo "weights sync start $(date -u)"; df -h /models | tail -1
+              # /models must be the NVMe array; stop if it lacks the space.
+              avail=$(df -Pk /models | awk 'NR==2 {print int($4/1048576)}')
+              if [ "$avail" -lt "$MIN_FREE_GIB" ]; then
+                echo "FATAL: ${avail} GiB free at /models, need ${MIN_FREE_GIB} GiB." >&2
+                echo "  If that is the root disk rather than the NVMe array, the sync would fill it." >&2
+                exit 1
+              fi
+              aws s3 sync "s3://${WEIGHTS_BUCKET}/${WEIGHTS_PREFIX}/" /models/mistral-large-3-fp8/ \
+                --region "${AWS_REGION}" --only-show-errors --exclude ".cache/*"
+              SZ=$(du -s --block-size=1G /models/mistral-large-3-fp8 | cut -f1)
+              SHARDS=$(find /models/mistral-large-3-fp8 -maxdepth 1 -name 'consolidated-*.safetensors' | wc -l)
+              echo "weights staged ${SZ} GiB, ${SHARDS} shards  $(date -u)"
+              test "$SZ" -ge 600 || { echo "FATAL: expected ~635 GiB, got ${SZ} GiB" >&2; exit 1; }
+              test "$SHARDS" -eq 272 || { echo "FATAL: expected 272 shards, got ${SHARDS}" >&2; exit 1; }
+          env:
+            - name: MIN_FREE_GIB
+              value: "100"
+            - name: WEIGHTS_BUCKET
+              value: SUBSTITUTE-weights-bucket
+            - name: WEIGHTS_PREFIX
+              value: "mistral-large-3-fp8"
+            - name: AWS_REGION
+              value: "us-east-1"
+          volumeMounts:
+            - { name: models, mountPath: /models }
+          resources:
+            requests: { cpu: "16", memory: 32Gi }
+            limits: { cpu: "32", memory: 64Gi }
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.29.0
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              echo "=== provenance (captured into the result bundle) ==="
+              nvidia-smi --query-gpu=index,name,memory.total --format=csv
+              topo=$(nvidia-smi topo -m 2>/dev/null || true)
+              echo "$topo"
+              if grep -qE '\bNV[0-9]+\b' <<<"$topo"; then
+                echo "  NVLink mesh detected - good."
+              else
+                echo "  WARNING: no NVLink pairs in topo matrix. Do not trust results."
+              fi
+              echo "=== flag surface check ==="
+              for f in --attention-backend --kv-cache-dtype --max-cudagraph-capture-size \
+                       --stream-interval --tokenizer-mode --config-format --load-format \
+                       --no-enable-prefix-caching --max-num-batched-tokens; do
+                vllm serve --help=all 2>/dev/null | grep -q -- "$f" \
+                  && echo "  OK     $f" || echo "  ABSENT $f  <-- fix the command below"
+              done
+              echo "=== starting vLLM on ${INSTANCE_TYPE}: $(date -u) - loading ~635 GiB ==="
+              ARGS=(
+                /models/mistral-large-3-fp8
+                --served-model-name mistral-large-3
+                --tensor-parallel-size 8
+                --tokenizer-mode mistral
+                --config-format mistral
+                --load-format mistral
+                --kv-cache-dtype "${KV_CACHE_DTYPE}"
+                --attention-backend "${ATTENTION_BACKEND}"
+                --gpu-memory-utilization "${GPU_MEM_UTIL}"
+                --max-model-len "${MAX_MODEL_LEN}"
+                --max-num-seqs "${MAX_NUM_SEQS}"
+                --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}"
+                --stream-interval "${STREAM_INTERVAL}"
+                --max-cudagraph-capture-size "${MAX_CUDAGRAPH}"
+                --no-enable-prefix-caching
+                --port 8000
+              )
+              printf '  argv: %s\n' "${ARGS[@]}"
+              exec vllm serve "${ARGS[@]}"
+          ports:
+            - containerPort: 8000
+          env:
+            # No --quantization flag: vLLM detects the compressed-tensors FP8 export from params.json.
+            # The checkpoint ships no KV-cache scales, so the KV cache stays 16-bit.
+            - name: KV_CACHE_DTYPE
+              value: "auto"
+            - name: MAX_MODEL_LEN
+              value: "32768"
+            - name: MAX_NUM_SEQS
+              value: "256"
+            - name: MAX_NUM_BATCHED_TOKENS
+              value: "32768"
+            - name: STREAM_INTERVAL
+              value: "10"
+            - name: MAX_CUDAGRAPH
+              value: "256"
+            - name: GPU_MEM_UTIL
+              value: "0.90"
+            # Passed as --attention-backend because vLLM 0.29.0 ignores VLLM_ATTENTION_BACKEND.
+            - name: ATTENTION_BACKEND
+              value: "FLASH_ATTN_MLA"
+            - name: INSTANCE_TYPE
+              value: "p5en.48xlarge"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            # INFO logs the selected attention backend and quantization method at startup.
+            - name: VLLM_LOGGING_LEVEL
+              value: "INFO"
+          resources:
+            limits:
+              nvidia.com/gpu: "8"
+              memory: 1600Gi
+            requests:
+              cpu: "96"
+              memory: 512Gi
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 15
+            failureThreshold: 240
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 30
+            failureThreshold: 6
+          volumeMounts:
+            - { name: models, mountPath: /models }
+            - { name: dshm, mountPath: /dev/shm }
+      volumes:
+        - name: models
+          hostPath:
+            path: /mnt/nvme-raid0/models
+            type: Directory
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 64Gi }
+      terminationGracePeriodSeconds: 120
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mistral-large-3-vllm-p5en
+spec:
+  selector: { app: mistral-large-3-vllm-p5en }
+  ports:
+    - { protocol: TCP, port: 8000, targetPort: 8000 }
