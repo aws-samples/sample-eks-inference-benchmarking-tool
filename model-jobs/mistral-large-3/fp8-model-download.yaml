@@ -1,9 +1,8 @@
 #
 # Stages the published Mistral Large 3 675B Instruct FP8 checkpoint (~635 GiB, 272 shards) from Hugging Face into S3, once.
-# Stages through the GPU node's NVMe RAID0 at /mnt/nvme-raid0, which the recipe reads from, so the serving pod's S3 sync finds it already local.
 # Fails on a shard-count or size mismatch.
 #
-# SUBSTITUTE: WEIGHTS_BUCKET, AWS_REGION, GPU_NODE, and the ServiceAccount with S3 write access.
+# SUBSTITUTE: WEIGHTS_BUCKET, AWS_REGION, and the Pod Identity association for mistral-large-3-bench.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -17,9 +16,8 @@ spec:
         app: mistral-large-3-fp8-hf-to-s3
     spec:
       restartPolicy: OnFailure
-      serviceAccountName: SUBSTITUTE-service-account
-      nodeSelector:
-        kubernetes.io/hostname: SUBSTITUTE-gpu-node
+      serviceAccountName: mistral-large-3-bench
+      # The toleration lets it place on GPU-tainted pools; its ephemeral-storage request rules out most system nodes.
       tolerations:
         - key: nvidia.com/gpu
           operator: Exists
@@ -38,13 +36,13 @@ spec:
             - name: MODEL_REPO
               value: mistralai/Mistral-Large-3-675B-Instruct-2512
             - name: WEIGHTS_BUCKET
-              value: SUBSTITUTE-weights-bucket
+              value: mistral-large-3-model-weights-012345678901-us-east-1
             - name: PREFIX
               value: mistral-large-3-fp8
-            - name: STAGE_DIR
-              value: /nvme/models/mistral-large-3-fp8
+            - name: MODEL_DIR
+              value: /models/mistral-large-3-fp8
             - name: HF_HOME
-              value: /nvme/.hf-cache
+              value: /models/.hf-cache
             - name: HF_XET_HIGH_PERFORMANCE
               value: "1"
             - name: EXPECTED_SHARDS
@@ -53,53 +51,51 @@ spec:
               value: "600"
             - name: AWS_REGION
               value: us-east-1
-            # The repository is not gated, so the token is optional.
             - name: HUGGING_FACE_HUB_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: hf-token
                   key: token
-                  optional: true
             - name: PYTHONUNBUFFERED
               value: "1"
           args:
             - |
               set -euo pipefail
               pip install --no-cache-dir -q "huggingface_hub==1.28.0" awscli
-              df -h /nvme | tail -1
+              df -h /models | tail -1
               echo "=== downloading $MODEL_REPO $(date -u) ==="
-              hf download "$MODEL_REPO" --local-dir "$STAGE_DIR"
+              hf download "$MODEL_REPO" --local-dir "$MODEL_DIR"
               echo "=== verifying the local stage before upload $(date -u) ==="
-              local_count=$(find "$STAGE_DIR" -maxdepth 1 -name 'consolidated-*.safetensors' | wc -l)
-              partials=$(find "$STAGE_DIR" -name '*.incomplete' | wc -l)
-              total_gib=$(du -s --block-size=1G "$STAGE_DIR" | cut -f1)
+              local_count=$(find "$MODEL_DIR" -maxdepth 1 -name 'consolidated-*.safetensors' | wc -l)
+              partials=$(find "$MODEL_DIR" -name '*.incomplete' | wc -l)
+              total_gib=$(du -s --block-size=1G "$MODEL_DIR" | cut -f1)
               echo "local shards: $local_count/$EXPECTED_SHARDS, partial files: $partials, total: ${total_gib} GiB"
-              test -f "$STAGE_DIR/params.json" || { echo "FATAL: no params.json" >&2; exit 1; }
+              test -f "$MODEL_DIR/params.json" || { echo "FATAL: no params.json" >&2; exit 1; }
               test "$local_count" -eq "$EXPECTED_SHARDS" || { echo "FATAL: expected $EXPECTED_SHARDS shards, downloaded $local_count" >&2; exit 1; }
               test "$partials" -eq 0 || { echo "FATAL: $partials partial files remain" >&2; exit 1; }
               test "$total_gib" -ge "$MIN_TOTAL_GIB" || { echo "FATAL: expected >= ${MIN_TOTAL_GIB} GiB, got ${total_gib} GiB" >&2; exit 1; }
               echo "=== uploading to s3://$WEIGHTS_BUCKET/$PREFIX/ $(date -u) ==="
               aws configure set default.s3.max_concurrent_requests 64
-              aws s3 sync "$STAGE_DIR" "s3://$WEIGHTS_BUCKET/$PREFIX/" --region "$AWS_REGION" --only-show-errors \
+              aws s3 sync "$MODEL_DIR" "s3://$WEIGHTS_BUCKET/$PREFIX/" --region "$AWS_REGION" --only-show-errors \
                 --exclude ".cache/*"
               echo "=== verifying S3 against local $(date -u) ==="
-              s3_count=$(aws s3 ls "s3://$WEIGHTS_BUCKET/$PREFIX/" --region "$AWS_REGION" | awk '{print $NF}' | grep -c '^consolidated-.*\.safetensors$')
+              s3_count=$(aws s3 ls "s3://$WEIGHTS_BUCKET/$PREFIX/" --region "$AWS_REGION" | awk '{print $NF}' | grep -c '\.safetensors$')
               echo "shards in S3: $s3_count"
               test "$local_count" -eq "$s3_count" || { echo "FATAL: shard count mismatch after upload" >&2; exit 1; }
               echo "=== staged $(date -u) ==="
           volumeMounts:
-            - name: nvme
-              mountPath: /nvme
+            - name: models
+              mountPath: /models
           resources:
             requests:
               cpu: "16"
               memory: 64Gi
+              ephemeral-storage: 700Gi
             limits:
               cpu: "32"
               memory: 128Gi
+              ephemeral-storage: 760Gi
       volumes:
-        # The node's instance-store NVMe, assembled as RAID0 and mounted at /mnt/nvme-raid0.
-        - name: nvme
-          hostPath:
-            path: /mnt/nvme-raid0
-            type: Directory
+        - name: models
+          emptyDir:
+            sizeLimit: 760Gi

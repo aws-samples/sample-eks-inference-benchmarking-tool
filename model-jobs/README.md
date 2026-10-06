@@ -15,7 +15,6 @@ A download stages weights that are already published. A quantize job produces a 
 | [`glm-5.2/fp8-model-download.yaml`](glm-5.2/fp8-model-download.yaml) | `zai-org/GLM-5.2-FP8` | `/models/glm-5.2-fp8` |
 | [`muse-glimmer-30b/fp8-model-quantize.yaml`](muse-glimmer-30b/fp8-model-quantize.yaml) | `meta-models/Muse-Glimmer-30B` | `/models/quantized/Muse-Glimmer-30B-fp8` |
 | [`qwen2.5-7b/fp8-model-quantize.yaml`](qwen2.5-7b/fp8-model-quantize.yaml) | `Qwen/Qwen2.5-7B-Instruct` | `/models/quantized/Qwen2.5-7B-Instruct-fp8` |
-| [`qwen3-30b-a3b/fp8-model-download.yaml`](qwen3-30b-a3b/fp8-model-download.yaml) | `Qwen/Qwen3-30B-A3B-FP8` | `/models/qwen3-30b-a3b-fp8` on the `g7e12-switch-model-storage` gp3 claim |
 | [`qwen3-235b/fp8-model-download.yaml`](qwen3-235b/fp8-model-download.yaml) | `Qwen/Qwen3-235B-A22B-FP8` | `/models/qwen3-235b-a22b-fp8` |
 
 | Utility | Purpose |
@@ -24,8 +23,9 @@ A download stages weights that are already published. A quantize job produces a 
 | [`kimi-k3/mxfp4-model-download.yaml`](kimi-k3/mxfp4-model-download.yaml) | Stage the published checkpoint from Hugging Face to S3 file by file, resumably, and fail if any file is missing |
 | [`kimi-k3/dspark-draft-download.yaml`](kimi-k3/dspark-draft-download.yaml) | Stage the published DSpark draft to S3 with the same stager |
 | [`llama4-maverick/fp8-model-download.yaml`](llama4-maverick/fp8-model-download.yaml) | Stage the published checkpoint from Hugging Face to S3, and fail on a shard-count or size mismatch |
-| [`mistral-large-3/fp8-model-download.yaml`](mistral-large-3/fp8-model-download.yaml) | Stage the published checkpoint from Hugging Face to S3 through the GPU node's NVMe RAID0, and fail on a shard-count or size mismatch |
+| [`mistral-large-3/fp8-model-download.yaml`](mistral-large-3/fp8-model-download.yaml) | Stage the published checkpoint from Hugging Face to S3, and fail on a shard-count or size mismatch |
 | [`nemotron-3-ultra/nvfp4-model-download.yaml`](nemotron-3-ultra/nvfp4-model-download.yaml) | Stage the published NVFP4 checkpoint from Hugging Face to S3, and fail on a shard-count or size mismatch |
+| [`qwen3-30b-a3b/fp8-model-download.yaml`](qwen3-30b-a3b/fp8-model-download.yaml) | Stage the published checkpoint from Hugging Face to S3, and fail on a shard-count or size mismatch |
 | [`muse-glimmer-30b/fp8-model-fsx-to-s3.yaml`](muse-glimmer-30b/fp8-model-fsx-to-s3.yaml) | Copy the quantized checkpoint from the claim to S3, and fail on a shard-count mismatch |
 
 Each download Job is three lines of shell, and everything that varies is in `env`. This follows NVIDIA's [Dynamo GLM recipe](https://github.com/ai-dynamo/dynamo/blob/main/recipes/glm-5.2/model-cache/model-download.yaml), including the pinned hub client and `HF_XET_HIGH_PERFORMANCE`, because Xet is the accelerated transfer path now that `hf_transfer` has been removed from the client.

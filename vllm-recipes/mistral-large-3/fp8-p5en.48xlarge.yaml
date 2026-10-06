@@ -1,6 +1,6 @@
 # Mistral Large 3 675B Instruct at FP8 on one p5en.48xlarge, 8 H200 GPUs, tensor parallel 8,
 # 16-bit KV cache, 32k context, FLASH_ATTN_MLA attention backend.
-# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION in the init container, GPU_NODE, and the ServiceAccount with S3 read access.
+# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION in the init container, and the Pod Identity association for mistral-large-3-bench.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -18,10 +18,9 @@ spec:
     metadata:
       labels: { app: mistral-large-3-vllm-p5en }
     spec:
-      serviceAccountName: SUBSTITUTE-service-account
-      # Pinned to the node whose instance-store NVMe is assembled as RAID0 at /mnt/nvme-raid0.
+      serviceAccountName: mistral-large-3-bench
       nodeSelector:
-        kubernetes.io/hostname: SUBSTITUTE-gpu-node
+        node.kubernetes.io/instance-type: p5en.48xlarge
       tolerations:
         - key: nvidia.com/gpu
           operator: Exists
@@ -37,11 +36,12 @@ spec:
               aws configure set default.s3.multipart_chunksize 64MB
               aws configure set default.s3.max_queue_size 10000
               echo "weights sync start $(date -u)"; df -h /models | tail -1
-              # /models must be the NVMe array; stop if it lacks the space.
+              # The emptyDir must be on the NVMe instance store; stop if it lacks the space.
               avail=$(df -Pk /models | awk 'NR==2 {print int($4/1048576)}')
               if [ "$avail" -lt "$MIN_FREE_GIB" ]; then
                 echo "FATAL: ${avail} GiB free at /models, need ${MIN_FREE_GIB} GiB." >&2
-                echo "  If that is the root disk rather than the NVMe array, the sync would fill it." >&2
+                echo "  If that is a root disk rather than the NVMe array, this node's ephemeral" >&2
+                echo "  storage is not on the instance store and the sync would fill it." >&2
                 exit 1
               fi
               aws s3 sync "s3://${WEIGHTS_BUCKET}/${WEIGHTS_PREFIX}/" /models/mistral-large-3-fp8/ \
@@ -53,9 +53,9 @@ spec:
               test "$SHARDS" -eq 272 || { echo "FATAL: expected 272 shards, got ${SHARDS}" >&2; exit 1; }
           env:
             - name: MIN_FREE_GIB
-              value: "100"
+              value: "700"
             - name: WEIGHTS_BUCKET
-              value: SUBSTITUTE-weights-bucket
+              value: mistral-large-3-model-weights-012345678901-us-east-1
             - name: WEIGHTS_PREFIX
               value: "mistral-large-3-fp8"
             - name: AWS_REGION
@@ -129,7 +129,6 @@ spec:
               value: "256"
             - name: GPU_MEM_UTIL
               value: "0.90"
-            # Passed as --attention-backend because vLLM 0.29.0 ignores VLLM_ATTENTION_BACKEND.
             - name: ATTENTION_BACKEND
               value: "FLASH_ATTN_MLA"
             - name: INSTANCE_TYPE
@@ -163,9 +162,7 @@ spec:
             - { name: dshm, mountPath: /dev/shm }
       volumes:
         - name: models
-          hostPath:
-            path: /mnt/nvme-raid0/models
-            type: Directory
+          emptyDir: { sizeLimit: 1000Gi }
         - name: dshm
           emptyDir: { medium: Memory, sizeLimit: 64Gi }
       terminationGracePeriodSeconds: 120

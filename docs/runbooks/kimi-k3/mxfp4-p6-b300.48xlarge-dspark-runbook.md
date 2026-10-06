@@ -27,7 +27,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
 - [Create a `p6-b300.48xlarge` node group](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml)
 - [Create an ECR repository in your cluster's region](https://docs.aws.amazon.com/AmazonECR/latest/userguide/repository-create.html) for the custom vLLM image
 - [Build and push the custom vLLM image as `vllm-kimi-k3-efa:nccl2.29.7-efa1.49.0`](../../../k8s/examples/job-build-image-kaniko.yaml) (builds in-cluster on a CPU node)
-- [Create an IAM role configured for EKS IRSA with read access to the main and DSpark S3 checkpoint prefixes](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) (and write access, if the checkpoint is not in S3 yet)
+- [Create an IAM role configured for EKS IRSA with read access to the `kimi-k3-mxfp4/` and `kimi-k3-dspark/` prefixes in `kimi-k3-model-weights-<account-id>-<region>`](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) (and write access, if the checkpoint is not in S3 yet)
 
 ## Quickstart
 
@@ -40,8 +40,6 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-kimi-k3-mxfp4-p6-b300-dspark
    export INSTANCE_TYPE=p6-b300.48xlarge
-   export WEIGHTS_BUCKET=<your-weights-bucket>
-   export WEIGHTS_REGION=<your-weights-bucket-region>
    export KIMI_S3_ROLE_ARN=<your-kimi-s3-read-role-arn>
    ```
 
@@ -136,4 +134,4 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/kim
 - **`emptyDir: { sizeLimit: 2000Gi }`** Is pod-local ephemeral storage rooted wherever kubelet stores `emptyDir`; the free-space check does not prove NVMe placement. A replaced pod syncs the checkpoint again.
 - **`failureThreshold: 280`** Allows up to 70 minutes for both syncs and server startup.
 - **`vllm-kimi-k3-efa:nccl2.29.7-efa1.49.0`** Carries matched NCCL and `aws-ofi-nccl` versions, recorded in the tag; this single-node recipe does not use EFA.
-- **The bucket, its region and the image registry are placeholders in git.** The staging and deploy scripts fill them in from `WEIGHTS_BUCKET`, `WEIGHTS_REGION`, `AWS_ACCOUNT_ID` and `AWS_REGION` as they apply each manifest, so the files in git stay untouched.
+- **The weights bucket is `kimi-k3-model-weights-<account-id>-<region>`.** The staging script creates it in `AWS_REGION` if it does not exist. The staging and deploy scripts fill the bucket name, `AWS_REGION` and the image registry from `AWS_ACCOUNT_ID` into each manifest as they apply it, so the files in git stay untouched.

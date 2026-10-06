@@ -30,7 +30,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 - [Create a `p5.4xlarge` Capacity Block node pool](../../../k8s/examples/karpenter-capacity-block-nodepool.yaml) (it mounts the instance store as RAID0)
 - [Create a benchmark-client node group](../../../k8s/examples/eksctl-nodegroup-bench-client.yaml) (the client Job does not tolerate the GPU taint)
 - [Install the EKS Pod Identity Agent add-on](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-agent-setup.html)
-- [Associate an S3 read role with the `gemma4-31b-bench` ServiceAccount in your namespace through Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-association.html)
+- [Associate an S3 read role with the `gemma4-e4b-bench` ServiceAccount in your namespace through Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-association.html)
 - [Install Docker](https://docs.docker.com/get-started/get-docker/) (builds the quantizer image on your machine)
 - [Create a `g7.2xlarge` node group for quantization](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (only if the checkpoint is not in S3 yet)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (only if the checkpoint is not in S3 yet)
@@ -46,8 +46,6 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-gemma4-e4b-fp8kv-triton-p5-4xlarge
    export INSTANCE_TYPE=p5.4xlarge
-   export WEIGHTS_BUCKET=<your-weights-bucket>
-   export WEIGHTS_REGION=<your-weights-bucket-region>
    ```
 
 2. Install the `eks-bench` CLI into a Python virtual environment.
@@ -154,6 +152,6 @@ Scale the quantization and benchmark-client node groups to zero too if you creat
 - **`MAX_CUDAGRAPH=512`.** Matches the top concurrency level of the sweep, so every measured batch size is graph-captured and nothing is captured above it.
 - **Weights come from S3 into an `emptyDir`, not from the claim.** A pod restart re-downloads 11 GiB. The `fetch-weights` init container fails unless it finds `hf_quant_config.json`, exactly one shard and at least 10 GiB.
 - **The instance store must back the `emptyDir`.** The Capacity Block node class sets `instanceStorePolicy: RAID0`; without it the sync lands on the EBS root volume. Throughput step 2 confirms where `/models` is.
-- **`serviceAccountName: gemma4-31b-bench`** The recipe reuses the Gemma 4 31B ServiceAccount name for its pod-scoped S3 read through EKS Pod Identity. Any ServiceAccount with read access to the prefix works if you change the name in the recipe.
-- **`WEIGHTS_BUCKET` and `AWS_REGION` are placeholders in git.** The staging and deploy scripts fill them in from `WEIGHTS_BUCKET` and `WEIGHTS_REGION` as they apply each manifest, so the files in git stay untouched.
+- **`serviceAccountName: gemma4-e4b-bench`** Supplies the pod-scoped S3 read identity through EKS Pod Identity.
+- **The weights bucket is `gemma4-e4b-model-weights-<account-id>-<region>`.** The staging script creates it in `AWS_REGION` if it does not exist. The staging and deploy scripts fill the bucket name and `AWS_REGION` into each manifest as they apply it, so the files in git stay untouched.
 - **The S3 staging Job sets no ServiceAccount.** It runs as the namespace's `default` ServiceAccount, so that is the identity the write role must be associated with.

@@ -35,7 +35,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 - [Mount its instance store as RAID0 for kubelet storage](../../../k8s/examples/nodeconfig-local-nvme-raid0.yaml) (the init container needs 400 GiB free)
 - [Create a benchmark-client node group](../../../k8s/examples/eksctl-nodegroup-bench-client.yaml) (the client Job does not tolerate the GPU taint)
 - [Create an IAM OIDC provider for the cluster](https://docs.aws.amazon.com/eks/latest/userguide/enable-iam-roles-for-service-accounts.html)
-- [Create an IAM role for IRSA that reads the S3 checkpoint prefix](https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html) (and writes it, if the checkpoint is not in S3 yet)
+- [Create an IAM role for IRSA that reads `nemotron-3-ultra-model-weights-<account-id>-<region>`](https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html) (and writes it, if the checkpoint is not in S3 yet)
 
 ## Quickstart
 
@@ -46,8 +46,6 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-nemotron-3-ultra-fp8kv-32k-p6-b200-48xlarge
    export INSTANCE_TYPE=p6-b200.48xlarge
-   export WEIGHTS_BUCKET=<your-weights-bucket>
-   export WEIGHTS_REGION=<your-weights-bucket-region>
    export NEMOTRON_S3_ROLE_ARN=<your-nemotron-s3-role-arn>
    ```
 
@@ -148,5 +146,5 @@ Scale the benchmark-client node group to zero too if you created it for this run
 - **Weights come from S3 into an `emptyDir` on the NVMe array.** A pod restart re-downloads ~328 GiB. The `fetch-weights` init container fails unless `/models` has 400 GiB free, then fails unless it finds 113 shards and at least 300 GiB. Its log prints `df -h /models`; confirm that is the NVMe array.
 - **`progressDeadlineSeconds: 7200`** The S3 sync and load outlast the 600-second default. The deploy script waits the same 7,200 seconds, and the startup probe allows 3,600 seconds once the init container finishes.
 - **`serviceAccountName: nemotron-3-ultra-bench`** Supplies the pod-scoped S3 identity through IRSA. The staging Job runs as the same ServiceAccount, so the role also needs write access to the prefix while staging. Its trust policy must name each namespace that runs an arm.
-- **`WEIGHTS_BUCKET` and `AWS_REGION` are placeholders in git.** The staging and deploy scripts fill them in from `WEIGHTS_BUCKET` and `WEIGHTS_REGION` as they apply each manifest, so the files in git stay untouched.
+- **The weights bucket is `nemotron-3-ultra-model-weights-<account-id>-<region>`.** The staging script creates it in `AWS_REGION` if it does not exist. The staging and deploy scripts fill the bucket name and `AWS_REGION` into each manifest as they apply it, so the files in git stay untouched.
 - **The staging Job tolerates the GPU taint and requests 350 GiB of ephemeral storage.** On most clusters that places it on the GPU node's NVMe array. It fails on a shard-count, partial-file or size mismatch, so a completed Job means all 113 shards reached S3.

@@ -31,9 +31,9 @@ Mistral Large 3 is a mixture-of-experts model with multi-head latent attention (
 Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
 
 - [Create a `p5en.48xlarge` node group](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (set the instance type)
+- [Mount its instance store as RAID0 for kubelet storage](../../../k8s/examples/nodeconfig-local-nvme-raid0.yaml) (the pod stages ~635 GiB)
+- [Create a benchmark-client node group](../../../k8s/examples/eksctl-nodegroup-bench-client.yaml) (the client Job does not tolerate the GPU taint)
 - [Install the CoreDNS add-on](https://docs.aws.amazon.com/eks/latest/userguide/managing-coredns.html) (EKS Auto Mode clusters lack it for managed node groups)
-- [Install the EKS Pod Identity Agent add-on](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-agent-setup.html)
-- [Create an EKS Pod Identity association with S3 read and write access to the bucket](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-association.html)
 
 ## Quickstart
 
@@ -44,10 +44,6 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-mistral-large-3-fp8-p5en-48xlarge
    export INSTANCE_TYPE=p5en.48xlarge
-   export WEIGHTS_BUCKET=<your-weights-bucket>
-   export WEIGHTS_REGION=<your-weights-bucket-region>
-   export GPU_NODE=<your-p5en-node-name>
-   export S3_SERVICE_ACCOUNT=<your-pod-identity-service-account>
    ```
 
 2. Install the `eks-bench` CLI into a Python virtual environment.
@@ -62,13 +58,9 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-4. Assemble the NVMe instance store on `GPU_NODE` as RAID0 at `/mnt/nvme-raid0`.
+4. Install the Pod Identity Agent and grant the `mistral-large-3-bench` ServiceAccount S3 access.
    ```bash
-   sed -e "s|SUBSTITUTE-gpu-node|${GPU_NODE}|" k8s/examples/pod-nvme-raid0.yaml \
-       | kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" apply -f -
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" wait \
-       --for=jsonpath='{.status.phase}'=Succeeded pod/nvme-raid0 --timeout=10m
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs nvme-raid0 | grep -x /dev/md0
+   ./scripts/setup-pod-identity.sh mistral-large-3-bench
    ```
 
 5. Copy the published checkpoint from Hugging Face to your S3 bucket.
@@ -78,7 +70,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
 ## Throughput test
 
-1. Deploy the vLLM inference server on `GPU_NODE` and confirm it serves the model.
+1. Deploy the vLLM inference server and confirm it serves the model.
    ```bash
    ./vllm-recipes/mistral-large-3/fp8-p5en.48xlarge-deploy.sh
    ```
@@ -149,10 +141,11 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 ```bash
 kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete \
     -f vllm-recipes/mistral-large-3/fp8-p5en.48xlarge.yaml --ignore-not-found
-kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete pod nvme-raid0 --ignore-not-found
+aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-name gpu-spot-1node \
+    --region "$AWS_REGION" --scaling-config minSize=0,maxSize=1,desiredSize=0
 ```
 
-Scale the p5en node group to zero if nothing else uses it, and cancel any capacity reservation you created for this run. The checkpoint in S3 survives, so a later run skips Quickstart step 5.
+Scale the benchmark-client node group to zero too if you created it for this run. The checkpoint in S3 survives, so a later run skips Quickstart step 5.
 
 ---
 
@@ -161,15 +154,17 @@ Scale the p5en node group to zero if nothing else uses it, and cancel any capaci
 - **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
 - **One copy across eight GPUs.** All experts stay resident, so `--tensor-parallel-size 8` splits every layer over the node's NVLink mesh. The server logs `WARNING: no NVLink pairs in topo matrix` at startup if `nvidia-smi topo -m` shows none; do not trust a result from that pod.
 - **`FLASH_ATTN_MLA` was the fastest Hopper MLA backend tested.** `TRITON_MLA` and `FLASHMLA` also run on H200. `FLASHINFER_MLA` fails at startup on sm_90 with `compute capability not supported`. The deploy script fails unless the server logs `Using AttentionBackendEnum.FLASH_ATTN_MLA backend`.
-- **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable. Set `ATTENTION_BACKEND` before running the deploy script to try another backend.
+- **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable.
 - **`--tokenizer-mode mistral --config-format mistral --load-format mistral`.** The checkpoint ships `params.json`, `tekken.json` and `consolidated-*.safetensors` shards, with no Hugging Face `config.json`.
 - **No `--quantization` flag.** `params.json` declares a compressed-tensors FP8 export with block scales, and the loader resolves it. `VLLM_LOGGING_LEVEL=INFO` keeps the selected FP8 kernel in the server log.
 - **16-bit KV cache.** The checkpoint ships no KV-cache scales (`kv_cache_scheme` is null), so `KV_CACHE_DTYPE=auto` keeps the cache at the model dtype.
 - **`--no-enable-prefix-caching`** Held off for an uncached measurement. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
 - **`--stream-interval 10`** The server streams in 10-token chunks. That changes inter-token latency only, so compare ITL only against recipes with the same stream interval.
-- **Weights come from S3 into `/mnt/nvme-raid0` through a hostPath.** The node's kubelet storage stays on the EBS root volume, which is too small for the checkpoint. The staging Job and the recipe both pin `GPU_NODE` and read the same directory, so the recipe's S3 sync finds the shards already local. A replaced node loses the array and the shards; rerun Quickstart step 4, and the sync downloads them again.
-- **The `fetch-weights` init container fails** unless `/models` has 100 GiB free before the sync and holds 272 shards and at least 600 GiB after it.
-- **The staging Job sends unauthenticated requests.** The repository is not gated, so the `hf-token` Secret is optional. A token raises the Hub's rate limits.
+- **Weights come from S3 into a 1,000 GiB `emptyDir`, not from a claim.** A pod restart re-downloads ~635 GiB. The `fetch-weights` init container fails unless `/models` has 700 GiB free before the sync and holds 272 shards and at least 600 GiB after it.
+- **The free-space check does not prove NVMe placement.** The example node group's 1,600 GiB EBS root volume also passes it. Throughput step 2 confirms `/models` is the RAID0 array; without the RAID0 NodeConfig, the sync lands on EBS.
+- **The staging Job tolerates the GPU taint.** It requests 700 GiB of ephemeral storage, which rules out typical system CPU nodes, so it can schedule onto the GPU node's instance store.
+- **`serviceAccountName: mistral-large-3-bench`** The recipe and the staging Job both run as this ServiceAccount, which the staging and deploy scripts create. Quickstart step 4 creates the IAM role `<cluster>-mistral-large-3-bench-s3` with read and write on `mistral-large-3-model-weights-<account-id>-<region>` only, and associates it with the ServiceAccount through Pod Identity. Rerunning the step leaves an existing add-on, role or association in place.
+- **The weights bucket is `mistral-large-3-model-weights-<account-id>-<region>`.** The staging script creates it in `AWS_REGION` if it does not exist. The staging and deploy scripts fill the bucket name and `AWS_REGION` into each manifest as they apply it, so the files in git stay untouched.
 - **`--served-model-name mistral-large-3`** The server answers to that name rather than its path, so `--model-id` is `mistral-large-3`.
 - **The chat template adds about 600 tokens.** Mistral's system prompt is part of every request, so `chat_typical` measures about 1,245 wire input tokens against a nominal 512.
 - **`--reps 1`** One repetition, so the result has no spread to check. Raise `--reps` before quoting a figure.

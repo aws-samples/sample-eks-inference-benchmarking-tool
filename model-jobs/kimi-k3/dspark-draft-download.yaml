@@ -35,17 +35,17 @@ spec:
             - name: MODEL_REPO
               value: Inferact/Kimi-K3-DSpark
             - name: WEIGHTS_BUCKET
-              value: SUBSTITUTE-weights-bucket
+              value: kimi-k3-model-weights-012345678901-us-east-1
             - name: PREFIX
               value: kimi-k3-dspark
             - name: AWS_REGION
               value: us-east-1
             - name: WORKERS
               value: "8"
-            - name: SCRATCH
-              value: /scratch
+            - name: MODEL_DIR
+              value: /models/kimi-k3-dspark
             - name: HF_HOME
-              value: /scratch/.hf-cache
+              value: /models/.hf-cache
             - name: HF_HUB_DISABLE_XET
               value: "1"
             - name: HUGGING_FACE_HUB_TOKEN
@@ -62,12 +62,12 @@ spec:
               exec python3 /opt/stager/stage.py
           volumeMounts:
             - { name: stager, mountPath: /opt/stager }
-            - { name: scratch, mountPath: /scratch }
+            - { name: models, mountPath: /models }
           resources:
             requests: { cpu: "4", memory: 16Gi, ephemeral-storage: 50Gi }
             limits: { cpu: "8", memory: 32Gi, ephemeral-storage: 100Gi }
       volumes:
         - name: stager
           configMap: { name: kimi-k3-s3-stager }
-        - name: scratch
+        - name: models
           emptyDir: { sizeLimit: 100Gi }

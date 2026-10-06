@@ -36,13 +36,13 @@ spec:
             - name: MODEL_REPO
               value: nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4
             - name: WEIGHTS_BUCKET
-              value: SUBSTITUTE-weights-bucket
+              value: nemotron-3-ultra-model-weights-012345678901-us-east-1
             - name: PREFIX
               value: nemotron-3-ultra-nvfp4
-            - name: STAGE_DIR
-              value: /scratch/model
+            - name: MODEL_DIR
+              value: /models/nemotron-3-ultra-nvfp4
             - name: HF_HOME
-              value: /scratch/.hf-cache
+              value: /models/.hf-cache
             # Xet is disabled; it stalls on very large repositories.
             - name: HF_HUB_DISABLE_XET
               value: "1"
@@ -65,15 +65,15 @@ spec:
             - |
               set -euo pipefail
               pip install --no-cache-dir -q "huggingface_hub[hf_transfer]==1.28.0" awscli
-              df -h /scratch | tail -1
+              df -h /models | tail -1
 
               echo "=== downloading $MODEL_REPO $(date -u) ==="
-              hf download "$MODEL_REPO" --local-dir "$STAGE_DIR"
+              hf download "$MODEL_REPO" --local-dir "$MODEL_DIR"
 
               echo "=== verifying the local stage before upload $(date -u) ==="
-              local_count=$(find "$STAGE_DIR" -name '*.safetensors' | wc -l)
-              partials=$(find "$STAGE_DIR" -name '*.incomplete' | wc -l)
-              total_gib=$(du -s --block-size=1G "$STAGE_DIR" | cut -f1)
+              local_count=$(find "$MODEL_DIR" -name '*.safetensors' | wc -l)
+              partials=$(find "$MODEL_DIR" -name '*.incomplete' | wc -l)
+              total_gib=$(du -s --block-size=1G "$MODEL_DIR" | cut -f1)
               echo "local shards: $local_count/$EXPECTED_SHARDS, partial files: $partials, total: ${total_gib} GiB"
               test "$local_count" -eq "$EXPECTED_SHARDS" || { echo "FATAL: expected $EXPECTED_SHARDS shards, downloaded $local_count" >&2; exit 1; }
               test "$partials" -eq 0 || { echo "FATAL: $partials partial files remain" >&2; exit 1; }
@@ -81,7 +81,7 @@ spec:
 
               echo "=== uploading to s3://$WEIGHTS_BUCKET/$PREFIX/ $(date -u) ==="
               aws configure set default.s3.max_concurrent_requests 64
-              aws s3 sync "$STAGE_DIR" "s3://$WEIGHTS_BUCKET/$PREFIX/" --region "$AWS_REGION" --only-show-errors
+              aws s3 sync "$MODEL_DIR" "s3://$WEIGHTS_BUCKET/$PREFIX/" --region "$AWS_REGION" --only-show-errors
 
               echo "=== verifying S3 against local $(date -u) ==="
               # Anchored so model.safetensors.index.json does not count as a shard.
@@ -90,8 +90,8 @@ spec:
               test "$local_count" -eq "$s3_count" || { echo "FATAL: shard count mismatch after upload" >&2; exit 1; }
               echo "=== staged $(date -u) ==="
           volumeMounts:
-            - name: scratch
-              mountPath: /scratch
+            - name: models
+              mountPath: /models
           resources:
             requests:
               cpu: "16"
@@ -102,6 +102,6 @@ spec:
               memory: 128Gi
               ephemeral-storage: 390Gi
       volumes:
-        - name: scratch
+        - name: models
           emptyDir:
             sizeLimit: 390Gi

@@ -57,7 +57,7 @@ spec:
             - name: MIN_FREE_GIB
               value: "450"
             - name: WEIGHTS_BUCKET
-              value: SUBSTITUTE-weights-bucket
+              value: llama4-maverick-model-weights-012345678901-us-east-1
             - name: WEIGHTS_PREFIX
               value: "llama4-maverick-fp8"
             - name: AWS_REGION

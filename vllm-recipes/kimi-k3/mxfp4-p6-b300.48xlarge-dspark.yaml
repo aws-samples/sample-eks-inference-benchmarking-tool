@@ -58,7 +58,7 @@ spec:
             - name: MIN_FREE_GIB
               value: "1500"
             - name: WEIGHTS_BUCKET
-              value: SUBSTITUTE-weights-bucket
+              value: kimi-k3-model-weights-012345678901-us-east-1
             - name: WEIGHTS_PREFIX
               value: "kimi-k3-mxfp4"
             - name: DRAFT_PREFIX

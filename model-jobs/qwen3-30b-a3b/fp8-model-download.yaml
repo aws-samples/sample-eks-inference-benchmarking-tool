@@ -1,43 +1,30 @@
 #
-# Claim and Job that download the published Qwen/Qwen3-30B-A3B-FP8 checkpoint onto the gp3 claim the qwen3-30b-a3b switch recipes mount. Apply this once per claim before either recipe. The Job fails unless config.json and all 7 shards are present and no partial file remains.
+# Stages the published Qwen3-30B-A3B FP8 checkpoint (~31 GiB, 7 shards) from Hugging Face into S3, once.
+# Fails on a shard-count or size mismatch.
 #
-# The claim is ReadWriteOnce EBS, so it binds in the availability zone of the first pod that mounts it. The Job pins the same node the recipes pin, so the volume lands where they run.
-#
-# SUBSTITUTE: kubernetes.io/hostname, the same node both switch recipes pin.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: g7e12-switch-model-storage
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: gp3
-  volumeMode: Filesystem
-  resources:
-    requests:
-      storage: 300Gi
----
+# SUBSTITUTE: WEIGHTS_BUCKET, AWS_REGION, and the Pod Identity association for qwen3-30b-a3b-bench.
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: download-qwen3-30b-a3b-fp8
+  name: qwen3-30b-a3b-fp8-hf-to-s3
 spec:
-  backoffLimit: 0
+  backoffLimit: 2
+  activeDeadlineSeconds: 86400
   template:
     metadata:
       labels:
-        app: download-qwen3-30b-a3b-fp8
+        app: qwen3-30b-a3b-fp8-hf-to-s3
     spec:
-      restartPolicy: Never
-      nodeSelector:
-        kubernetes.io/hostname: ip-10-0-0-1.us-east-1.compute.internal
+      restartPolicy: OnFailure
+      serviceAccountName: qwen3-30b-a3b-bench
+      # The toleration lets it place on GPU-tainted pools.
       tolerations:
         - key: nvidia.com/gpu
           operator: Exists
           effect: NoSchedule
       containers:
-        - name: downloader
-          image: python:3.12-slim
+        - name: stager
+          image: public.ecr.aws/docker/library/python:3.12-slim
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -48,28 +35,54 @@ spec:
           env:
             - name: MODEL_REPO
               value: Qwen/Qwen3-30B-A3B-FP8
+            - name: WEIGHTS_BUCKET
+              value: qwen3-30b-a3b-model-weights-012345678901-us-east-1
+            - name: PREFIX
+              value: qwen3-30b-a3b-fp8
             - name: MODEL_DIR
               value: /models/qwen3-30b-a3b-fp8
+            - name: HF_HOME
+              value: /models/.hf-cache
+            - name: HF_XET_HIGH_PERFORMANCE
+              value: "1"
             - name: EXPECTED_SHARDS
               value: "7"
-            - name: HF_HUB_VERSION
-              value: "1.28.0"
-            - name: HF_HOME
-              value: /models/.cache
-            - name: HF_XET_HIGH_PERFORMANCE
+            - name: MIN_TOTAL_GIB
+              value: "28"
+            - name: AWS_REGION
+              value: us-east-1
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+            - name: PYTHONUNBUFFERED
               value: "1"
           args:
             - |
               set -euo pipefail
-              pip install --no-cache-dir -q "huggingface_hub==$HF_HUB_VERSION"
+              pip install --no-cache-dir -q "huggingface_hub==1.28.0" awscli
+              df -h /models | tail -1
+              echo "=== downloading $MODEL_REPO $(date -u) ==="
               hf download "$MODEL_REPO" --local-dir "$MODEL_DIR"
-              shards=$(find "$MODEL_DIR" -maxdepth 1 -name '*.safetensors' | wc -l)
+              echo "=== verifying the local stage before upload $(date -u) ==="
+              local_count=$(find "$MODEL_DIR" -maxdepth 1 -name '*.safetensors' | wc -l)
               partials=$(find "$MODEL_DIR" -name '*.incomplete' | wc -l)
-              echo "shards: $shards/$EXPECTED_SHARDS, partial files: $partials"
+              total_gib=$(du -s --block-size=1G "$MODEL_DIR" | cut -f1)
+              echo "local shards: $local_count/$EXPECTED_SHARDS, partial files: $partials, total: ${total_gib} GiB"
               test -f "$MODEL_DIR/config.json" || { echo "FATAL: no config.json" >&2; exit 1; }
-              test "$shards" -eq "$EXPECTED_SHARDS" || { echo "FATAL: expected $EXPECTED_SHARDS shards" >&2; exit 1; }
+              test "$local_count" -eq "$EXPECTED_SHARDS" || { echo "FATAL: expected $EXPECTED_SHARDS shards, downloaded $local_count" >&2; exit 1; }
               test "$partials" -eq 0 || { echo "FATAL: $partials partial files remain" >&2; exit 1; }
-              du -sh "$MODEL_DIR"
+              test "$total_gib" -ge "$MIN_TOTAL_GIB" || { echo "FATAL: expected >= ${MIN_TOTAL_GIB} GiB, got ${total_gib} GiB" >&2; exit 1; }
+              echo "=== uploading to s3://$WEIGHTS_BUCKET/$PREFIX/ $(date -u) ==="
+              aws configure set default.s3.max_concurrent_requests 64
+              aws s3 sync "$MODEL_DIR" "s3://$WEIGHTS_BUCKET/$PREFIX/" --region "$AWS_REGION" --only-show-errors \
+                --exclude ".cache/*"
+              echo "=== verifying S3 against local $(date -u) ==="
+              s3_count=$(aws s3 ls "s3://$WEIGHTS_BUCKET/$PREFIX/" --region "$AWS_REGION" | awk '{print $NF}' | grep -c '\.safetensors$')
+              echo "shards in S3: $s3_count"
+              test "$local_count" -eq "$s3_count" || { echo "FATAL: shard count mismatch after upload" >&2; exit 1; }
+              echo "=== staged $(date -u) ==="
           volumeMounts:
             - name: models
               mountPath: /models
@@ -77,7 +90,12 @@ spec:
             requests:
               cpu: "8"
               memory: 16Gi
+              ephemeral-storage: 40Gi
+            limits:
+              cpu: "16"
+              memory: 32Gi
+              ephemeral-storage: 60Gi
       volumes:
         - name: models
-          persistentVolumeClaim:
-            claimName: g7e12-switch-model-storage
+          emptyDir:
+            sizeLimit: 60Gi

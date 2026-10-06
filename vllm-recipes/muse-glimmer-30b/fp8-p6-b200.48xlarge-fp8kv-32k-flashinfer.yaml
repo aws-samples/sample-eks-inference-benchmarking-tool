@@ -43,7 +43,7 @@ spec:
               test "$SZ" -ge 28 || { echo "FATAL: expected ~32 GiB, got ${SZ} GiB" >&2; exit 1; }
           env:
             - name: WEIGHTS_BUCKET
-              value: SUBSTITUTE-weights-bucket
+              value: muse-glimmer-30b-model-weights-012345678901-us-east-1
             - name: WEIGHTS_PREFIX
               value: "muse-glimmer-30b-fp8-quantized"
             - name: AWS_REGION

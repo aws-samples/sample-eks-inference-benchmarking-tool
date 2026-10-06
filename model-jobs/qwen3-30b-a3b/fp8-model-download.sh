@@ -2,32 +2,30 @@
 set -euo pipefail
 : "${EKS_CLUSTER_NAME:?Set EKS_CLUSTER_NAME before running this script}"
 : "${NAMESPACE:?Set NAMESPACE before running this script}"
-: "${GPU_NODE:?Set GPU_NODE before running this script}"
+: "${AWS_REGION:?Set AWS_REGION before running this script}"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-# Confirm the pinned node advertises two GPUs.
-echo "==> Checking that $GPU_NODE advertises two GPUs"
-kubectl --context "$EKS_CLUSTER_NAME" get node "$GPU_NODE" \
-  -o jsonpath='{.status.allocatable.nvidia\.com/gpu}' | grep -x 2
-# Confirm no running pod on the pinned node holds a GPU.
-echo "==> Checking that no pod on $GPU_NODE holds a GPU"
-test -z "$(kubectl --context "$EKS_CLUSTER_NAME" get pods -A \
-  --field-selector "spec.nodeName=$GPU_NODE,status.phase=Running" \
-  -o jsonpath='{.items[*].spec.containers[*].resources.limits.nvidia\.com/gpu}')"
-# Create the claim and the download Job, pinned to the node the recipes use.
-echo "==> Staging Qwen/Qwen3-30B-A3B-FP8 onto g7e12-switch-model-storage"
-sed "s|ip-10-0-0-1.us-east-1.compute.internal|${GPU_NODE}|" "$SCRIPT_DIR/fp8-model-download.yaml" \
+WEIGHTS_BUCKET="qwen3-30b-a3b-model-weights-$(aws sts get-caller-identity --query Account --output text)-${AWS_REGION}"
+# Create the model's weights bucket if it does not exist.
+echo "==> Creating bucket $WEIGHTS_BUCKET"
+aws s3api head-bucket --bucket "$WEIGHTS_BUCKET" >/dev/null 2>&1 \
+  || aws s3 mb "s3://$WEIGHTS_BUCKET" --region "$AWS_REGION"
+# Apply the qwen3-30b-a3b-bench ServiceAccount the staging Job runs as.
+echo "==> Applying ServiceAccount qwen3-30b-a3b-bench"
+kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" create serviceaccount qwen3-30b-a3b-bench \
+  --dry-run=client -o yaml \
   | kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f -
-# Wait for the download to finish.
-echo "==> Waiting for the download"
+# Start the Job that stages the published checkpoint from Hugging Face to S3.
+echo "==> Staging the Qwen3-30B-A3B FP8 checkpoint to s3://$WEIGHTS_BUCKET/qwen3-30b-a3b-fp8/"
+sed -e "s|value: qwen3-30b-a3b-model-weights-012345678901-us-east-1|value: ${WEIGHTS_BUCKET}|" \
+  -e "/name: AWS_REGION/{n;s|value: .*|value: ${AWS_REGION}|;}" \
+  "$SCRIPT_DIR/fp8-model-download.yaml" \
+  | kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f -
+# Wait for the Job, which fails on a shard-count or size mismatch.
+echo "==> Waiting for the staging Job"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" wait \
-  --for=condition=complete job/download-qwen3-30b-a3b-fp8 \
-  --timeout=7200s
-# Confirm the claim is bound.
-echo "==> Checking the claim"
-kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" wait \
-  --for=jsonpath='{.status.phase}'=Bound pvc/g7e12-switch-model-storage \
-  --timeout=2m
-# Confirm the Job found all 7 shards and no partial file.
-echo "==> Checking the shard count"
-kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" logs job/download-qwen3-30b-a3b-fp8 \
-  | grep -x 'shards: 7/7, partial files: 0'
+  --for=condition=complete job/qwen3-30b-a3b-fp8-hf-to-s3 \
+  --timeout=24h
+# Confirm S3 holds all 7 shards.
+echo "==> Checking the shard count in S3"
+aws s3 ls "s3://${WEIGHTS_BUCKET}/qwen3-30b-a3b-fp8/" --region "$AWS_REGION" \
+  | grep -c '\.safetensors$' | grep -x 7

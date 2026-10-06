@@ -20,7 +20,7 @@ spec:
         - { key: capacity-reservation, operator: Exists, effect: NoSchedule }
       nodeSelector:
         node.kubernetes.io/instance-type: p6-b300.48xlarge
-        kubernetes.io/hostname: ip-10-0-0-1.ec2.internal
+        kubernetes.io/hostname: SUBSTITUTE-gpu-node
       initContainers:
         - name: fetch-weights
           image: python:3.12-slim
@@ -71,21 +71,26 @@ spec:
             - name: MODEL_REPO
               value: nvidia/GLM-5.2-NVFP4
             - name: MODEL_DIR
-              value: /weights/glm-5.2-nvfp4
+              value: /models/glm-5.2-nvfp4
             - name: MOUNT_ROOT
-              value: /weights
+              value: /models
             - name: MIN_FREE_GIB
               value: "500"
             - name: HF_HOME
-              value: /weights/.hf-cache
+              value: /models/.hf-cache
             - name: HF_XET_HIGH_PERFORMANCE
               value: "1"
             - name: HF_HUB_VERSION
               value: "1.28.0"
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
             - name: PYTHONUNBUFFERED
               value: "1"
           volumeMounts:
-            - { name: weights, mountPath: /weights }
+            - { name: models, mountPath: /models }
           resources:
             requests: { cpu: "8", memory: 32Gi }
             limits: { cpu: "16", memory: 96Gi }
@@ -99,7 +104,7 @@ spec:
             - |
               set -euo pipefail
               ARGS=(
-                /weights/glm-5.2-nvfp4
+                /models/glm-5.2-nvfp4
                 --served-model-name glm-5.2-nvfp4
                 --tensor-parallel-size 8
 
@@ -140,10 +145,10 @@ spec:
             httpGet: { path: /health, port: 8000 }
             periodSeconds: 20
           volumeMounts:
-            - { name: weights, mountPath: /weights }
+            - { name: models, mountPath: /models }
             - { name: dshm, mountPath: /dev/shm }
       volumes:
-        - name: weights
+        - name: models
           emptyDir: { sizeLimit: 800Gi }
         - name: dshm
           emptyDir: { medium: Memory, sizeLimit: 64Gi }

@@ -24,7 +24,7 @@ spec:
             - name: SRC_DIR
               value: /models/quantized/gemma-4-E4B-it-fp8
             - name: WEIGHTS_BUCKET
-              value: SUBSTITUTE-weights-bucket
+              value: gemma4-e4b-model-weights-012345678901-us-east-1
             - name: PREFIX
               value: gemma4-e4b-fp8-quantized
             - name: AWS_REGION

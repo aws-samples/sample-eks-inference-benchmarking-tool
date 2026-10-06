@@ -216,7 +216,6 @@ Knobs: `TP`, `PORT`, `NSYS_DELAY` (default 180 s, must exceed model load and war
 - **`NSYS_DELAY` and `NSYS_DURATION`** The capture starts `NSYS_DELAY` seconds after launch and runs for `NSYS_DURATION`. The log line `launching vLLM under nsys` means `nsys` started, not that the capture has. If the server is not ready before the capture is nearly over, raise `NSYS_DELAY` in `my-nsys-profile.yaml` and retry.
 - **Load runs inside the pod.** It reaches the server without a port-forward and keeps one concurrency level active until `nsys` stops vLLM. The vLLM image already has `aiohttp`, so nothing is installed.
 - **The pod stays up after the capture.** It prints the summary tables after `CAPTURE COMPLETE`, so the findings survive even if you never copy the trace. The `.nsys-rep` file is large and gitignored; keep it outside the repository or in S3.
-- **No Hugging Face token is used.** The model is public. `install-prerequisites.sh` still requires `HUGGING_FACE_HUB_TOKEN` and creates an `hf-token` secret that nothing here mounts.
 - **Do not `exec` the `nsys` command.** `nsys` stops the target when the capture closes, and with `exec` the shell is gone, so nothing runs afterwards to preserve the trace. One attempt lost the `.nsys-rep` when the kubelet reclaimed the `emptyDir` on container exit.
 - **Do not pipe `nsys stats` into `head`.** SIGPIPE plus `pipefail` kills the script before the remaining reports are written.
 - **Keep TP at 2 or more.** The manifest pins TP=2 so the collective exists to be measured.
