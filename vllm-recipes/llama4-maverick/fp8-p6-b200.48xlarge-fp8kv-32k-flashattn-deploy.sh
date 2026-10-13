@@ -2,10 +2,10 @@
 set -euo pipefail
 : "${EKS_CLUSTER_NAME:?Set EKS_CLUSTER_NAME before running this script}"
 : "${NAMESPACE:?Set NAMESPACE before running this script}"
-: "${WEIGHTS_BUCKET:?Set WEIGHTS_BUCKET before running this script}"
-: "${WEIGHTS_REGION:?Set WEIGHTS_REGION before running this script}"
+: "${AWS_REGION:?Set AWS_REGION before running this script}"
 : "${LLAMA4_S3_ROLE_ARN:?Set LLAMA4_S3_ROLE_ARN before running this script}"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+WEIGHTS_BUCKET="llama4-maverick-model-weights-$(aws sts get-caller-identity --query Account --output text)-${AWS_REGION}"
 # Apply the llama4-maverick-bench ServiceAccount the server runs as, annotated with its IRSA role.
 echo "==> Applying ServiceAccount llama4-maverick-bench"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" create serviceaccount llama4-maverick-bench \
@@ -14,8 +14,8 @@ kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" create serviceacc
   | kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f -
 # Deploy the Llama 4 Maverick server with the weights bucket and its region filled in.
 echo "==> Deploying Llama 4 Maverick FP8 on p6-b200.48xlarge"
-sed -e "s|value: SUBSTITUTE-weights-bucket|value: ${WEIGHTS_BUCKET}|" \
-  -e "/name: AWS_REGION/{n;s|value: .*|value: \"${WEIGHTS_REGION}\"|;}" \
+sed -e "s|value: llama4-maverick-model-weights-012345678901-us-east-1|value: ${WEIGHTS_BUCKET}|" \
+  -e "/name: AWS_REGION/{n;s|value: .*|value: \"${AWS_REGION}\"|;}" \
   "$SCRIPT_DIR/fp8-p6-b200.48xlarge-fp8kv-32k-flashattn.yaml" \
   | kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f -
 # Wait for the weights to stage and the server to start.

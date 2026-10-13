@@ -124,7 +124,7 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/glm
 
 - **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
 - **`kubernetes.io/hostname`** Pins the pod to one node; the deploy script fills in `GPU_NODE` as it applies the manifest, so the file in git stays untouched. The pin does not preserve model data.
-- **`fetch-weights` init container** Downloads `nvidia/GLM-5.2-NVFP4` from Hugging Face into `/weights/glm-5.2-nvfp4`. It verifies at least 500 GiB is free, installs `huggingface_hub==1.28.0`, uses `/weights/.hf-cache`, enables high-performance Xet with `HF_XET_HIGH_PERFORMANCE=1`, and verifies that every shard is complete before vLLM starts.
+- **`fetch-weights` init container** Downloads `nvidia/GLM-5.2-NVFP4` from Hugging Face into `/models/glm-5.2-nvfp4`. It verifies at least 500 GiB is free, installs `huggingface_hub==1.28.0`, uses `/models/.hf-cache`, enables high-performance Xet with `HF_XET_HIGH_PERFORMANCE=1`, and verifies that every shard is complete before vLLM starts.
 
 - **`weights: emptyDir: { sizeLimit: 800Gi }`** Stores both the checkpoint and Hugging Face cache in pod-local storage shared by the init container and vLLM. Kubernetes deletes this volume with the pod, so replacement or scale-to-zero discards all downloaded data and the new pod downloads it again. This recipe does not use a PVC and does not preserve downloads across pods; two observed cold downloads took about 2h15m each.
 

@@ -28,7 +28,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
 - [Create an ECR repository in your cluster's region](https://docs.aws.amazon.com/AmazonECR/latest/userguide/repository-create.html) for the custom vLLM image
 - [Build and push the custom vLLM image as `vllm-kimi-k3-efa:nccl2.29.7-efa1.49.0`](../../../k8s/examples/job-build-image-kaniko.yaml) (builds in-cluster on a CPU node)
 - [Install the EFA device plugin](https://github.com/aws/eks-charts/tree/master/stable/aws-efa-k8s-device-plugin) so each node advertises `vpc.amazonaws.com/efa: 8`
-- [Create an IAM role configured for EKS IRSA with read access to the S3 checkpoint prefix](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) (and write access, if the checkpoint is not in S3 yet)
+- [Create an IAM role configured for EKS IRSA with read access to `kimi-k3-model-weights-<account-id>-<region>`](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) (and write access, if the checkpoint is not in S3 yet)
 
 ## Quickstart
 
@@ -41,8 +41,6 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-kimi-k3-mxfp4-p6-b200-sts
    export INSTANCE_TYPE=p6-b200.48xlarge
-   export WEIGHTS_BUCKET=<your-weights-bucket>
-   export WEIGHTS_REGION=<your-weights-bucket-region>
    export KIMI_S3_ROLE_ARN=<your-kimi-s3-read-role-arn>
    ```
 
@@ -134,4 +132,4 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/kim
 - **`NCCL_DEBUG=INFO`** Records whether NCCL selected OFI/EFA rather than sockets.
 - **`add: ["IPC_LOCK"]`** Supplies the capability required by EFA/libfabric.
 - **`vllm-kimi-k3-efa:nccl2.29.7-efa1.49.0`** Carries matched NCCL and `aws-ofi-nccl` versions, recorded in the tag. Without the plugin NCCL can fall back to TCP while the server still starts.
-- **The bucket, its region and the image registry are placeholders in git.** The staging and deploy scripts fill them in from `WEIGHTS_BUCKET`, `WEIGHTS_REGION`, `AWS_ACCOUNT_ID` and `AWS_REGION` as they apply each manifest, so the files in git stay untouched.
+- **The weights bucket is `kimi-k3-model-weights-<account-id>-<region>`.** The staging script creates it in `AWS_REGION` if it does not exist. The staging and deploy scripts fill the bucket name, `AWS_REGION` and the image registry from `AWS_ACCOUNT_ID` into each manifest as they apply it, so the files in git stay untouched.

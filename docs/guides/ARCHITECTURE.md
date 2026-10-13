@@ -123,6 +123,7 @@ sample-eks-inference-benchmarking-tool/
 ├── scripts/
 │   ├── install-prerequisites.sh       # Configure EKS namespace, plugin, secret, and node check.
 │   ├── push-image.sh                  # Build and push the quantizer image to ECR
+│   ├── setup-pod-identity.sh          # Install the Pod Identity Agent and grant a ServiceAccount S3 access
 │   ├── patch-efa-plugin.sh            # Fixes the EFA device plugin's stale allow-list
 ├── k8s/examples/                      # Examples, not runnable as written. One per purpose,
 │                                      #   every identifier a placeholder. Cluster, node groups,

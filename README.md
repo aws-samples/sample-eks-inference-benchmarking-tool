@@ -88,6 +88,7 @@ The recipes in this section tune the server for throughput and real-time latency
 | GLM-5.2 | FP8, NVFP4 | `p6-b200.48xlarge`, `p6-b300.48xlarge` | [README](./docs/runbooks/glm-5.2/README.md) |
 | Kimi K3 | MXFP4 | `p6-b200.48xlarge`, `p6-b300.48xlarge` | [README](./docs/runbooks/kimi-k3/README.md) |
 | Llama 4 Maverick | FP8 | `p6-b200.48xlarge` | [README](./docs/runbooks/llama4-maverick/README.md) |
+| Mistral Large 3 | FP8 | `p5en.48xlarge` | [README](./docs/runbooks/mistral-large-3/README.md) |
 | Nemotron 3 Ultra | NVFP4 | `p6-b200.48xlarge` | [README](./docs/runbooks/nemotron-3-ultra/README.md) |
 | Muse-Glimmer 30B | FP8 | `g7e.48xlarge`, `p6-b200.48xlarge` | [README](./docs/runbooks/muse-glimmer-30b/README.md) |
 | Qwen2.5-7B-Instruct | FP8 | `g6e.12xlarge`, `g7e.12xlarge` | [README](./docs/runbooks/qwen2.5-7b/README.md) |

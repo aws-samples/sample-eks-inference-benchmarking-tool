@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # Deploy the GLM-5.2 server, pinned to GPU_NODE.
 echo "==> Deploying GLM-5.2 NVFP4 on $GPU_NODE"
-sed "s|ip-10-0-0-1.ec2.internal|${GPU_NODE}|" "$SCRIPT_DIR/nvfp4-p6-b300.48xlarge.yaml" \
+sed "s|SUBSTITUTE-gpu-node|${GPU_NODE}|" "$SCRIPT_DIR/nvfp4-p6-b300.48xlarge.yaml" \
   | kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f -
 # Wait for the weights to stage and the server to start.
 echo "==> Waiting for the GLM-5.2 server"

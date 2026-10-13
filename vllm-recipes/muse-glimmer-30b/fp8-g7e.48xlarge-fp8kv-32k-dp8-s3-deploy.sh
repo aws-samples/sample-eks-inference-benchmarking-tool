@@ -2,9 +2,9 @@
 set -euo pipefail
 : "${EKS_CLUSTER_NAME:?Set EKS_CLUSTER_NAME before running this script}"
 : "${NAMESPACE:?Set NAMESPACE before running this script}"
-: "${WEIGHTS_BUCKET:?Set WEIGHTS_BUCKET before running this script}"
-: "${WEIGHTS_REGION:?Set WEIGHTS_REGION before running this script}"
+: "${AWS_REGION:?Set AWS_REGION before running this script}"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+WEIGHTS_BUCKET="muse-glimmer-30b-model-weights-$(aws sts get-caller-identity --query Account --output text)-${AWS_REGION}"
 # Apply the muse-glimmer-30b-bench ServiceAccount the server runs as.
 echo "==> Applying ServiceAccount muse-glimmer-30b-bench"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" create serviceaccount muse-glimmer-30b-bench \
@@ -12,8 +12,8 @@ kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" create serviceacc
   | kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f -
 # Deploy the Muse-Glimmer 30B server with the weights bucket and its region filled in.
 echo "==> Deploying Muse-Glimmer 30B FP8 on g7e.48xlarge"
-sed -e "s|value: SUBSTITUTE-weights-bucket|value: ${WEIGHTS_BUCKET}|" \
-  -e "/name: AWS_REGION/{n;s|value: .*|value: \"${WEIGHTS_REGION}\"|;}" \
+sed -e "s|value: muse-glimmer-30b-model-weights-012345678901-us-east-1|value: ${WEIGHTS_BUCKET}|" \
+  -e "/name: AWS_REGION/{n;s|value: .*|value: \"${AWS_REGION}\"|;}" \
   "$SCRIPT_DIR/fp8-g7e.48xlarge-fp8kv-32k-dp8-s3.yaml" \
   | kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f -
 # Wait for the weights to stage and the server to start.

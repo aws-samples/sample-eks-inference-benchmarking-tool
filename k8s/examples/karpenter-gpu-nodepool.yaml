@@ -1,0 +1,75 @@
+#
+# Karpenter NodePool and EC2NodeClass for a benchmarking GPU node of one instance type. The local
+# NVMe instance store is RAID0-mounted as kubelet ephemeral storage, so a recipe's emptyDir at
+# /models stages weights on NVMe rather than the EBS root volume. Nodes launch only when a pod needs
+# them and scale to zero when idle, so applying this creates no servers and costs nothing until a
+# benchmark runs.
+#
+# scripts/provision-capacity.sh fills the placeholders and applies this. Do not kubectl apply it directly.
+# SUBSTITUTE: NODE_NAME, NODE_ROLE, CLUSTER_NAME, INSTANCE_TYPE, CAPACITY_TYPE (the script fills these).
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: NODE_NAME
+spec:
+  # Resolves to the accelerated AL2023 AMI (NVIDIA driver) for GPU instance types.
+  amiSelectorTerms:
+    - alias: al2023@latest
+  role: NODE_ROLE
+  subnetSelectorTerms:
+    - tags: { karpenter.sh/discovery: CLUSTER_NAME }
+  securityGroupSelectorTerms:
+    - tags: { karpenter.sh/discovery: CLUSTER_NAME }
+  # RAID0: containerd+kubelet on local NVMe — fast image pulls, the cold-start fix.
+  instanceStorePolicy: RAID0
+  # FastImagePull: SOCI parallel pull+unpack, built into the EKS AL2023 AMI; ignored below ~2xlarge.
+  userData: |
+    MIME-Version: 1.0
+    Content-Type: multipart/mixed; boundary="BOUNDARY"
+
+    --BOUNDARY
+    Content-Type: application/node.eks.aws
+
+    apiVersion: node.eks.aws/v1alpha1
+    kind: NodeConfig
+    spec:
+      featureGates:
+        FastImagePull: true
+
+    --BOUNDARY--
+  # OS root only; images and kubelet ephemeral storage live on the NVMe RAID0 array above.
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs: { volumeSize: 100Gi, volumeType: gp3, encrypted: true, deleteOnTermination: true }
+  metadataOptions:
+    httpEndpoint: enabled
+    httpTokens: required
+    httpPutResponseHopLimit: 1
+  tags:
+    Project: eks-inference-benchmarking
+    NodeType: gpu
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: NODE_NAME
+spec:
+  template:
+    metadata:
+      labels:
+        workload: gpu
+    spec:
+      nodeClassRef: { group: karpenter.k8s.aws, kind: EC2NodeClass, name: NODE_NAME }
+      requirements:
+        - { key: karpenter.sh/capacity-type, operator: In, values: [CAPACITY_TYPE] }
+        - { key: node.kubernetes.io/instance-type, operator: In, values: [INSTANCE_TYPE] }
+      taints:
+        - { key: nvidia.com/gpu, effect: NoSchedule }
+      expireAfter: 720h
+  # One node's worth of GPUs, so the pool stops at a single benchmark node; raise it for a multi-node run.
+  limits:
+    nvidia.com/gpu: GPU_LIMIT
+  # Remove the node only once it is empty, so a benchmark is never evicted mid-run.
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 5m

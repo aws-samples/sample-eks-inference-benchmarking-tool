@@ -1,6 +1,7 @@
 # Qwen3-30B-A3B at FP8 on one g7e.12xlarge, 2 GPUs, tensor parallel 2 with expert parallelism,
 # NCCL default transport selection.
-# SUBSTITUTE: kubernetes.io/hostname. All arms of this study must pin the SAME node.
+# SUBSTITUTE: kubernetes.io/hostname, WEIGHTS_BUCKET and AWS_REGION in the init container, and the Pod Identity
+# association for qwen3-30b-a3b-bench. All arms of this study must pin the SAME node.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,8 +20,9 @@ spec:
       labels:
         app: qwen3-30b-a3b-g7e12-switch-default
     spec:
+      serviceAccountName: qwen3-30b-a3b-bench
       nodeSelector:
-        kubernetes.io/hostname: ip-10-0-0-1.us-east-1.compute.internal
+        kubernetes.io/hostname: SUBSTITUTE-gpu-node
       tolerations:
         - key: nvidia.com/gpu
           operator: Exists
@@ -32,6 +34,46 @@ spec:
         - key: capacity-reservation
           operator: Exists
           effect: NoSchedule
+      initContainers:
+        - name: fetch-weights
+          image: public.ecr.aws/aws-cli/aws-cli:latest
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              aws configure set default.s3.max_concurrent_requests 64
+              aws configure set default.s3.multipart_chunksize 64MB
+              aws configure set default.s3.max_queue_size 10000
+              echo "weights sync start $(date -u)"; df -h /models | tail -1
+              # The emptyDir must be on the NVMe instance store; stop if it lacks the space.
+              avail=$(df -Pk /models | awk 'NR==2 {print int($4/1048576)}')
+              if [ "$avail" -lt "$MIN_FREE_GIB" ]; then
+                echo "FATAL: ${avail} GiB free at /models, need ${MIN_FREE_GIB} GiB." >&2
+                echo "  If that is a root disk rather than the NVMe array, this node's ephemeral" >&2
+                echo "  storage is not on the instance store and the sync would fill it." >&2
+                exit 1
+              fi
+              aws s3 sync "s3://${WEIGHTS_BUCKET}/${WEIGHTS_PREFIX}/" /models/qwen3-30b-a3b-fp8/ \
+                --region "${AWS_REGION}" --only-show-errors --exclude ".cache/*"
+              SZ=$(du -s --block-size=1G /models/qwen3-30b-a3b-fp8 | cut -f1)
+              SHARDS=$(find /models/qwen3-30b-a3b-fp8 -maxdepth 1 -name '*.safetensors' | wc -l)
+              echo "weights staged ${SZ} GiB, ${SHARDS} shards  $(date -u)"
+              test "$SZ" -ge 28 || { echo "FATAL: expected ~31 GiB, got ${SZ} GiB" >&2; exit 1; }
+              test "$SHARDS" -eq 7 || { echo "FATAL: expected 7 shards, got ${SHARDS}" >&2; exit 1; }
+          env:
+            - name: MIN_FREE_GIB
+              value: "40"
+            - name: WEIGHTS_BUCKET
+              value: qwen3-30b-a3b-model-weights-012345678901-us-east-1
+            - name: WEIGHTS_PREFIX
+              value: "qwen3-30b-a3b-fp8"
+            - name: AWS_REGION
+              value: "us-east-1"
+          volumeMounts:
+            - { name: models, mountPath: /models }
+          resources:
+            requests: { cpu: "8", memory: 16Gi }
+            limits: { cpu: "16", memory: 32Gi }
       containers:
         - name: vllm
           image: vllm/vllm-openai:v0.26.0
@@ -76,7 +118,7 @@ spec:
             - name: CUDA_DEVICE_ORDER
               value: "PCI_BUS_ID"
             - name: HF_HOME
-              value: "/models/.cache"
+              value: "/models/.hf-cache"
             - name: VLLM_LOGGING_LEVEL
               value: "WARNING"
             - name: NCCL_DEBUG
@@ -115,8 +157,7 @@ spec:
               mountPath: /dev/shm
       volumes:
         - name: models
-          persistentVolumeClaim:
-            claimName: g7e12-switch-model-storage
+          emptyDir: { sizeLimit: 100Gi }
         - name: dshm
           emptyDir:
             medium: Memory

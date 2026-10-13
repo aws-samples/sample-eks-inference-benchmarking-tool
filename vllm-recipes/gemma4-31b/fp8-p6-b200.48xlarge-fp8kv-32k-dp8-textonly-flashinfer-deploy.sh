@@ -2,9 +2,9 @@
 set -euo pipefail
 : "${EKS_CLUSTER_NAME:?Set EKS_CLUSTER_NAME before running this script}"
 : "${NAMESPACE:?Set NAMESPACE before running this script}"
-: "${WEIGHTS_BUCKET:?Set WEIGHTS_BUCKET before running this script}"
-: "${WEIGHTS_REGION:?Set WEIGHTS_REGION before running this script}"
+: "${AWS_REGION:?Set AWS_REGION before running this script}"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+WEIGHTS_BUCKET="gemma4-31b-model-weights-$(aws sts get-caller-identity --query Account --output text)-${AWS_REGION}"
 # Apply the gemma4-31b-bench ServiceAccount the server runs as.
 echo "==> Applying ServiceAccount gemma4-31b-bench"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" create serviceaccount gemma4-31b-bench \
@@ -12,8 +12,8 @@ kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" create serviceacc
   | kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f -
 # Deploy the Gemma 4 31B server with the weights bucket and its region filled in.
 echo "==> Deploying Gemma 4 31B FP8 on p6-b200.48xlarge"
-sed -e "s|value: SUBSTITUTE-weights-bucket|value: ${WEIGHTS_BUCKET}|" \
-  -e "/name: AWS_REGION/{n;s|value: .*|value: \"${WEIGHTS_REGION}\"|;}" \
+sed -e "s|value: gemma4-31b-model-weights-012345678901-us-east-1|value: ${WEIGHTS_BUCKET}|" \
+  -e "/name: AWS_REGION/{n;s|value: .*|value: \"${AWS_REGION}\"|;}" \
   "$SCRIPT_DIR/fp8-p6-b200.48xlarge-fp8kv-32k-dp8-textonly-flashinfer.yaml" \
   | kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f -
 # Wait for the weights to stage and the server to start.

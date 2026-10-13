@@ -1,6 +1,6 @@
 #
 # Stages the published moonshotai/Kimi-K3 MXFP4 checkpoint (~1,454 GiB) from Hugging Face into S3.
-# Streams one file at a time (download, upload, delete), so peak scratch is WORKERS x the largest shard.
+# Streams one file at a time (download, upload, delete), so peak disk use is WORKERS x the largest shard.
 # Skips objects already in S3, so a retry resumes. Fails if any file failed or S3 holds under 98% of the repo's bytes.
 # Apply this file before dspark-draft-download.yaml, which reuses its ConfigMap.
 #
@@ -27,7 +27,7 @@ data:
     REGION = os.environ["AWS_REGION"]
     TOKEN = os.environ.get("HUGGING_FACE_HUB_TOKEN") or None
     WORKERS = int(os.environ.get("WORKERS", "4"))
-    SCRATCH = os.environ.get("SCRATCH", "/scratch")
+    MODEL_DIR = os.environ["MODEL_DIR"]
 
     s3 = boto3.client("s3", region_name=REGION,
                       config=BotoConfig(retries={"max_attempts": 10, "mode": "adaptive"}))
@@ -58,7 +58,7 @@ data:
         local = None
         try:
             local = hf_hub_download(repo_id=REPO, filename=name, token=TOKEN,
-                                    local_dir=os.path.join(SCRATCH, "dl"))
+                                    local_dir=MODEL_DIR)
             s3.upload_file(local, BUCKET, key)
             print(f"staged {name} ({want[name] / 2**30:.2f} GiB)", flush=True)
         except Exception as exc:
@@ -114,7 +114,7 @@ spec:
             - name: MODEL_REPO
               value: moonshotai/Kimi-K3
             - name: WEIGHTS_BUCKET
-              value: SUBSTITUTE-weights-bucket
+              value: kimi-k3-model-weights-012345678901-us-east-1
             - name: PREFIX
               value: kimi-k3-mxfp4
             - name: AWS_REGION
@@ -122,10 +122,10 @@ spec:
             # ~16 GiB shards; 24 in flight keeps the Hugging Face download saturated. Lower it if the Hub throttles.
             - name: WORKERS
               value: "24"
-            - name: SCRATCH
-              value: /scratch
+            - name: MODEL_DIR
+              value: /models/kimi-k3-mxfp4
             - name: HF_HOME
-              value: /scratch/.hf-cache
+              value: /models/.hf-cache
             # Xet is disabled; it stalls on very large repositories.
             - name: HF_HUB_DISABLE_XET
               value: "1"
@@ -142,11 +142,11 @@ spec:
             - |
               set -euo pipefail
               pip install --no-cache-dir -q "huggingface_hub[hf_transfer]==1.28.0" boto3
-              df -h /scratch | tail -1
+              df -h /models | tail -1
               exec python3 /opt/stager/stage.py
           volumeMounts:
             - { name: stager, mountPath: /opt/stager }
-            - { name: scratch, mountPath: /scratch }
+            - { name: models, mountPath: /models }
           resources:
             requests:
               cpu: "24"
@@ -159,5 +159,5 @@ spec:
       volumes:
         - name: stager
           configMap: { name: kimi-k3-s3-stager }
-        - name: scratch
+        - name: models
           emptyDir: { sizeLimit: 1200Gi }

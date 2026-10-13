@@ -29,6 +29,12 @@ Every recipe passes `--no-enable-prefix-caching`, so its benchmarks measure unca
 | [Runbook](../docs/runbooks/llama4-maverick/fp8-p6-b200.48xlarge-fp8kv-32k-flashattn-runbook.md) | `p6-b200.48xlarge` | FP8 | FP8 | `FLASH_ATTN` | 8x B200 | TP8 | Deployment, Service | Upstream vLLM |
 | [Runbook](../docs/runbooks/llama4-maverick/fp8-p6-b200.48xlarge-fp8kv-32k-flashinfer-runbook.md) | `p6-b200.48xlarge` | FP8 | FP8 | `FLASHINFER` | 8x B200 | TP8 | Deployment, Service | Upstream vLLM |
 
+### Mistral Large 3
+
+| Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| [Runbook](../docs/runbooks/mistral-large-3/fp8-p5en.48xlarge-runbook.md) | `p5en.48xlarge` | FP8 | 16-bit | `FLASH_ATTN_MLA` | 8x H200 | TP8 | Deployment, Service | Upstream vLLM |
+
 ### Nemotron 3 Ultra
 
 | Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |

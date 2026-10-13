@@ -18,7 +18,7 @@ spec:
     metadata:
       labels: { app: gemma4-e4b-vllm-p5-4xl-fp8kv-triton }
     spec:
-      serviceAccountName: gemma4-31b-bench
+      serviceAccountName: gemma4-e4b-bench
       nodeSelector:
         node.kubernetes.io/instance-type: "p5.4xlarge"
       tolerations:
@@ -43,7 +43,7 @@ spec:
               test "$SZ" -ge 10 || { echo "FATAL: expected ~11 GiB, got ${SZ} GiB" >&2; exit 1; }
           env:
             - name: WEIGHTS_BUCKET
-              value: SUBSTITUTE-weights-bucket
+              value: gemma4-e4b-model-weights-012345678901-us-east-1
             - name: WEIGHTS_PREFIX
               value: "gemma4-e4b-fp8-quantized"
             - name: AWS_REGION

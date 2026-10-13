@@ -1,22 +1,32 @@
 #
-# eksctl cluster carrying the add-ons a GPU benchmarking cluster needs. Use this when you need a new cluster, then add a GPU node group separately once a run is ready.
+# eksctl cluster for GPU benchmarking, with Karpenter installed at creation. scripts/create-cluster.sh
+# fills the placeholders with your cluster name and region and runs eksctl; do not pass this file to
+# eksctl directly. It gives you the cluster, its add-ons, a small system node group that hosts Karpenter
+# and kube-system, and the karpenter.sh/discovery tags that scripts/provision-capacity.sh relies on. Add
+# GPU capacity afterwards with that script, not here.
 #
-# SUBSTITUTE: my-cluster, us-east-1, and the availability zones.
+# SUBSTITUTE: CLUSTER_NAME and AWS_REGION (scripts/create-cluster.sh fills these). Pick a Karpenter
+# version compatible with the Kubernetes version from the Karpenter compatibility matrix.
 apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 
 metadata:
-  name: my-cluster
-  region: us-east-1
-  version: "1.31"
-
-availabilityZones:
-  - us-east-1a
-  - us-east-1b
-  - us-east-1c
+  name: CLUSTER_NAME
+  region: AWS_REGION
+  version: "1.37"
+  tags:
+    # eksctl tags the shared node security group and subnets with this, so Karpenter's EC2NodeClass
+    # discovers them. The capacity scripts default the discovery value to the cluster name.
+    karpenter.sh/discovery: CLUSTER_NAME
 
 iam:
-  withOIDC: true
+  withOIDC: true   # required for Karpenter
+
+# Installs Karpenter via Helm and creates its IAM role (eksctl-KarpenterNodeRole-<cluster>) and the
+# Spot interruption queue. The capacity scripts default KARPENTER_NODE_ROLE to that role name.
+karpenter:
+  version: "1.14.1"
+  withSpotInterruptionQueue: true
 
 addons:
   - name: vpc-cni
@@ -26,6 +36,7 @@ addons:
     wellKnownPolicies:
       ebsCSIController: true
 
+# Small on-demand group for kube-system and the Karpenter controller only.
 managedNodeGroups:
   - name: system-cpu
     instanceType: m5.xlarge

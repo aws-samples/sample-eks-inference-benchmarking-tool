@@ -44,7 +44,7 @@ spec:
               test -f /models/gemma4-31b-fp8/config.json || { echo "FATAL: no config.json" >&2; exit 1; }
           env:
             - name: WEIGHTS_BUCKET
-              value: SUBSTITUTE-weights-bucket
+              value: gemma4-31b-model-weights-012345678901-us-east-1
             - name: WEIGHTS_PREFIX
               value: "gemma4-31b-fp8-quantized"
             - name: AWS_REGION

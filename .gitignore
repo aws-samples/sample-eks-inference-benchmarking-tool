@@ -48,6 +48,7 @@ docs/results/*.txt
 # tracked and documents the format, so the conventions are public and the measurements are not.
 docs/reports/*.md
 docs/reports/*.docx
+docs/reports/*.adoc
 docs/reports/reruns
 docs/reports/aiperf-calibration
 docs/reports/validation
