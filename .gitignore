@@ -29,6 +29,7 @@ benchvenv/
 *.qdrep
 *.sqlite
 docs/results/traces/
+docs/results/archived 
 
 # MLPerf LoadGen writes its own logs (summary, detail, trace) per invocation. The runner
 # points these into docs/results/.../reps/ for real runs; this catches ad-hoc invocations.
