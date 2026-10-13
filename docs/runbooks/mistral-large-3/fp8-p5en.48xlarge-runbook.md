@@ -28,12 +28,9 @@ Mistral Large 3 is a mixture-of-experts model with multi-head latent attention (
 
 ## Before you begin
 
-Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
+Complete the following tasks before you perform the steps in this runbook.
 
-- [Create a `p5en.48xlarge` node group](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (set the instance type)
-- [Mount its instance store as RAID0 for kubelet storage](../../../k8s/examples/nodeconfig-local-nvme-raid0.yaml) (the pod stages ~635 GiB)
-- [Create a benchmark-client node group](../../../k8s/examples/eksctl-nodegroup-bench-client.yaml) (the client Job does not tolerate the GPU taint)
-- [Install the CoreDNS add-on](https://docs.aws.amazon.com/eks/latest/userguide/managing-coredns.html) (EKS Auto Mode clusters lack it for managed node groups)
+- [Create an EKS cluster with Karpenter](../../../scripts/create-cluster.sh) (sets the discovery tags and node role that these steps rely on)
 
 ## Quickstart
 
@@ -58,12 +55,17 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-4. Install the Pod Identity Agent and grant the `mistral-large-3-bench` ServiceAccount S3 access.
+4. Provision a GPU node pool with NVMe RAID0 for the instance type.
+   ```bash
+   ./scripts/provision-capacity.sh "$INSTANCE_TYPE"
+   ```
+
+5. Install the Pod Identity Agent and grant the `mistral-large-3-bench` ServiceAccount S3 access.
    ```bash
    ./scripts/setup-pod-identity.sh mistral-large-3-bench
    ```
 
-5. Copy the published checkpoint from Hugging Face to your S3 bucket.
+6. Copy the published checkpoint from Hugging Face to your S3 bucket.
    ```bash
    ./model-jobs/mistral-large-3/fp8-model-download.sh
    ```

@@ -38,6 +38,7 @@
 * Fill a manifest's placeholders as the script applies it, `sed ... | kubectl apply -f -`, from the variables Quickstart step 1 exports. Never edit a tracked manifest in place with `sed -i`; the files in git stay untouched.
 * Serve every ModelOpt checkpoint this repo produces with `--quantization modelopt`. The plain `fp8` loader misreads a ModelOpt export, and on a BF16 checkpoint it silently quantizes at load time instead of failing.
 * Tear down GPU deployments and scale the nodegroup to zero as soon as measurement stops.
+* Provision GPU capacity through Karpenter, not eksctl node groups. A runbook's cluster prerequisite runs `scripts/create-cluster.sh`, which fills the `CLUSTER_NAME` and `AWS_REGION` placeholders in `k8s/examples/eksctl-cluster.yaml` (cluster plus Karpenter) from `EKS_CLUSTER_NAME` and `AWS_REGION` and runs eksctl, creating the cluster only when `eksctl get cluster` does not already find it. Quickstart then runs `scripts/provision-capacity.sh <instance-type>` for on-demand, or `scripts/provision-capacity-block.sh <instance-type> <reservation-id>` when the instance type is Capacity Block only (p5, p5en, p6-b200). Both apply a NodeClass with `instanceStorePolicy: RAID0` so `/models` lands on NVMe, and both default the node role and discovery tag to the cluster name, overridable with `KARPENTER_NODE_ROLE` and `KARPENTER_DISCOVERY`. Tear down deletes the recipe, then the node pool and node class; Karpenter scales the node to zero.
 * Stage model weights for serving on the node's local NVMe instance store: the recipe's `fetch-weights` init container syncs them from S3 into an `emptyDir` at `/models`. Never stage them on EBS, neither the root volume nor an EBS claim, and never create a per-model claim. The only claim is the shared `fsx-pvc`, used to download, quantize and verify checkpoints before they go to S3. Four Muse-Glimmer copies writing 132 GiB to a 125 MB/s gp3 root disk took ~18 minutes to land and stalled `kubectl exec` for the whole window. Serve from FSx or S3 only for checkpoints the size of GLM 5.2 or Kimi K3. On AL2023 managed nodegroups the instance store stays unmounted unless the launch template sets nodeadm `localStorage.strategy: RAID0`; Karpenter's `instanceStorePolicy: RAID0` does the same. Confirm `df /models` shows the NVMe array before trusting a staging step.
 
 ## Never
@@ -65,6 +66,8 @@ Use these sentences for runbook steps, word for word, in the order the steps occ
 | Variables | Set environment variables. |
 | CLI | Install the `eks-bench` CLI into a Python virtual environment. |
 | Prerequisites | Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret. |
+| Provision capacity | Provision a GPU node pool with NVMe RAID0 for the instance type. |
+| Provision capacity, Capacity Block | Provision a Capacity Block GPU node pool with NVMe RAID0 for the instance type. |
 | Pod Identity | Install the Pod Identity Agent and grant the `<model>-bench` ServiceAccount S3 access. |
 | Download to a claim | Download the published checkpoint from Hugging Face to the `<claim>` claim. |
 | Download to S3 | Copy the published checkpoint from Hugging Face to your S3 bucket. |
@@ -80,7 +83,6 @@ Use these sentences for runbook steps, word for word, in the order the steps occ
 | KV cache check | Confirm the KV cache is FP8 and record the KV pool size. |
 | NCCL check | Confirm no NCCL transport override is set and NCCL chose P2P, not SHM. |
 | NCCL check, pinned level | Confirm `NCCL_P2P_LEVEL=PIX` is set and NCCL chose P2P, not SHM. |
-| Warmup | Warm up the server with one unrecorded benchmark run, saved outside `docs/results`. |
 | Accuracy gate | Generate the accuracy gate (.JSON) that the benchmark checks against. |
 | Dry run | Dry-run the exact in-cluster benchmark. |
 | Benchmark | Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see `` [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags) ``. |
@@ -202,3 +204,31 @@ aws <service> describe-<resource> <identifying flags> --query <field> --output t
 ```
 
 When a `list-` call stands in for `describe-`, it returns `None` instead of failing, so test it with `| grep -v None` before the `||`.
+
+Capacity script, `scripts/provision-capacity.sh` (and `provision-capacity-block.sh`). Fills the matching Karpenter manifest in `k8s/examples/` and applies it; it purchases no AWS resource:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+: "${AWS_REGION:?Set AWS_REGION before running this script}"
+: "${EKS_CLUSTER_NAME:?Set EKS_CLUSTER_NAME before running this script}"
+INSTANCE_TYPE=${1:?Pass the instance type, for example p6-b200.48xlarge}
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+NODE_NAME="bench-${INSTANCE_TYPE//./-}"
+NODE_ROLE="${KARPENTER_NODE_ROLE:-eksctl-KarpenterNodeRole-${EKS_CLUSTER_NAME}}"
+DISCOVERY="${KARPENTER_DISCOVERY:-${EKS_CLUSTER_NAME}}"
+# One node's GPU count caps the pool at a single benchmark node.
+GPU_LIMIT=$(aws ec2 describe-instance-types --instance-types "$INSTANCE_TYPE" --region "$AWS_REGION" \
+  --query 'InstanceTypes[0].GpuInfo.Gpus[0].Count' --output text)
+# Apply the EC2NodeClass and NodePool with the cluster and instance type filled in.
+echo "==> Applying NodePool $NODE_NAME"
+sed -e "s|NODE_NAME|${NODE_NAME}|g" -e "s|NODE_ROLE|${NODE_ROLE}|g" \
+  -e "s|CLUSTER_NAME|${DISCOVERY}|g" -e "s|INSTANCE_TYPE|${INSTANCE_TYPE}|g" \
+  -e "s|GPU_LIMIT|${GPU_LIMIT}|g" "$SCRIPT_DIR/../k8s/examples/<manifest>.yaml" \
+  | kubectl --context "$EKS_CLUSTER_NAME" apply -f -
+# Show the node pool. A node launches only when a benchmark pod needs one, and scales to zero when idle.
+echo "==> Showing the NodePool"
+kubectl --context "$EKS_CLUSTER_NAME" get nodepool "$NODE_NAME"
+```
+
+The Capacity Block variant adds `RESERVATION_ID=${2:?...}` and seds `RESERVATION_ID` into the manifest. A capacity script never purchases a reservation; the Capacity Block one's missing-argument message tells the user how to find an offering with `describe-capacity-block-offerings`.

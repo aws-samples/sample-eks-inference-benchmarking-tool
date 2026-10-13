@@ -52,15 +52,17 @@ Each manifest carries a one-line header stating what it is and when to use it, p
 
 ### `eksctl-cluster.yaml`
 
-List the availability zones where your GPU capacity is actually offered. The control plane spans them and node groups pick from within, so a zone missing here cannot be used later.
+This cluster installs Karpenter at creation, so GPU capacity comes from a Karpenter node pool later, not from a node group here. OIDC is required for any add-on that uses IRSA, including the FSx and EBS CSI drivers. The CPU node group serves the controllers, the add-ons, and any weight-download or image-build Job, so size its disk for that work rather than to the minimum.
 
-OIDC is required for any add-on that uses IRSA, including the FSx and EBS CSI drivers. The CPU node group serves the controllers, the add-ons, and any weight-download or image-build Job, so size its disk for that work rather than to the minimum.
-
-Create the cluster from a substituted copy:
+The file uses `CLUSTER_NAME` and `AWS_REGION` placeholders. `scripts/create-cluster.sh` fills them from `EKS_CLUSTER_NAME` and `AWS_REGION` and runs eksctl, creating the cluster only when it does not already exist, so create it with the script rather than a hand-edited copy:
 
 ```bash
-eksctl create cluster -f my-cluster.yaml   # your copy of k8s/examples/eksctl-cluster.yaml
+export AWS_REGION=us-east-2
+export EKS_CLUSTER_NAME=my-cluster
+./scripts/create-cluster.sh
 ```
+
+eksctl selects the availability zones. If your GPU capacity is confined to one zone, add an `availabilityZones` list that includes it to the file before running, since the control plane spans only the zones it is given and a zone missing here cannot be used later.
 
 ### Discover GPU capacity before creating node groups
 
