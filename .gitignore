@@ -49,6 +49,7 @@ docs/results/*.txt
 docs/reports/*.md
 docs/reports/*.docx
 docs/reports/*.adoc
+docs/reports/finetune/
 docs/reports/reruns
 docs/reports/aiperf-calibration
 docs/reports/validation
