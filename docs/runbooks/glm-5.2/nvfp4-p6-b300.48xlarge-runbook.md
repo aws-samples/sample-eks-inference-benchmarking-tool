@@ -69,7 +69,7 @@ Complete the following tasks before you perform the steps in this runbook.
    ./scripts/provision-capacity-block.sh "$INSTANCE_TYPE" "$RESERVATION_ID"
    ```
 
-5. Deploy the vLLM inference server and confirm it serves the model.
+5. Deploy the inference server and confirm it serves the model.
 
    ```bash
    ./vllm-recipes/glm-5.2/nvfp4-p6-b300.48xlarge-deploy.sh

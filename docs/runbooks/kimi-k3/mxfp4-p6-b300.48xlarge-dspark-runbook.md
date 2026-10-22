@@ -80,7 +80,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
        ./scripts/push-image-kaniko.sh nccl2.29.7-efa1.49.0
    ```
 
-9. Deploy the vLLM inference server and confirm it serves the model.
+9. Deploy the inference server and confirm it serves the model.
    ```bash
    ./vllm-recipes/kimi-k3/mxfp4-p6-b300.48xlarge-dspark-deploy.sh
    ```

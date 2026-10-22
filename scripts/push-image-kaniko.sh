@@ -27,6 +27,8 @@ TAG=${1:-${TAG:-latest}}
 BUILD_SA=${BUILD_SA:-quantizer-build}
 REPOSITORY=${REPOSITORY:-serving-sweep-quantizer}
 CONTEXT_DIR=${CONTEXT_DIR:-}
+# Layer caching speeds rebuilds but a stale cache repo can fail a COPY; set BUILD_CACHE=false to bypass.
+BUILD_CACHE=${BUILD_CACHE:-true}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -83,18 +85,27 @@ spec:
     spec:
       restartPolicy: Never
       serviceAccountName: ${BUILD_SA}
+      initContainers:
+        # ConfigMap keys mount as symlinks (requirements.txt -> ..data/requirements.txt). kaniko copies
+        # the symlink itself, leaving a dangling link in the image so the next RUN cannot read the file.
+        # Dereference with cp -L into an emptyDir and build from there, which gives kaniko real files.
+        - name: stage-context
+          image: public.ecr.aws/docker/library/busybox:1.36
+          command: ["sh", "-c", "cp -L /ctx/* /work/ && ls -la /work"]
+          volumeMounts:
+            - { name: ctx, mountPath: /ctx }
+            - { name: work, mountPath: /work }
       containers:
         - name: kaniko
           image: ghcr.io/osscontainertools/kaniko:v1.28.5@sha256:738807f0e31daf07743f89260a95956dcc6ee4f62553f4f6344c990cabab8675
           args:
-            - --dockerfile=/workspace/Dockerfile
-            - --context=dir:///workspace
+            - --dockerfile=/work/Dockerfile
+            - --context=dir:///work
             - --destination=${DEST}
-            - --cache=true
+            - --cache=${BUILD_CACHE}
             - --cache-repo=${CACHE}
           volumeMounts:
-            - name: ctx
-              mountPath: /workspace
+            - { name: work, mountPath: /work }
           resources:
             requests:
               cpu: "4"
@@ -106,6 +117,8 @@ spec:
         - name: ctx
           configMap:
             name: ${CONFIGMAP}
+        - name: work
+          emptyDir: {}
 EOF
 
 # Stream the build log, then fail the script if the Job did not complete. Unpacking a large base

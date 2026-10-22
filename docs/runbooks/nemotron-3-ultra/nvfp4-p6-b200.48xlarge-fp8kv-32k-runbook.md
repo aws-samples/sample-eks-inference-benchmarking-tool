@@ -75,7 +75,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
 ## Throughput test
 
-1. Deploy the vLLM inference server and confirm it serves the model.
+1. Deploy the inference server and confirm it serves the model.
    ```bash
    ./vllm-recipes/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-deploy.sh
    ```

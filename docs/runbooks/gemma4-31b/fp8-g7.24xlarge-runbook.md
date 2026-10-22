@@ -62,7 +62,7 @@ Complete the following tasks before you perform the steps in this runbook.
    ./scripts/provision-capacity.sh "$INSTANCE_TYPE"
    ```
 
-5. Build the quantizer image in-cluster with kaniko, which creates the ECR repository if needed and pushes it to your repository. This step takes several minutes to complete. To build locally instead, on an x86 machine with Docker, run `./scripts/push-image.sh`.
+5. Build the quantizer tool image (the toolbox, not the model) in-cluster with kaniko, which creates the ECR repository and pushes it. Takes several minutes; to build locally on x86 Docker instead, run `./scripts/push-image.sh`.
    ```bash
    ./scripts/push-image-kaniko.sh
    ```
@@ -72,7 +72,7 @@ Complete the following tasks before you perform the steps in this runbook.
    ./model-jobs/gemma4-31b/fp8-model-quantize.sh
    ```
 
-7. Deploy the vLLM inference server and confirm it serves the model.
+7. Deploy the inference server and confirm it serves the model.
 
    ```bash
    ./vllm-recipes/gemma4-31b/fp8-g7.24xlarge-deploy.sh

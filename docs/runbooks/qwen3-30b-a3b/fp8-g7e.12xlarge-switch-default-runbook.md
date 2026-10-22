@@ -72,7 +72,7 @@ Create the following before you start.
 
 ## Throughput test
 
-1. Deploy the vLLM inference server on `GPU_NODE` and confirm it serves the model.
+1. Deploy the inference server on `GPU_NODE` and confirm it serves the model.
    ```bash
    ./vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default-deploy.sh
    ```
