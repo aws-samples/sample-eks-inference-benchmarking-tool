@@ -26,8 +26,6 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
 
 - [Create an EKS cluster with Karpenter](../../../scripts/create-cluster.sh) (sets the discovery tags and node role that these steps rely on)
 - [Purchase a p6-b200.48xlarge Capacity Block for ML sized for two nodes](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-capacity-blocks.html) (B200 is not available on demand; note its reservation id for Quickstart step 4)
-- [Create an ECR repository in your cluster's region](https://docs.aws.amazon.com/AmazonECR/latest/userguide/repository-create.html) for the custom vLLM image
-- [Build and push the custom vLLM image as `vllm-kimi-k3-efa:nccl2.29.7-efa1.49.0`](../../../k8s/examples/job-build-image-kaniko.yaml) (builds in-cluster on a CPU node)
 - [Install the EFA device plugin](../../../scripts/install-efa-device-plugin.sh) so each node advertises `vpc.amazonaws.com/efa: 8`
 
 ## Quickstart
@@ -72,12 +70,18 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
    ./model-jobs/kimi-k3/mxfp4-model-download.sh
    ```
 
-7. Deploy the vLLM inference server and confirm it serves the model.
+7. Build and push the custom vLLM EFA serving image to your ECR repository. This builds in-cluster on a CPU node and takes several minutes.
+   ```bash
+   REPOSITORY=vllm-kimi-k3-efa CONTEXT_DIR=app/vllm-efa \
+       ./scripts/push-image-kaniko.sh nccl2.29.7-efa1.49.0
+   ```
+
+8. Deploy the vLLM inference server and confirm it serves the model.
    ```bash
    ./vllm-recipes/kimi-k3/mxfp4-p6-b200.48xlarge-sts-deploy.sh
    ```
 
-8. Generate the accuracy gate (.JSON) that the benchmark checks against.
+9. Generate the accuracy gate (.JSON) that the benchmark checks against.
 
    ```bash
    eks-bench capture-reference \
@@ -89,7 +93,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
        --out-dir docs/results
    ```
 
-9. Dry-run the exact in-cluster benchmark.
+10. Dry-run the exact in-cluster benchmark.
 
    ```bash
    eks-bench measure \
@@ -105,7 +109,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
        --dry-run
    ```
 
-10. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
+11. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
 
    ```bash
    eks-bench measure \

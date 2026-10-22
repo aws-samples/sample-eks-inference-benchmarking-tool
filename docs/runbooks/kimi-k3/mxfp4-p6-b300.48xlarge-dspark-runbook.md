@@ -26,8 +26,6 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
 
 - [Create an EKS cluster with Karpenter](../../../scripts/create-cluster.sh) (sets the discovery tags and node role that these steps rely on)
 - [Purchase a p6-b300.48xlarge Capacity Block for ML](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-capacity-blocks.html) (B300 is not available on demand; note the reservation id for subsequent steps)
-- [Create an ECR repository in your cluster's region](https://docs.aws.amazon.com/AmazonECR/latest/userguide/repository-create.html) for the custom vLLM image
-- [Build and push the custom vLLM image as `vllm-kimi-k3-efa:nccl2.29.7-efa1.49.0`](../../../k8s/examples/job-build-image-kaniko.yaml) (builds in-cluster on a CPU node)
 
 ## Quickstart
 
@@ -76,12 +74,18 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
    ./model-jobs/kimi-k3/dspark-draft-download.sh
    ```
 
-8. Deploy the vLLM inference server and confirm it serves the model.
+8. Build and push the custom vLLM EFA serving image to your ECR repository. This builds in-cluster on a CPU node and takes several minutes.
+   ```bash
+   REPOSITORY=vllm-kimi-k3-efa CONTEXT_DIR=app/vllm-efa \
+       ./scripts/push-image-kaniko.sh nccl2.29.7-efa1.49.0
+   ```
+
+9. Deploy the vLLM inference server and confirm it serves the model.
    ```bash
    ./vllm-recipes/kimi-k3/mxfp4-p6-b300.48xlarge-dspark-deploy.sh
    ```
 
-9. Generate the accuracy gate (.JSON) that the benchmark checks against.
+10. Generate the accuracy gate (.JSON) that the benchmark checks against.
 
    ```bash
    eks-bench capture-reference \
@@ -93,7 +97,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
        --out-dir docs/results
    ```
 
-10. Dry-run the exact in-cluster benchmark.
+11. Dry-run the exact in-cluster benchmark.
 
    ```bash
    eks-bench measure \
@@ -109,7 +113,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
        --dry-run
    ```
 
-11. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
+12. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
 
    ```bash
    eks-bench measure \

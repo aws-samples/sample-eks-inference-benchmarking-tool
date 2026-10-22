@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Confirm EFA and the aws-ofi-nccl plugin are present before serving, so a missing or mismatched
+# plugin fails loudly here instead of letting NCCL fall back to TCP during a multi-node run.
+set -euo pipefail
+echo "== fi_info -p efa =="
+fi_info -p efa | head -n 20
+echo "== aws-ofi-nccl plugin =="
+ls -1 /opt/aws-ofi-nccl/lib/libnccl-net*.so
+echo "verify-efa-nccl: OK"
