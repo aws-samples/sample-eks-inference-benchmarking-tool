@@ -91,7 +91,7 @@ Use these sentences for runbook steps, word for word, in the order the steps occ
 
 ## Script templates
 
-Write every deploy and staging script from these templates, step for step. Add a step only when the recipe needs it and a sibling script already has it, such as the EFA check or the `vllm-sitecustomize` ConfigMap check. Drop a step only when the recipe lacks the thing it acts on: no ServiceAccount step when the recipe sets no `serviceAccountName`, no backend step when the recipe pins no `--attention-backend`. Annotate the ServiceAccount only for IRSA; a Pod Identity ServiceAccount stays plain. Pin a node only when the runbook needs one physical host. Write the pin as `nodeSelector` `kubernetes.io/hostname: SUBSTITUTE-gpu-node`, and fill it in the deploy script's `sed` with `-e "s|SUBSTITUTE-gpu-node|${GPU_NODE}|"`.
+Write every deploy and staging script from these templates, step for step. Add a step only when the recipe needs it and a sibling script already has it, such as the EFA check or the `vllm-sitecustomize` ConfigMap check. Drop a step only when the recipe lacks the thing it acts on: no ServiceAccount step when the recipe sets no `serviceAccountName`, no backend step when the recipe pins no `--attention-backend`. Leave every ServiceAccount plain; EKS Pod Identity binds its role, granted by `setup-pod-identity.sh`. Pin a node only when the runbook needs one physical host. Write the pin as `nodeSelector` `kubernetes.io/hostname: SUBSTITUTE-gpu-node`, and fill it in the deploy script's `sed` with `-e "s|SUBSTITUTE-gpu-node|${GPU_NODE}|"`.
 
 Deploy script, `vllm-recipes/<model>/<recipe>-deploy.sh`:
 

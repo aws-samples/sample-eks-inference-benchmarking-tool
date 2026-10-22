@@ -3,14 +3,12 @@ set -euo pipefail
 : "${EKS_CLUSTER_NAME:?Set EKS_CLUSTER_NAME before running this script}"
 : "${NAMESPACE:?Set NAMESPACE before running this script}"
 : "${AWS_REGION:?Set AWS_REGION before running this script}"
-: "${NEMOTRON_S3_ROLE_ARN:?Set NEMOTRON_S3_ROLE_ARN before running this script}"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 WEIGHTS_BUCKET="nemotron-3-ultra-model-weights-$(aws sts get-caller-identity --query Account --output text)-${AWS_REGION}"
-# Apply the nemotron-3-ultra-bench ServiceAccount the server runs as, annotated with its IRSA role.
+# Apply the nemotron-3-ultra-bench ServiceAccount the server runs as.
 echo "==> Applying ServiceAccount nemotron-3-ultra-bench"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" create serviceaccount nemotron-3-ultra-bench \
   --dry-run=client -o yaml \
-  | kubectl annotate --local -f - eks.amazonaws.com/role-arn="$NEMOTRON_S3_ROLE_ARN" -o yaml \
   | kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f -
 # Deploy the Nemotron 3 Ultra server with the weights bucket and its region filled in.
 echo "==> Deploying Nemotron 3 Ultra NVFP4 on p6-b200.48xlarge"

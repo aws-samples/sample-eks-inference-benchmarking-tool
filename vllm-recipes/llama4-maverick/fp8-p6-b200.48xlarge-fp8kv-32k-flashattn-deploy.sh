@@ -3,14 +3,12 @@ set -euo pipefail
 : "${EKS_CLUSTER_NAME:?Set EKS_CLUSTER_NAME before running this script}"
 : "${NAMESPACE:?Set NAMESPACE before running this script}"
 : "${AWS_REGION:?Set AWS_REGION before running this script}"
-: "${LLAMA4_S3_ROLE_ARN:?Set LLAMA4_S3_ROLE_ARN before running this script}"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 WEIGHTS_BUCKET="llama4-maverick-model-weights-$(aws sts get-caller-identity --query Account --output text)-${AWS_REGION}"
-# Apply the llama4-maverick-bench ServiceAccount the server runs as, annotated with its IRSA role.
+# Apply the llama4-maverick-bench ServiceAccount the server runs as.
 echo "==> Applying ServiceAccount llama4-maverick-bench"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" create serviceaccount llama4-maverick-bench \
   --dry-run=client -o yaml \
-  | kubectl annotate --local -f - eks.amazonaws.com/role-arn="$LLAMA4_S3_ROLE_ARN" -o yaml \
   | kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f -
 # Deploy the Llama 4 Maverick server with the weights bucket and its region filled in.
 echo "==> Deploying Llama 4 Maverick FP8 on p6-b200.48xlarge"

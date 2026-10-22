@@ -3,7 +3,7 @@
 # Fails on a shard-count or size mismatch. The meta-llama repository is gated: use an hf-token that accepted the
 # Llama 4 license, or set MODEL_REPO to the ungated unsloth/Llama-4-Maverick-17B-128E-Instruct-FP8 mirror.
 #
-# SUBSTITUTE: WEIGHTS_BUCKET, AWS_REGION, and the IRSA-annotated ServiceAccount.
+# SUBSTITUTE: WEIGHTS_BUCKET, AWS_REGION, and the ServiceAccount.
 apiVersion: batch/v1
 kind: Job
 metadata:

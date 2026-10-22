@@ -4,7 +4,7 @@
 # Skips objects already in S3, so a retry resumes. Fails if any file failed or S3 holds under 98% of the repo's bytes.
 # Apply this file before dspark-draft-download.yaml, which reuses its ConfigMap.
 #
-# SUBSTITUTE: WEIGHTS_BUCKET, AWS_REGION, and the IRSA-annotated ServiceAccount.
+# SUBSTITUTE: WEIGHTS_BUCKET, AWS_REGION, and the ServiceAccount.
 apiVersion: v1
 kind: ConfigMap
 metadata:

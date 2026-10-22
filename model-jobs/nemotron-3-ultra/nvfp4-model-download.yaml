@@ -2,7 +2,7 @@
 # Stages the published NVIDIA Nemotron 3 Ultra 550B A55B NVFP4 checkpoint (~328 GiB, 113 shards) from Hugging Face into S3, once.
 # Fails on a shard-count or size mismatch.
 #
-# SUBSTITUTE: WEIGHTS_BUCKET, AWS_REGION, and the IRSA-annotated ServiceAccount.
+# SUBSTITUTE: WEIGHTS_BUCKET, AWS_REGION, and the ServiceAccount.
 apiVersion: batch/v1
 kind: Job
 metadata:
