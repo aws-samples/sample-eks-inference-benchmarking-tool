@@ -33,7 +33,6 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
 - [Create a `p6-b200.48xlarge` node group](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (set the instance type)
 - [Mount its instance store as RAID0 for kubelet storage](../../../k8s/examples/nodeconfig-local-nvme-raid0.yaml) (the init container needs 400 GiB free)
-- [Create a benchmark-client node group](../../../k8s/examples/eksctl-nodegroup-bench-client.yaml) (the client Job does not tolerate the GPU taint)
 
 ## Quickstart
 

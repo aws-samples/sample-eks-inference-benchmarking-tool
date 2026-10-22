@@ -33,7 +33,6 @@ Qwen3-30B-A3B is a mixture-of-experts model. Each of its 48 layers holds 128 exp
 Create the following before you start.
 
 - [Create a `g7e.12xlarge` node group](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (set the instance type; the node must be idle)
-- [Create a benchmark-client node group](../../../k8s/examples/eksctl-nodegroup-bench-client.yaml) (scale it to one node; the client Job does not tolerate the GPU taint)
 - [Mount its instance store as RAID0 for kubelet storage](../../../k8s/examples/nodeconfig-local-nvme-raid0.yaml) (the pod stages ~31 GiB)
 - [Rebuild the NVIDIA open kernel module if the node advertises no GPUs](../../../k8s/examples/job-node-driver-fix.yaml)
 

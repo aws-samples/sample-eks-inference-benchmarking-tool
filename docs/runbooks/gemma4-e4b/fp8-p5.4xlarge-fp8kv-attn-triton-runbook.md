@@ -28,7 +28,6 @@ The pool is not the constraint. `chat_terse` sends 96 wire input tokens with a 3
 Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
 
 - [Create a `p5.4xlarge` Capacity Block node pool](../../../k8s/examples/karpenter-capacity-block-nodepool.yaml) (it mounts the instance store as RAID0)
-- [Create a benchmark-client node group](../../../k8s/examples/eksctl-nodegroup-bench-client.yaml) (the client Job does not tolerate the GPU taint)
 - [Install the EKS Pod Identity Agent add-on](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-agent-setup.html)
 - [Associate an S3 read role with the `gemma4-e4b-bench` ServiceAccount in your namespace through Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-association.html)
 - [Create a `g7.2xlarge` node group for quantization](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (only if the checkpoint is not in S3 yet)
