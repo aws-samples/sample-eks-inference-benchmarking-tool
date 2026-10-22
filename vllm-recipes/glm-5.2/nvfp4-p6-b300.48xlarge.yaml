@@ -1,5 +1,5 @@
 # GLM-5.2 at NVFP4 on one p6-b300.48xlarge, 8 GPUs, tensor parallel 8. NVFP4 requires Blackwell.
-# SUBSTITUTE: kubernetes.io/hostname, or remove it to schedule on any p6-b300.48xlarge.
+# Karpenter schedules it onto the bench-cb-p6-b300-48xlarge pool by instance type.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -20,7 +20,6 @@ spec:
         - { key: capacity-reservation, operator: Exists, effect: NoSchedule }
       nodeSelector:
         node.kubernetes.io/instance-type: p6-b300.48xlarge
-        kubernetes.io/hostname: SUBSTITUTE-gpu-node
       initContainers:
         - name: fetch-weights
           image: python:3.12-slim

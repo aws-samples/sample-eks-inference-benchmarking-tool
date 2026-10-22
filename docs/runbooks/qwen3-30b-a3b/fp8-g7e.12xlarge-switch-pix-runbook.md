@@ -164,8 +164,6 @@ Once both arms are measured, scale the node groups to zero. The checkpoint in S3
 ```bash
 aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-name gpu-spot-1node \
     --region "$AWS_REGION" --scaling-config minSize=0,maxSize=1,desiredSize=0
-aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-name bench-client-cpu \
-    --region "$AWS_REGION" --scaling-config minSize=0,maxSize=1,desiredSize=0
 ```
 
 ---

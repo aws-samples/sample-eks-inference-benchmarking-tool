@@ -32,9 +32,10 @@ Derived from the 1,380,864-token pool this server actually allocated, divided by
 
 ## Before you begin
 
-Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
+Complete the following tasks before you perform the steps in this runbook.
 
-- [Create a `p6-b300.48xlarge` node group](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml)
+- [Create an EKS cluster with Karpenter](../../../scripts/create-cluster.sh) (sets the discovery tags and node role that these steps rely on)
+- [Purchase a p6-b300.48xlarge Capacity Block for ML](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-capacity-blocks.html) (B300 is not available on demand; note its reservation id for Quickstart step 4)
 
 ## Quickstart
 
@@ -46,7 +47,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-glm-52-nvfp4-p6-b300-48xlarge
    export INSTANCE_TYPE=p6-b300.48xlarge
-   export GPU_NODE=<your-p6-b300-node-name>
+   export RESERVATION_ID=<your-capacity-block-id>
    ```
 
 2. Install the `eks-bench` CLI into a Python virtual environment.
@@ -62,13 +63,19 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-4. Deploy the vLLM inference server on `GPU_NODE` and confirm it serves the model.
+4. Provision a Capacity Block GPU node pool with NVMe RAID0 for the instance type.
+
+   ```bash
+   ./scripts/provision-capacity-block.sh "$INSTANCE_TYPE" "$RESERVATION_ID"
+   ```
+
+5. Deploy the vLLM inference server and confirm it serves the model.
 
    ```bash
    ./vllm-recipes/glm-5.2/nvfp4-p6-b300.48xlarge-deploy.sh
    ```
 
-5. Generate the accuracy gate (.JSON) that the benchmark checks against.
+6. Generate the accuracy gate (.JSON) that the benchmark checks against.
 
    ```bash
    eks-bench capture-reference \
@@ -80,7 +87,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --out-dir docs/results
    ```
 
-6. Dry-run the exact in-cluster benchmark.
+7. Dry-run the exact in-cluster benchmark.
 
    ```bash
    eks-bench measure \
@@ -96,7 +103,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-7. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
+8. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
 
    ```bash
    eks-bench measure \
@@ -114,8 +121,13 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 ## Tear down
 
 ```bash
-kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/glm-5.2/nvfp4-p6-b300.48xlarge.yaml
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete \
+    -f vllm-recipes/glm-5.2/nvfp4-p6-b300.48xlarge.yaml --ignore-not-found
+kubectl --context "$EKS_CLUSTER_NAME" delete \
+    nodepool/bench-cb-p6-b300-48xlarge ec2nodeclass/bench-cb-p6-b300-48xlarge --ignore-not-found
 ```
+
+Deleting the server leaves the node empty, and Karpenter scales it to zero.
 
 ---
 
@@ -123,7 +135,6 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/glm
 ## Settings
 
 - **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
-- **`kubernetes.io/hostname`** Pins the pod to one node; the deploy script fills in `GPU_NODE` as it applies the manifest, so the file in git stays untouched. The pin does not preserve model data.
 - **`fetch-weights` init container** Downloads `nvidia/GLM-5.2-NVFP4` from Hugging Face into `/models/glm-5.2-nvfp4`. It verifies at least 500 GiB is free, installs `huggingface_hub==1.28.0`, uses `/models/.hf-cache`, enables high-performance Xet with `HF_XET_HIGH_PERFORMANCE=1`, and verifies that every shard is complete before vLLM starts.
 
 - **`weights: emptyDir: { sizeLimit: 800Gi }`** Stores both the checkpoint and Hugging Face cache in pod-local storage shared by the init container and vLLM. Kubernetes deletes this volume with the pod, so replacement or scale-to-zero discards all downloaded data and the new pod downloads it again. This recipe does not use a PVC and does not preserve downloads across pods; two observed cold downloads took about 2h15m each.

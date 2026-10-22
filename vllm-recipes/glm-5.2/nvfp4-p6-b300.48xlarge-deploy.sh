@@ -2,12 +2,10 @@
 set -euo pipefail
 : "${EKS_CLUSTER_NAME:?Set EKS_CLUSTER_NAME before running this script}"
 : "${NAMESPACE:?Set NAMESPACE before running this script}"
-: "${GPU_NODE:?Set GPU_NODE before running this script}"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-# Deploy the GLM-5.2 server, pinned to GPU_NODE.
-echo "==> Deploying GLM-5.2 NVFP4 on $GPU_NODE"
-sed "s|SUBSTITUTE-gpu-node|${GPU_NODE}|" "$SCRIPT_DIR/nvfp4-p6-b300.48xlarge.yaml" \
-  | kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f -
+# Deploy the GLM-5.2 server.
+echo "==> Deploying GLM-5.2 NVFP4 on p6-b300.48xlarge"
+kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f "$SCRIPT_DIR/nvfp4-p6-b300.48xlarge.yaml"
 # Wait for the weights to stage and the server to start.
 echo "==> Waiting for the GLM-5.2 server"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" rollout status \
