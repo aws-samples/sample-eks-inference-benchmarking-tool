@@ -24,8 +24,9 @@ KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, w
 
 ## Before you begin
 
-Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
+Complete the following tasks before you perform the steps in this runbook.
 
+- [Create an EKS cluster with Karpenter](../../../scripts/create-cluster.sh) (sets the discovery tags and node role that these steps rely on)
 - [Install the open NVIDIA kernel module if the node advertises no GPUs](../../../k8s/examples/pod-diagnostic-probe.yaml)
 - [Create the `vllm-sitecustomize` ConfigMap](../../../k8s/examples/configmap-vllm-sitecustomize.yaml)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
@@ -56,23 +57,28 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-4. Build the quantizer image in-cluster with kaniko, which creates the ECR repository if needed and pushes it to your repository. This step takes several minutes to complete. To build locally instead, on an x86 machine with Docker, run `./scripts/push-image.sh`.
+4. Provision a GPU node pool with NVMe RAID0 for the instance type.
+   ```bash
+   ./scripts/provision-capacity.sh "$INSTANCE_TYPE"
+   ```
+
+5. Build the quantizer image in-cluster with kaniko, which creates the ECR repository if needed and pushes it to your repository. This step takes several minutes to complete. To build locally instead, on an x86 machine with Docker, run `./scripts/push-image.sh`.
    ```bash
    ./scripts/push-image-kaniko.sh
    ```
 
-5. Quantize the model to ModelOpt FP8 and save the checkpoint to the `fsx-pvc` claim.
+6. Quantize the model to ModelOpt FP8 and save the checkpoint to the `fsx-pvc` claim.
    ```bash
    ./model-jobs/gemma4-31b/fp8-model-quantize.sh
    ```
 
-6. Deploy the vLLM inference server and confirm it serves the model.
+7. Deploy the vLLM inference server and confirm it serves the model.
 
    ```bash
    ./vllm-recipes/gemma4-31b/fp8-g7.24xlarge-deploy.sh
    ```
 
-7. Generate the accuracy gate (.JSON) that the benchmark checks against.
+8. Generate the accuracy gate (.JSON) that the benchmark checks against.
 
    ```bash
    eks-bench capture-reference \
@@ -83,7 +89,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --out-dir docs/results
    ```
 
-8. Dry-run the exact in-cluster benchmark.
+9. Dry-run the exact in-cluster benchmark.
 
    ```bash
    eks-bench measure \
@@ -98,7 +104,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-9. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
+10. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
 
    ```bash
    eks-bench measure \
@@ -112,7 +118,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --reps 3
    ```
 
-10. (Optional) Dry-run the NVIDIA AIPerf cross-client calibration.
+11. (Optional) Dry-run the NVIDIA AIPerf cross-client calibration.
 
    ```bash
    eks-bench measure \
@@ -127,7 +133,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-11. (Optional) Run the NVIDIA AIPerf cross-client calibration.
+12. (Optional) Run the NVIDIA AIPerf cross-client calibration.
 
    ```bash
    eks-bench measure \
@@ -141,7 +147,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --reps 3
    ```
 
-12. (Optional) Dry-run the open-loop latency test.
+13. (Optional) Dry-run the open-loop latency test.
 
    ```bash
    eks-bench measure \
@@ -156,7 +162,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-13. (Optional) Run the open-loop latency test.
+14. (Optional) Run the open-loop latency test.
 
    ```bash
    eks-bench measure \
@@ -173,8 +179,13 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 ## Tear down
 
 ```bash
-kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/gemma4-31b/fp8-g7.24xlarge.yaml
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete \
+    -f vllm-recipes/gemma4-31b/fp8-g7.24xlarge.yaml --ignore-not-found
+kubectl --context "$EKS_CLUSTER_NAME" delete \
+    nodepool/bench-g7-24xlarge ec2nodeclass/bench-g7-24xlarge --ignore-not-found
 ```
+
+Deleting the server leaves the node empty, and Karpenter scales it to zero.
 
 ---
 
@@ -183,7 +194,7 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/gem
 - **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
 - **`corpus_aiperf`** Runs the same workload through NVIDIA AIPerf as a second, independent load generator. The benchmark Job installs AIPerf itself.
 - **`server_qps`** Sends requests at fixed rates from 1 to 16 per second and reports, at each rate, whether TTFT p99 stays within 500 ms and TPOT p99 within 50 ms. Each rep holds 8 rates for at least 120 s each with 60 s between them, so 3 reps take at least 69 minutes.
-- **The checkpoint stays on the claim.** A later run can skip Quickstart steps 4 and 5.
+- **The checkpoint stays on the claim.** A later run can skip Quickstart steps 5 and 6.
 - **`strategy: Recreate`** Stops the old pod before starting its replacement, so a redeploy never overlaps GPU claims.
 - **`--ttft-target` and `--tpot-target`** Step 13 runs at the shipped targets, TTFT p99 500 ms and TPOT p99 50 ms. An overridden value is appended to the result filename, so a run at different targets cannot overwrite one at the defaults. Read [Trusting the open-loop verdict](../../guides/REFERENCE.md#trusting-the-open-loop-verdict) before quoting a rate as sustainable.
 - **`Prefix cache hit`** Check this line in the result file's provenance block: anything other than 0% means prefill was skipped and throughput is inflated. On a pod that has been up for days the line rotates out of the log window and records as `(not found in server log)`, which is not the same as 0%.
