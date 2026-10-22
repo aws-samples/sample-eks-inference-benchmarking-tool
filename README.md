@@ -18,19 +18,18 @@ Each capability names the tool it is built on. This repo does not reimplement wh
 | 📈 [**Closed-loop concurrency sweeps**](./docs/guides/REFERENCE.md#protocols) | Sweeps 1 to 512 concurrent requests on this repo's own aiohttp client, reporting tokens/sec, req/sec and TTFT, TPOT and ITL across three reps with medians | Converts a latency SLA into a node count, which is the sizing decision |
 | 🎯 [**Open-loop SLA verification**](./docs/guides/REFERENCE.md#trusting-the-open-loop-verdict) | Issues Poisson arrivals at a target QPS through [MLPerf LoadGen](https://github.com/mlcommons/inference/tree/master/loadgen), with direct issue-rate accounting | Answers whether the SLA holds at a given arrival rate, a different question from the sweeps, so the two never share a table |
 | 🔀 [**Cross-client calibration**](./docs/guides/REFERENCE.md#what-may-be-compared-with-what) | Reruns the same workload through [NVIDIA AIPerf](https://github.com/ai-dynamo/aiperf) behind the same protocol seam, and replays committed agentic traces with real think-time gaps | Two independent clients on one server show whether a figure belongs to the server or to the client that measured it |
-| 📦 [**Weight staging**](./model-jobs/README.md) | One Job per model and precision, applied once per filesystem, that downloads the checkpoint to the shared claim | Recipes wait for weights rather than fetching them, so a serving run is not also a download, and a partial checkpoint fails before the GPU is booked |
+| 📦 [**Weight staging**](./model-jobs/README.md) | One Job per model and precision, applied once per filesystem or bucket, that stages the checkpoint to your S3 bucket or the shared claim | Recipes wait for weights rather than fetching them, so a serving run is not also a download, and a partial checkpoint fails before the GPU is booked |
 | 🗜️ [**Quantization pipeline**](#quantization) | Produces FP8, INT8 and INT4-AWQ checkpoints with [NVIDIA Model Optimizer](https://github.com/NVIDIA/Model-Optimizer), as a GPU Job in your own cluster | Public quantized checkpoints do not exist for every model, and converting one needs more memory than serving the result afterwards |
-| ⚙️ [**Serving-stack coverage**](#vllm-recipes) | Covers prefix caching, KV-cache scale configs, [FlashInfer](https://github.com/flashinfer-ai/flashinfer) attention, and multi-node pipeline parallelism over EFA, across Deployment and StatefulSet | The serving configuration is the object of study, so the knobs that move a number are already wired up |
+| ⚙️ [**Serving-stack coverage**](#vllm-recipes) | Covers prefix caching, KV-cache precision, [FlashInfer](https://github.com/flashinfer-ai/flashinfer) and Triton attention backends, and tensor-parallel serving up to eight GPUs per node as Deployments; multi-node pipeline parallelism over EFA is covered in [experiments](./experiments/README.md) | The serving configuration is the object of study, so the knobs that move a number are already wired up |
 | 🔬 [**Profiling and interconnect studies**](#profile-gpus-with-nsight-systems) | Captures [Nsight Systems](https://developer.nvidia.com/nsight-systems) traces, and isolates the interconnect with [nccl-tests](https://github.com/NVIDIA/nccl-tests) | Explains a ceiling that a sweep can only locate. A trace has already overturned a conclusion this repo had published |
-| 📚 [**Runbooks, not snippets**](#vllm-recipes) | Pairs every serving recipe with capacity sizing, prerequisites, verified steps and tear-down, from single-GPU `g7e.2xlarge` to multi-node `p6-b200.48xlarge` | The starting point is a working deployment rather than a blank manifest |
+| 📚 [**Runbooks, not snippets**](#vllm-recipes) | Pairs every serving recipe with capacity sizing, prerequisites, verified steps and tear-down, from single-GPU `g7e.2xlarge` to 8-GPU `p6-b200.48xlarge` | The starting point is a working deployment rather than a blank manifest |
 
 ## Prerequisites
 
 - [Create an EKS cluster with GPU nodes](https://docs.aws.amazon.com/eks/latest/userguide/getting-started.html) (g6e, g7e, p5, p6 or p6e family)
 - [Install the NVIDIA device plugin](https://github.com/NVIDIA/k8s-device-plugin#quick-start)
 - [Get a Hugging Face token](https://huggingface.co/settings/tokens) (read-only access)
-- [Create the weights filesystem and the `fsx-pvc` claim](./k8s/examples/README.md#creating-the-weights-filesystem) (recipes mount this claim and do not create it)
-- [Create the `vllm-sitecustomize` ConfigMap](./k8s/examples/configmap-vllm-sitecustomize.yaml) (without it a server exits at startup with an error about repository ids that does not name the cause)
+- [Create the weights filesystem and the `fsx-pvc` claim](./k8s/examples/README.md#creating-the-weights-filesystem) (the GLM-5.2 recipe and the quantize and verify Jobs mount this claim; they do not create it)
 
 ## Quickstart
 
@@ -53,13 +52,9 @@ pip install -e '.[tokenizer]'
 eks-bench --help
 ```
 
-### 2. Log in
+### 2. Build the quantizer image (only for recipes that quantize locally)
 
-Many of the benchmarking recipes in this repository require Docker to build the quantizer image (e.g., in FP8). Either log-in to **Docker Desktop**, or log-in from the CLI:
-
-```bash
-docker login
-```
+Recipes without a published quantized checkpoint build the quantizer image in-cluster with kaniko. The runbook step does this and needs no local Docker. To build on x86 Docker instead, run `docker login` and then `./scripts/push-image.sh`.
 
 ### 3. Follow the selected runbook
 
@@ -86,14 +81,14 @@ The recipes in this section tune the server for throughput and real-time latency
 | Model | Precisions | Instance types | Model guide |
 | ----- | ---------- | -------------- | ----------- |
 | GLM-5.2 | FP8, NVFP4 | `p6-b200.48xlarge`, `p6-b300.48xlarge` | [README](./docs/runbooks/glm-5.2/README.md) |
-| Kimi K3 | MXFP4 | `p6-b200.48xlarge`, `p6-b300.48xlarge` | [README](./docs/runbooks/kimi-k3/README.md) |
+| Kimi K3 | MXFP4 | `p6-b300.48xlarge` | [README](./docs/runbooks/kimi-k3/README.md) |
 | Llama 4 Maverick | FP8 | `p6-b200.48xlarge` | [README](./docs/runbooks/llama4-maverick/README.md) |
-| Mistral Large 3 | FP8 | `p5en.48xlarge` | [README](./docs/runbooks/mistral-large-3/README.md) |
+| Mistral Large 3 | FP8 | `p5en.48xlarge`, `p6-b200.48xlarge` | [README](./docs/runbooks/mistral-large-3/README.md) |
 | Nemotron 3 Ultra | NVFP4 | `p6-b200.48xlarge` | [README](./docs/runbooks/nemotron-3-ultra/README.md) |
 | Muse-Glimmer 30B | FP8 | `g7e.48xlarge`, `p6-b200.48xlarge` | [README](./docs/runbooks/muse-glimmer-30b/README.md) |
 | Qwen2.5-7B-Instruct | FP8 | `g6e.12xlarge`, `g7e.12xlarge` | [README](./docs/runbooks/qwen2.5-7b/README.md) |
 | Qwen3-30B-A3B | FP8 | `g7e.12xlarge` | [README](./docs/runbooks/qwen3-30b-a3b/README.md) |
-| Gemma 4 31B | FP8 | `g7.24xlarge`, `p6-b200.48xlarge` | [README](./docs/runbooks/gemma4-31b/README.md) |
+| Gemma 4 31B | FP8 | `p6-b200.48xlarge` | [README](./docs/runbooks/gemma4-31b/README.md) |
 | Gemma 4 E4B | FP8 | `g7e.2xlarge`, `p5.4xlarge` | [README](./docs/runbooks/gemma4-e4b/README.md) |
 
 Each model guide lists every recipe for that model and links its runbook. [`vllm-recipes/README.md`](./vllm-recipes/README.md) indexes all of them in one table, with instance, GPU count, parallelism, workload kind and serving image per recipe. Recipes whose purpose is to measure the interconnect rather than serving performance are documented under [Interconnect studies](./experiments/README.md#interconnect-studies) in [`experiments/`](./experiments/) instead, and are absent from the model guides for that reason. The exception is Qwen3-30B-A3B: its default and `PIX` study arms are its top results, so they stay in `vllm-recipes/` and have runbooks in its model guide.
