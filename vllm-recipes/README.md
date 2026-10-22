@@ -68,7 +68,6 @@ Every recipe passes `--no-enable-prefix-caching`, so its benchmarks measure unca
 
 | Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
 |:---|:---|:---|:---|:---|:---|:---|:---|:---|
-| [Runbook](../docs/runbooks/gemma4-31b/fp8-g7.24xlarge-runbook.md) | `g7.24xlarge` | FP8 | 16-bit | Auto | 4x RTX PRO 4500 | TP4 | Deployment, Service | AWS DLC |
 | [Runbook](../docs/runbooks/gemma4-31b/fp8-p6-b200.48xlarge-fp8kv-32k-dp8-textonly-flashinfer-runbook.md) | `p6-b200.48xlarge` | FP8 | FP8 | `FLASHINFER` | 8x B200 | N/A | Deployment, Service | Upstream vLLM |
 
 ### Gemma 4 E4B
