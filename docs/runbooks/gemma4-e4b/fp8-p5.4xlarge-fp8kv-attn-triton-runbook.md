@@ -135,7 +135,7 @@ kubectl --context "$EKS_CLUSTER_NAME" delete nodepool bench-capacity-block --ign
 kubectl --context "$EKS_CLUSTER_NAME" delete ec2nodeclass bench-capacity-block --ignore-not-found
 ```
 
-Scale the quantization and benchmark-client node groups to zero too if you created them for this run. The checkpoint in S3 survives, so a later run skips Quickstart steps 4 to 6.
+Scale the quantization node group to zero too if you created it for this run. The checkpoint in S3 survives, so a later run skips Quickstart steps 4 to 6.
 
 ---
 

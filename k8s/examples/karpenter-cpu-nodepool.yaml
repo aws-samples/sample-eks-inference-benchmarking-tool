@@ -1,0 +1,66 @@
+#
+# The GPUs are still what the benchmark measures. The vLLM server runs on the GPU node and does all the
+# GPU work (TTFT, tokens/sec, throughput); the client here is only the load generator, sending HTTP
+# requests and timing the responses, and does no GPU work. Running it on a CPU node changes where the
+# requests come from, not what they hit: every request still travels to the GPU server and exercises the
+# GPUs. Separating them removes the CPU and NIC contention that a GPU-node client would add to the very
+# numbers under test, so the GPU figures come out cleaner, not diminished.
+#
+# Karpenter NodePool and EC2NodeClass for the in-cluster benchmark client. `main.py launch` runs the
+# load generator as a Job pinned to this pool (nodeSelector workload: cpu) requesting 8 CPU and no GPU,
+# so the client always runs on its own CPU node and never shares the serving node's CPU or NIC. Karpenter
+# launches one on-demand node when a run starts and scales it to zero when the run ends. The node is
+# sized to fit the Job, so an instance with fewer than 8 allocatable CPU is never chosen. scripts/
+# create-cluster.sh applies this once per cluster, so no runbook needs a benchmark-client node step.
+#
+# SUBSTITUTE: NODE_ROLE and CLUSTER_NAME (scripts/create-cluster.sh fills these). Do not kubectl apply
+# it directly.
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: bench-cpu
+spec:
+  # Resolves to the standard AL2023 AMI for CPU instance types.
+  amiSelectorTerms:
+    - alias: al2023@latest
+  role: NODE_ROLE
+  subnetSelectorTerms:
+    - tags: { karpenter.sh/discovery: CLUSTER_NAME }
+  securityGroupSelectorTerms:
+    - tags: { karpenter.sh/discovery: CLUSTER_NAME }
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs: { volumeSize: 100Gi, volumeType: gp3, encrypted: true, deleteOnTermination: true }
+  metadataOptions:
+    httpEndpoint: enabled
+    httpTokens: required
+    httpPutResponseHopLimit: 1
+  tags:
+    Project: eks-inference-benchmarking
+    NodeType: cpu
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: bench-cpu
+spec:
+  template:
+    metadata:
+      labels:
+        workload: cpu
+    spec:
+      nodeClassRef: { group: karpenter.k8s.aws, kind: EC2NodeClass, name: bench-cpu }
+      requirements:
+        # On-demand: a Spot reclaim mid-benchmark would discard the run.
+        - { key: karpenter.sh/capacity-type, operator: In, values: [on-demand] }
+        - { key: kubernetes.io/arch, operator: In, values: [amd64] }
+        - { key: karpenter.k8s.aws/instance-category, operator: In, values: [c, m] }
+        - { key: karpenter.k8s.aws/instance-generation, operator: Gt, values: ["5"] }
+      expireAfter: 720h
+  # A ceiling on the pool, enough for a few concurrent client Jobs; raise it for parallel runs.
+  limits:
+    cpu: "64"
+  # Remove the node only once it is empty, so a benchmark is never evicted mid-run.
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 5m

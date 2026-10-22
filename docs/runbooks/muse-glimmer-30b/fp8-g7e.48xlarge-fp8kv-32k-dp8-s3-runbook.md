@@ -129,7 +129,7 @@ aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-n
     --region "$AWS_REGION" --scaling-config minSize=0,maxSize=1,desiredSize=0
 ```
 
-Scale the quantization and benchmark-client node groups to zero too if you created them for this run. The checkpoint in S3 survives, so a later run skips Quickstart steps 4 and 5.
+Scale the quantization node group to zero too if you created it for this run. The checkpoint in S3 survives, so a later run skips Quickstart steps 4 and 5.
 
 ---
 

@@ -3,7 +3,8 @@
 # the pod installs dependencies, runs the suite against the server over cluster DNS, and returns
 # results through stdout markers. It exists because measuring through a port-forward added roughly
 # 185 ms of tunnel setup to every TTFT sample and dropped connections mid-run, and it requests no
-# GPU so the client never competes with the server it measures. A harness's extra dependencies are
+# GPU and pins to the standing bench-cpu NodePool, so the client runs on its own node and never
+# competes with the server it measures. A harness's extra dependencies are
 # pip-installed from a requirements file inside the payload, so the repo's pin is what runs in-
 # cluster, and every suite flag travels in one SUITE_ARGS string so adding a flag needs no change
 # here.
@@ -21,11 +22,10 @@ spec:
       labels: { app: bench-suite }
     spec:
       restartPolicy: Never
-      # CPU-only on purpose, since the harness is a client and must not compete with the server it measures.
-      tolerations:
-        - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
-        - { key: workload, operator: Exists, effect: NoSchedule }
-        - { key: capacity-reservation, operator: Exists, effect: NoSchedule }
+      # Pin to the standing bench-cpu NodePool so the client runs on its own CPU node and never shares
+      # the serving node's CPU or NIC, which would skew the server's TTFT and throughput.
+      nodeSelector:
+        workload: cpu
       containers:
         - name: runner
           # Full python image, not -slim: mlcommons-loadgen needs a C++ toolchain.

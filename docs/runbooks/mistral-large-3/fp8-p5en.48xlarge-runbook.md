@@ -143,11 +143,11 @@ Complete the following tasks before you perform the steps in this runbook.
 ```bash
 kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete \
     -f vllm-recipes/mistral-large-3/fp8-p5en.48xlarge.yaml --ignore-not-found
-aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-name gpu-spot-1node \
-    --region "$AWS_REGION" --scaling-config minSize=0,maxSize=1,desiredSize=0
+kubectl --context "$EKS_CLUSTER_NAME" delete \
+    nodepool/bench-p5en-48xlarge ec2nodeclass/bench-p5en-48xlarge --ignore-not-found
 ```
 
-Scale the benchmark-client node group to zero too if you created it for this run. The checkpoint in S3 survives, so a later run skips Quickstart step 5.
+Deleting the server leaves the node empty, and Karpenter scales it to zero. The checkpoint in S3 survives, so a later run skips Quickstart step 6.
 
 ---
 

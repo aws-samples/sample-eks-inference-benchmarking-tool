@@ -28,7 +28,6 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 - [Create a `g7e.2xlarge` node group](../../../k8s/examples/eksctl-nodegroup-g7e-2xl-spot.yaml) (give it every subnet in your FSx filesystem's availability zone)
 - [Create a `g7.2xlarge` node group for quantization](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (only if the checkpoint is not on the claim yet)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
-- A node with more than 8 allocatable CPU for the benchmark client, which is not the GPU node (an 8 vCPU node offers 7910m, so the Job stays Pending)
 - [Export the checkpoint to S3](../../../model-jobs/gemma4-e4b/fp8-model-export.yaml) (only when the claim is in a region the checkpoint was not quantized in)
 - A Lustre filesystem at version 2.15 if you create one for this (a 2.10 filesystem fails to mount with `mount.lustre ... Invalid argument`)
 
@@ -133,7 +132,7 @@ aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-n
     --region "$AWS_REGION" --scaling-config minSize=0,maxSize=1,desiredSize=0
 ```
 
-Delete the benchmark-client node group too if you created one for this run. The checkpoint on `fsx-pvc` survives, so a later run needs no requantization.
+The checkpoint on `fsx-pvc` survives, so a later run needs no requantization.
 
 ---
 
@@ -147,4 +146,4 @@ Delete the benchmark-client node group too if you created one for this run. The 
 - **KV scales are uncalibrated.** vLLM 0.29.0 rejects `--calculate-kv-scales`, so the server logs `Using KV cache scaling factor 1.0 for fp8_e4m3`. This bounds any quality comparison.
 - **`--no-enable-prefix-caching`** Held off for an uncached measurement. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
 - **g7e.2xlarge spot capacity is thin.** A single-subnet node group spent several minutes returning `InsufficientInstanceCapacity`. Check `aws ec2 get-spot-placement-scores` first and consider on-demand if the score is low.
-- **The benchmark client needs its own node.** `measure` runs the client as a Job requesting 8 dedicated CPUs, which an 8 vCPU instance cannot schedule.
+- **The benchmark client runs on the standing `bench-cpu` NodePool.** `measure` runs the client as a Job requesting 8 CPU, pinned off the serving node, so Karpenter launches a CPU node for it and scales it to zero after the run.

@@ -20,6 +20,13 @@ KARPENTER_ROLE=$(kubectl --context "$EKS_CLUSTER_NAME" --namespace karpenter get
 aws iam put-role-policy --role-name "${KARPENTER_ROLE##*/}" \
   --policy-name karpenter-capacity-reservations \
   --policy-document '{"Version":"2012-10-17","Statement":[{"Sid":"CapacityReservations","Effect":"Allow","Action":["ec2:DescribeCapacityReservations"],"Resource":"*"}]}'
+# Apply the standing CPU NodePool that every benchmark client Job runs on, off the serving node.
+echo "==> Applying the benchmark-client CPU NodePool"
+NODE_ROLE="${KARPENTER_NODE_ROLE:-eksctl-KarpenterNodeRole-${EKS_CLUSTER_NAME}}"
+DISCOVERY="${KARPENTER_DISCOVERY:-${EKS_CLUSTER_NAME}}"
+sed -e "s|NODE_ROLE|${NODE_ROLE}|g" -e "s|CLUSTER_NAME|${DISCOVERY}|g" \
+  "$SCRIPT_DIR/../k8s/examples/karpenter-cpu-nodepool.yaml" \
+  | kubectl --context "$EKS_CLUSTER_NAME" apply -f -
 # Show the cluster.
 echo "==> Showing cluster $EKS_CLUSTER_NAME"
 eksctl get cluster --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
