@@ -1,14 +1,14 @@
-# Gemma 4 E4B at FP8 with an FP8 KV cache on one p5.4xlarge (1x H100), Triton attention backend.
-# Weights are staged from S3 onto the node's local NVMe instance store.
-# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION in the init container, and serviceAccountName for any
-# service account with S3 read on the bucket (EKS Pod Identity).
+# Gemma 4 E4B at FP8 with an FP8 KV cache on one p5.4xlarge (1x H100), Triton attention backend. An init
+# container quantizes the model to FP8 onto the node's NVMe emptyDir at /models on first start, and vLLM
+# serves from it; no FSx claim or S3 is involved, and a pod restart simply re-quantizes.
+# SUBSTITUTE: 012345678901 and us-east-1 in the quantizer image reference (the deploy script fills these).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: gemma4-e4b-vllm-p5-4xl-fp8kv-triton
   labels: { app: gemma4-e4b-vllm-p5-4xl-fp8kv-triton }
 spec:
-  # The S3 weight sync can outlast the 600 s default progress deadline.
+  # The init-container quantize can outlast the 600 s default progress deadline.
   progressDeadlineSeconds: 3600
   replicas: 1
   strategy: { type: Recreate }
@@ -18,7 +18,6 @@ spec:
     metadata:
       labels: { app: gemma4-e4b-vllm-p5-4xl-fp8kv-triton }
     spec:
-      serviceAccountName: gemma4-e4b-bench
       nodeSelector:
         node.kubernetes.io/instance-type: "p5.4xlarge"
       tolerations:
@@ -26,30 +25,49 @@ spec:
           operator: Exists
           effect: NoSchedule
       initContainers:
-        - name: fetch-weights
-          image: public.ecr.aws/aws-cli/aws-cli:latest
-          command: ["bash", "-c"]
-          args:
+        # Quantizes Gemma 4 E4B to ModelOpt FP8 onto the shared /models emptyDir, then hands the GPU to
+        # vLLM. The vision and audio towers, projector and head stay 16-bit (QUANT_EXCLUDE_PATTERNS).
+        - name: quantize
+          image: 012345678901.dkr.ecr.us-east-1.amazonaws.com/serving-sweep-quantizer:latest
+          command:
+            - bash
+            - -c
             - |
               set -euo pipefail
-              D=/models/quantized/gemma-4-E4B-it-fp8
-              echo "weights sync start $(date -u)"; df -h /models | tail -1
-              aws s3 sync "s3://${WEIGHTS_BUCKET}/${WEIGHTS_PREFIX}/" "$D/" --region "${AWS_REGION}" --only-show-errors
-              SHARDS=$(find "$D" -name '*.safetensors' | wc -l)
-              SZ=$(du -s --block-size=1G "$D" | cut -f1)
-              echo "weights staged ${SZ} GiB, ${SHARDS} shards  $(date -u)"
-              test -f "$D/hf_quant_config.json" || { echo "FATAL: no hf_quant_config.json; not the ModelOpt FP8 export" >&2; exit 1; }
-              test "$SHARDS" -eq 1 || { echo "FATAL: expected 1 shard, got ${SHARDS}" >&2; exit 1; }
-              test "$SZ" -ge 10 || { echo "FATAL: expected ~11 GiB, got ${SZ} GiB" >&2; exit 1; }
+              nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+              cd /app/src && exec python quantize.py
           env:
-            - name: WEIGHTS_BUCKET
-              value: gemma4-e4b-model-weights-012345678901-us-east-1
-            - name: WEIGHTS_PREFIX
-              value: "gemma4-e4b-fp8-quantized"
-            - name: AWS_REGION
-              value: "us-east-1"
+            - name: MODEL_ID
+              value: "google/gemma-4-E4B-it"
+            - name: QUANTIZATION_FORMAT
+              value: "fp8"
+            # The default causal_lm auto-class cannot load this checkpoint.
+            - name: MODEL_LOADER
+              value: "image_text_to_text"
+            - name: QUANT_EXCLUDE_PATTERNS
+              value: "*vision_tower*,*embed_vision*,*multi_modal_projector*,*vision*,*audio_tower*,*embed_audio*,*audio*,*lm_head*"
+            - name: MODEL_CACHE_DIR
+              value: "/models/cache"
+            - name: OUTPUT_DIR
+              value: "/models/quantized"
+            - name: MODELOPT_REAL_EXPORT
+              value: "1"
+            - name: CALIBRATE
+              value: "1"
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef: { name: hf-token, key: token }
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+            requests:
+              cpu: "4"
+              memory: 20Gi
           volumeMounts:
             - { name: model-storage, mountPath: /models }
+            - { name: dshm, mountPath: /dev/shm }
       containers:
         - name: vllm
           image: vllm/vllm-openai:v0.29.0
@@ -136,9 +154,10 @@ spec:
       volumes:
         - name: dshm
           emptyDir: { medium: Memory }
-        # Must land on the NVMe instance store: set instanceStorePolicy RAID0 on the node class.
+        # Node-local NVMe (the RAID0 instance store provision-capacity-block.sh sets up); holds the base
+        # download plus the quantized checkpoint, and is discarded with the pod.
         - name: model-storage
-          emptyDir: { sizeLimit: 40Gi }
+          emptyDir: { sizeLimit: 100Gi }
       terminationGracePeriodSeconds: 120
 ---
 apiVersion: v1

@@ -13,7 +13,7 @@ The pool is not the constraint. `chat_terse` sends 96 wire input tokens with a 3
 | **Parameters** | 4B active, 8B on disk | Model card |
 | **Layers** | 42, of which 7 full attention and 35 sliding at window 512 | `config.json`, `text_config.layer_types` |
 | **KV heads, head dimension** | 2; 256 sliding, 512 full attention | `config.json`, `head_dim` and `global_head_dim` |
-| **Checkpoint size, FP8** | 11.09 GiB, one safetensors file | `fetch-weights` checks 1 shard and at least 10 GiB |
+| **Checkpoint size, FP8** | 11.09 GiB, one safetensors file | quantize init container output |
 | **Instance** | p5.4xlarge, 1x H100 at 80 GB, sm_90 | Instance type |
 | **Weight precision** | FP8 E4M3, static input scales | `hf_quant_config.json`, `quant_algo: FP8` |
 | **KV cache precision** | FP8 E4M3, uncalibrated scales | `KV_CACHE_DTYPE=fp8`; see Settings |
@@ -29,7 +29,6 @@ Complete the following tasks before you perform the steps in this runbook.
 
 - [Create an EKS cluster with Karpenter](../../../scripts/create-cluster.sh) (sets the discovery tags and node role that these steps rely on)
 - [Purchase a p5.4xlarge Capacity Block for ML](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-capacity-blocks.html) (p5 is not available on demand; note its reservation id for Quickstart step 4)
-- [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (only if the checkpoint is not in S3 yet)
 
 ## Quickstart
 
@@ -61,34 +60,14 @@ Complete the following tasks before you perform the steps in this runbook.
    ./scripts/provision-capacity-block.sh "$INSTANCE_TYPE" "$RESERVATION_ID"
    ```
 
-5. Provision an on-demand GPU node pool with NVMe RAID0 for the quantizer.
-   ```bash
-   ./scripts/provision-capacity.sh g7.2xlarge
-   ```
-
-6. Install the Pod Identity Agent and grant the `gemma4-e4b-bench` ServiceAccount S3 access.
-   ```bash
-   ./scripts/setup-pod-identity.sh gemma4-e4b-bench
-   ```
-
-7. Build the quantizer tool image in-cluster with kaniko, create the ECR repository, and push it. This step takes several minutes to complete. Alternatively, to build locally on x86 Docker, run `./scripts/push-image.sh`.
+5. Build the quantizer tool image in-cluster with kaniko, create the ECR repository, and push it. This step takes several minutes to complete. Alternatively, to build locally on x86 Docker, run `./scripts/push-image.sh`.
    ```bash
    ./scripts/push-image-kaniko.sh
    ```
 
-8. Quantize the model to ModelOpt FP8 on the `fsx-pvc` claim, then verify the checkpoint.
-   ```bash
-   ./model-jobs/gemma4-e4b/fp8-model-quantize.sh
-   ```
-
-9. Copy the quantized checkpoint from the claim to your S3 bucket.
-   ```bash
-   ./model-jobs/gemma4-e4b/fp8-model-fsx-to-s3.sh
-   ```
-
 ## Throughput test
 
-1. Deploy the inference server and confirm it serves the model.
+1. Deploy the inference server, whose init container quantizes Gemma 4 E4B to FP8 on NVMe on first start, and confirm it serves the model.
    ```bash
    ./vllm-recipes/gemma4-e4b/fp8-p5.4xlarge-fp8kv-attn-triton-deploy.sh
    ```
@@ -146,25 +125,21 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete \
     -f vllm-recipes/gemma4-e4b/fp8-p5.4xlarge-fp8kv-attn-triton.yaml --ignore-not-found
 kubectl --context "$EKS_CLUSTER_NAME" delete \
     nodepool/bench-cb-p5-4xlarge ec2nodeclass/bench-cb-p5-4xlarge --ignore-not-found
-kubectl --context "$EKS_CLUSTER_NAME" delete \
-    nodepool/bench-g7-2xlarge ec2nodeclass/bench-g7-2xlarge --ignore-not-found
 ```
 
-Deleting the server leaves the node empty, and Karpenter scales both the serving and quantize pools to zero. The checkpoint in S3 survives, so a later run skips Quickstart steps 5 and 7 to 9.
+Deleting the server leaves the node empty, and Karpenter scales it to zero.
 
 ---
 
 ## Settings
 
 - **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
+- **The checkpoint is node-local and ephemeral.** The init container re-quantizes to the NVMe `emptyDir` on every pod start, so there is no claim or S3 copy to persist. At 8B this adds a few minutes to startup, and on this Capacity Block node those minutes come out of the reserved GPU window.
 - **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable. It logs `Unknown vLLM environment variable detected: VLLM_ATTENTION_BACKEND` and proceeds on its auto-selected backend. The deploy script fails unless the server log reports `TRITON_ATTN`.
 - **`--config p5-fp8kv-attn-triton`** The `p5-` prefix gives this server its own accuracy gate, because the same checkpoint on a different GPU produces a different fingerprint.
 - **KV scales are uncalibrated.** vLLM 0.29.0 rejects `--calculate-kv-scales`, so the server logs `Using KV cache scaling factor 1.0 for fp8_e4m3`. This bounds any quality comparison.
 - **`--no-enable-prefix-caching`** Held off for an uncached measurement. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
 - **`--stream-interval 10`** The server streams in 10-token chunks. That changes inter-token latency only, so never compare ITL against a recipe with a different stream interval.
 - **`MAX_CUDAGRAPH=512`.** Matches the top concurrency level of the sweep, so every measured batch size is graph-captured and nothing is captured above it.
-- **Weights come from S3 into an `emptyDir`, not from the claim.** A pod restart re-downloads 11 GiB. The `fetch-weights` init container fails unless it finds `hf_quant_config.json`, exactly one shard and at least 10 GiB.
-- **The instance store must back the `emptyDir`.** The Capacity Block node class sets `instanceStorePolicy: RAID0`; without it the sync lands on the EBS root volume. Throughput step 2 confirms where `/models` is.
-- **`serviceAccountName: gemma4-e4b-bench`** Supplies the pod-scoped S3 read identity through EKS Pod Identity.
-- **The weights bucket is `gemma4-e4b-model-weights-<account-id>-<region>`.** The staging script creates it in `AWS_REGION` if it does not exist. The staging and deploy scripts fill the bucket name and `AWS_REGION` into each manifest as they apply it, so the files in git stay untouched.
-- **The copy-to-S3 staging Job runs as `gemma4-e4b-bench`.** It uses the same ServiceAccount as the server, so the one `setup-pod-identity.sh` association grants both the server's S3 read and the staging Job's S3 write.
+- **The instance store must back the `emptyDir`.** The Capacity Block node class sets `instanceStorePolicy: RAID0`; without it the quantize output lands on the EBS root volume. Throughput step 2 confirms where `/models` is.
+- **The benchmark client runs on the standing `bench-cpu` NodePool.** `measure` runs the client as a Job requesting 8 CPU, pinned off the serving node, so Karpenter launches a CPU node for it and scales it to zero after the run.
