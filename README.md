@@ -29,7 +29,7 @@ Each capability names the tool it is built on. This repo does not reimplement wh
 - [Create an EKS cluster with GPU nodes](https://docs.aws.amazon.com/eks/latest/userguide/getting-started.html) (g6e, g7e, p5, p6 or p6e family)
 - [Install the NVIDIA device plugin](https://github.com/NVIDIA/k8s-device-plugin#quick-start)
 - [Get a Hugging Face token](https://huggingface.co/settings/tokens) (read-only access)
-- [Create the weights filesystem and the `fsx-pvc` claim](./k8s/examples/README.md#creating-the-weights-filesystem) (the GLM-5.2 recipe and the quantize and verify Jobs mount this claim; they do not create it)
+- [Create the weights filesystem and the `fsx-pvc` claim](./k8s/examples/README.md#creating-the-weights-filesystem)
 
 ## Quickstart
 

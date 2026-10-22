@@ -29,7 +29,7 @@ KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, w
 
 Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
 
-- [Create an EKS cluster with Karpenter](../../../scripts/create-cluster.sh) (sets the discovery tags and node role that these steps rely on)
+- [Create an EKS cluster with Karpenter, Karpenter discovery tags and node role](../../../scripts/create-cluster.sh)
 
 ## Quickstart
 

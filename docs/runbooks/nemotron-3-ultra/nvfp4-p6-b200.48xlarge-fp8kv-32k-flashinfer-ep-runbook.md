@@ -32,8 +32,8 @@ Nemotron 3 Ultra is a hybrid of Mamba-2 and mixture-of-experts layers with 512 r
 
 Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
 
-- [Create an EKS cluster with Karpenter](../../../scripts/create-cluster.sh) (sets the discovery tags and node role that these steps rely on)
-- [Purchase a p6-b200.48xlarge Capacity Block for ML](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-capacity-blocks.html) (B200 is not available on demand; note the reservation id for subsequent steps)
+- [Create an EKS cluster with Karpenter, Karpenter discovery tags and node role](../../../scripts/create-cluster.sh)
+- [Purchase a p6-b200.48xlarge Capacity Block for ML](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-capacity-blocks.html) 
 
 ## Quickstart
 
