@@ -28,7 +28,7 @@ KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, w
 
 Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
 
-- [Create a `g6e.12xlarge` node group](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml)
+- [Create an EKS cluster with Karpenter](../../../scripts/create-cluster.sh) (sets the discovery tags and node role that these steps rely on)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
 
 ## Quickstart
@@ -57,23 +57,28 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-4. Build the quantizer image in-cluster with kaniko, which creates the ECR repository if needed and pushes it to your repository. This step takes several minutes to complete. To build locally instead, on an x86 machine with Docker, run `./scripts/push-image.sh`.
+4. Provision a GPU node pool with NVMe RAID0 for the instance type.
+   ```bash
+   ./scripts/provision-capacity.sh "$INSTANCE_TYPE"
+   ```
+
+5. Build the quantizer image in-cluster with kaniko, which creates the ECR repository if needed and pushes it to your repository. This step takes several minutes to complete. To build locally instead, on an x86 machine with Docker, run `./scripts/push-image.sh`.
    ```bash
    ./scripts/push-image-kaniko.sh
    ```
 
-5. Quantize the model to ModelOpt FP8 and save the checkpoint to the `fsx-pvc` claim.
+6. Quantize the model to ModelOpt FP8 and save the checkpoint to the `fsx-pvc` claim.
    ```bash
    ./model-jobs/qwen2.5-7b/fp8-model-quantize.sh
    ```
 
-6. Deploy the vLLM inference server and confirm it serves the model.
+7. Deploy the vLLM inference server and confirm it serves the model.
 
    ```bash
    ./vllm-recipes/qwen2.5-7b/fp8-g6e.12xlarge-deploy.sh
    ```
 
-7. Generate the accuracy gate (.JSON) that the benchmark checks against.
+8. Generate the accuracy gate (.JSON) that the benchmark checks against.
 
    ```bash
    eks-bench capture-reference \
@@ -84,7 +89,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --out-dir docs/results
    ```
 
-8. Dry-run the exact in-cluster benchmark.
+9. Dry-run the exact in-cluster benchmark.
 
    ```bash
    eks-bench measure \
@@ -99,7 +104,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-9. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
+10. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
 
    ```bash
    eks-bench measure \
@@ -116,7 +121,9 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 ## Tear down
 
 ```bash
-kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/qwen2.5-7b/fp8-g6e.12xlarge.yaml
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/qwen2.5-7b/fp8-g6e.12xlarge.yaml --ignore-not-found
+kubectl --context "$EKS_CLUSTER_NAME" delete \
+    nodepool/bench-g6e-12xlarge ec2nodeclass/bench-g6e-12xlarge --ignore-not-found
 ```
 
 ---
@@ -125,7 +132,7 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/qwe
 ## Settings
 
 - **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
-- **The checkpoint stays on the claim.** A later run can skip Quickstart steps 4 and 5.
+- **The checkpoint stays on the claim.** A later run can skip Quickstart steps 5 and 6.
 - **`QUANTIZATION=modelopt`** Serves the ModelOpt FP8 export the quantize step writes, using its `hf_quant_config.json` and calibrated input scales.
 - **16-bit KV cache.** The checkpoint carries no KV scales (`kv_cache_quant_algo` is `None`), and with `--kv-cache-dtype fp8_e4m3` the accuracy gate rejects the server because answers collapse into repetition.
 - **`--no-enable-prefix-caching`** `legacy_corpus` repeats five fixed prompts, so a cache-enabled server measures cache hits rather than prefill. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.

@@ -31,8 +31,8 @@ Nemotron 3 Ultra is a hybrid of Mamba-2 and mixture-of-experts layers, so most o
 
 Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
 
-- [Create a `p6-b200.48xlarge` node group](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (set the instance type)
-- [Mount its instance store as RAID0 for kubelet storage](../../../k8s/examples/nodeconfig-local-nvme-raid0.yaml) (the init container needs 400 GiB free)
+- [Create an EKS cluster with Karpenter](../../../scripts/create-cluster.sh) (sets the discovery tags and node role that these steps rely on)
+- [Purchase a p6-b200.48xlarge Capacity Block for ML](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-capacity-blocks.html) (B200 is not available on demand; note the reservation id for subsequent steps)
 
 ## Quickstart
 
@@ -43,6 +43,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-nemotron-3-ultra-fp8kv-32k-p6-b200-48xlarge
    export INSTANCE_TYPE=p6-b200.48xlarge
+   export RESERVATION_ID=<your-capacity-block-id>
    ```
 
 2. Install the `eks-bench` CLI into a Python virtual environment.
@@ -57,12 +58,17 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-4. Install the Pod Identity Agent and grant the `nemotron-3-ultra-bench` ServiceAccount S3 access.
+4. Provision a Capacity Block GPU node pool with NVMe RAID0 for the instance type.
+   ```bash
+   ./scripts/provision-capacity-block.sh "$INSTANCE_TYPE" "$RESERVATION_ID"
+   ```
+
+5. Install the Pod Identity Agent and grant the `nemotron-3-ultra-bench` ServiceAccount S3 access.
    ```bash
    ./scripts/setup-pod-identity.sh nemotron-3-ultra-bench
    ```
 
-5. Copy the published checkpoint from Hugging Face to your S3 bucket.
+6. Copy the published checkpoint from Hugging Face to your S3 bucket.
    ```bash
    ./model-jobs/nemotron-3-ultra/nvfp4-model-download.sh
    ```
@@ -121,11 +127,11 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete \
     -f vllm-recipes/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k.yaml --ignore-not-found
 kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete \
     job/nemotron-3-ultra-nvfp4-hf-to-s3 --ignore-not-found
-aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-name gpu-spot-1node \
-    --region "$AWS_REGION" --scaling-config minSize=0,maxSize=1,desiredSize=0
+kubectl --context "$EKS_CLUSTER_NAME" delete \
+    nodepool/bench-cb-p6-b200-48xlarge ec2nodeclass/bench-cb-p6-b200-48xlarge --ignore-not-found
 ```
 
-Scale the benchmark-client node group to zero too if you created it for this run. The checkpoint in S3 survives, so a later run skips Quickstart step 4.
+Deleting the server leaves the node empty, and Karpenter scales it to zero. The checkpoint in S3 survives, so a later run skips Quickstart step 6.
 
 ---
 

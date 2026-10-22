@@ -24,7 +24,8 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
 
 ## Before you begin
 
-- [Create a `p6-b300.48xlarge` node group](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml)
+- [Create an EKS cluster with Karpenter](../../../scripts/create-cluster.sh) (sets the discovery tags and node role that these steps rely on)
+- [Purchase a p6-b300.48xlarge Capacity Block for ML](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-capacity-blocks.html) (B300 is not available on demand; note the reservation id for subsequent steps)
 - [Create an ECR repository in your cluster's region](https://docs.aws.amazon.com/AmazonECR/latest/userguide/repository-create.html) for the custom vLLM image
 - [Build and push the custom vLLM image as `vllm-kimi-k3-efa:nccl2.29.7-efa1.49.0`](../../../k8s/examples/job-build-image-kaniko.yaml) (builds in-cluster on a CPU node)
 
@@ -39,6 +40,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-kimi-k3-mxfp4-p6-b300-dspark
    export INSTANCE_TYPE=p6-b300.48xlarge
+   export RESERVATION_ID=<your-capacity-block-id>
    ```
 
 2. Install the `eks-bench` CLI into a Python virtual environment.
@@ -54,27 +56,32 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
    ./scripts/install-prerequisites.sh
    ```
 
-4. Install the Pod Identity Agent and grant the `kimi-k3-bench` ServiceAccount S3 access.
+4. Provision a Capacity Block GPU node pool with NVMe RAID0 for the instance type.
+   ```bash
+   ./scripts/provision-capacity-block.sh "$INSTANCE_TYPE" "$RESERVATION_ID"
+   ```
+
+5. Install the Pod Identity Agent and grant the `kimi-k3-bench` ServiceAccount S3 access.
    ```bash
    ./scripts/setup-pod-identity.sh kimi-k3-bench
    ```
 
-5. Copy the published checkpoint from Hugging Face to your S3 bucket.
+6. Copy the published checkpoint from Hugging Face to your S3 bucket.
    ```bash
    ./model-jobs/kimi-k3/mxfp4-model-download.sh
    ```
 
-6. Copy the published DSpark draft model from Hugging Face to your S3 bucket.
+7. Copy the published DSpark draft model from Hugging Face to your S3 bucket.
    ```bash
    ./model-jobs/kimi-k3/dspark-draft-download.sh
    ```
 
-7. Deploy the vLLM inference server and confirm it serves the model.
+8. Deploy the vLLM inference server and confirm it serves the model.
    ```bash
    ./vllm-recipes/kimi-k3/mxfp4-p6-b300.48xlarge-dspark-deploy.sh
    ```
 
-8. Generate the accuracy gate (.JSON) that the benchmark checks against.
+9. Generate the accuracy gate (.JSON) that the benchmark checks against.
 
    ```bash
    eks-bench capture-reference \
@@ -86,7 +93,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
        --out-dir docs/results
    ```
 
-9. Dry-run the exact in-cluster benchmark.
+10. Dry-run the exact in-cluster benchmark.
 
    ```bash
    eks-bench measure \
@@ -102,7 +109,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
        --dry-run
    ```
 
-10. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
+11. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
 
    ```bash
    eks-bench measure \
@@ -120,13 +127,18 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
 ## Tear down
 
 ```bash
-kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/kimi-k3/mxfp4-p6-b300.48xlarge-dspark.yaml
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete \
+    -f vllm-recipes/kimi-k3/mxfp4-p6-b300.48xlarge-dspark.yaml --ignore-not-found
+kubectl --context "$EKS_CLUSTER_NAME" delete \
+    nodepool/bench-cb-p6-b300-48xlarge ec2nodeclass/bench-cb-p6-b300-48xlarge --ignore-not-found
 ```
+
+Deleting the server leaves the node empty, and Karpenter scales it to zero.
 
 ## Settings
 
 - **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
-- **The checkpoint stays in S3.** A later run can skip Quickstart steps 4 and 5; rerunning only copies files that are missing.
+- **The checkpoint stays in S3.** A later run can skip Quickstart steps 6 and 7; rerunning only copies files that are missing.
 - **`serviceAccountName: kimi-k3-bench`** Supplies the pod-scoped S3 identity used by the init container.
 - **`test -n "$(ls -A /models/kimi-k3-dspark 2>/dev/null)"`** Fails before model loading when the staged draft prefix is empty.
 - **`--speculative-config`** Loads `/models/kimi-k3-dspark` with the `dspark` method, seven speculative tokens, probabilistic draft sampling, and block rejection sampling.
