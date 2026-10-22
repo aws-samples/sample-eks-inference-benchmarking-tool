@@ -17,13 +17,13 @@ dependencies = [
     "click==8.5.0",
     "rich==15.0.0",
     "PyYAML==6.0.3",
-    "aiohttp==3.14.3",
+    "aiohttp==3.14.5",
 ]
 
 [project.optional-dependencies]
 # Measure prompt profiles against a real tokenizer: verify-prompts, list-prompts.
 tokenizer = [
-    "transformers==5.16.1",
+    "transformers==5.20.2",
     "jinja2==3.1.6",
     "tiktoken==0.14.0",
 ]
@@ -35,7 +35,7 @@ loadgen = [
 # Second independent load generator and trace replay: the corpus_aiperf, agentx and
 # trace_replay protocols, and selftest-aiperf. Pins a narrower Python range than this project.
 aiperf = [
-    "aiperf==0.12.0",
+    "aiperf==0.13.0",
 ]
 
 [project.scripts]

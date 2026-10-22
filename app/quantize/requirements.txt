@@ -1,8 +1,8 @@
 # Quantization tool dependencies.
-# Installed on top of the nvcr.io/nvidia/pytorch:25.03-py3 base image.
+# Installed on top of the nvcr.io/nvidia/pytorch:25.08-py3 base image.
 #
 # nvidia-modelopt[torch] (not [all]) avoids pulling in the 'datasets' package,
-# which conflicts with dill==0.3.9 pinned in the 25.03 base image.
-nvidia-modelopt[torch]>=0.29.0
-transformers>=5.12.0
-accelerate
+# which conflicts with the dill version pinned in the base image.
+nvidia-modelopt[torch]>=0.47.0,<0.48
+transformers>=5.12.0,<5.15
+accelerate>=1.15.0,<1.16
