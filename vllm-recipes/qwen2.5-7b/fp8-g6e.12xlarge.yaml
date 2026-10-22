@@ -64,7 +64,7 @@ spec:
             - { name: dshm, mountPath: /dev/shm }
       containers:
         - name: vllm
-          image: public.ecr.aws/deep-learning-containers/vllm:0.21.0-gpu-py312
+          image: vllm/vllm-openai:v0.29.0
           command:
             - bash
             - -c
@@ -74,9 +74,12 @@ spec:
               vllm serve ${MODEL_DIR} \
                 --quantization ${QUANTIZATION} \
                 --tensor-parallel-size ${TP_SIZE} \
+                --attention-backend ${ATTENTION_BACKEND} \
                 --gpu-memory-utilization ${GPU_MEM_UTIL} \
                 --max-num-seqs ${MAX_NUM_SEQS} \
                 --max-num-batched-tokens ${MAX_NUM_BATCHED_TOKENS} \
+                --max-cudagraph-capture-size ${MAX_CUDAGRAPH} \
+                --async-scheduling \
                 --no-enable-prefix-caching \
                 --enable-chunked-prefill \
                 --port 8000
@@ -91,10 +94,17 @@ spec:
               value: "512"
             - name: MAX_NUM_BATCHED_TOKENS
               value: "32768"
+            # Largest batch size captured as a CUDA graph; matches MAX_NUM_SEQS.
+            - name: MAX_CUDAGRAPH
+              value: "512"
             - name: GPU_MEM_UTIL
               value: "0.95"
             - name: QUANTIZATION
               value: "modelopt"
+            # Passed as --attention-backend because vLLM 0.29.0 ignores VLLM_ATTENTION_BACKEND.
+            # TRITON_ATTN is portable across GPU generations and serves a 16-bit KV cache.
+            - name: ATTENTION_BACKEND
+              value: "TRITON_ATTN"
             - name: INSTANCE_TYPE
               value: "g6e.12xlarge"
             - name: HUGGING_FACE_HUB_TOKEN

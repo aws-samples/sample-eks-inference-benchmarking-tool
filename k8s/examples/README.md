@@ -37,7 +37,7 @@ Model ids like `Qwen/Qwen2.5-7B-Instruct` are real values and are left as-is, so
 | `eksctl-cluster.yaml` | ClusterConfig | EKS cluster with the add-ons a GPU benchmark needs, and a CPU node group only |
 | `eksctl-nodegroup-gpu-spot.yaml` | ClusterConfig | Single-node Spot GPU group with node-local weights, several AZs |
 | `persistentvolume-fsx-lustre.yaml` | PersistentVolume + PersistentVolumeClaim | Bind an FSx for Lustre filesystem and claim it as `fsx-pvc` |
-| `configmap-vllm-sitecustomize.yaml` | ConfigMap | The runtime patch every `vllm-recipes/` manifest mounts |
+| `configmap-vllm-sitecustomize.yaml` | ConfigMap | The runtime patch the `vllm:0.21.0` interconnect-study experiments mount |
 | `job-build-image-kaniko.yaml` | ConfigMap + Job | Build a derived serving image in-cluster and push to ECR |
 | `job-node-driver-fix.yaml` | Job | Rebuild the NVIDIA open kernel module when GPUs do not register |
 | `pod-diagnostic-probe.yaml` | Pod | The throwaway-pod pattern for answering one question about a cluster |

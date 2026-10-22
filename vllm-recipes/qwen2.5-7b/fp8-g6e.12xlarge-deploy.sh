@@ -27,6 +27,12 @@ kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" exec \
   deployment/qwen7b-vllm-g6e-12xl-fp8 \
   --container vllm \
   -- sh -c "curl -s localhost:8000/metrics | grep 'vllm:cache_config_info'"
+# Print the attention backend the server selected.
+echo "==> Confirming the attention backend is TRITON_ATTN"
+kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" logs \
+  deployment/qwen7b-vllm-g6e-12xl-fp8 \
+  --container vllm \
+  | grep "Using AttentionBackendEnum.TRITON_ATTN backend"
 # Validate the serving manifest.
 echo "==> Validating the Qwen2.5-7B serving manifest"
 eks-bench validate-manifests \

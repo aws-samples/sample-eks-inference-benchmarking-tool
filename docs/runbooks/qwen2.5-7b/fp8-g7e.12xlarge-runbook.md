@@ -16,6 +16,7 @@ Qwen2.5-7B-Instruct at ModelOpt FP8 occupies 8.1 GiB of the 95.6 GiB on 1 RTX PR
 | **Tensor parallel size** | 1 | `TP_SIZE` |
 | **Weight precision** | ModelOpt FP8 | `QUANTIZATION` |
 | **KV cache precision** | 16-bit | No `--kv-cache-dtype`; see Settings |
+| **Attention backend** | `TRITON_ATTN` | `ATTENTION_BACKEND`; see Settings |
 | **Context length** | 32,768, not pinned by the recipe | `config.json`, `max_position_embeddings` |
 | **Memory fraction** | 0.95 | `GPU_MEM_UTIL` |
 | **Max sequences** | 512 | `MAX_NUM_SEQS` |
@@ -129,6 +130,8 @@ kubectl --context "$EKS_CLUSTER_NAME" delete \
 - **The checkpoint is node-local and ephemeral.** The init container re-quantizes to the NVMe `emptyDir` on every pod start, so there is no claim or S3 copy to persist; at 7B this adds a few minutes to startup.
 - **`QUANTIZATION=modelopt`** Serves the ModelOpt FP8 export the quantize step writes, using its `hf_quant_config.json` and calibrated input scales.
 - **16-bit KV cache.** The checkpoint carries no KV scales (`kv_cache_quant_algo` is `None`), and with `--kv-cache-dtype fp8_e4m3` the accuracy gate rejects the server because answers collapse into repetition.
+- **The backend is pinned with `--attention-backend TRITON_ATTN`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 ignores that environment variable. `TRITON_ATTN` is portable across GPU generations and serves a 16-bit KV cache; the deploy script fails unless the server logs `Using AttentionBackendEnum.TRITON_ATTN backend`. `FLASH_ATTN` may be faster here and is worth an A/B, because the 16-bit KV cache does not carry the FP8-KV restriction that forces Triton on some other recipes.
+- **`--async-scheduling` and `--max-cudagraph-capture-size 512`.** Async scheduling overlaps CPU-side scheduling with GPU compute, and the CUDA-graph capture size matches `MAX_NUM_SEQS`, so every batch up to the cap is graph-captured.
 - **`--no-enable-prefix-caching`** `legacy_corpus` repeats five fixed prompts, so a cache-enabled server measures cache hits rather than prefill. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
 - **`--enable-chunked-prefill`** Breaks long prefills into chunks so they share a step with decodes.
 - **`--gpu-memory-utilization=0.95`** Leaves the rest of the 96 GB card for activations and CUDA graphs.
