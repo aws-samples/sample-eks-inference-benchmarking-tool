@@ -29,7 +29,7 @@ Muse-Glimmer-30B is dense and its KV cache is light. 2 KV heads at head size 128
 Complete the following tasks before you perform the steps in this runbook.
 
 - [Create an EKS cluster with Karpenter](../../../scripts/create-cluster.sh) (sets the discovery tags and node role that these steps rely on)
-- [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (only if the checkpoint is not in S3 yet)
+- [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem)
 
 ## Quickstart
 
