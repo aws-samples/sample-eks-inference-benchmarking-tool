@@ -2,10 +2,14 @@
 set -euo pipefail
 : "${EKS_CLUSTER_NAME:?Set EKS_CLUSTER_NAME before running this script}"
 : "${NAMESPACE:?Set NAMESPACE before running this script}"
+: "${AWS_REGION:?Set AWS_REGION before running this script}"
+: "${AWS_ACCOUNT_ID:?Set AWS_ACCOUNT_ID before running this script}"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-# Deploy the Gemma 4 E4B server.
+# Deploy the Gemma 4 E4B server; its init container quantizes to FP8 using the quantizer image.
 echo "==> Deploying Gemma 4 E4B FP8 on g7e.2xlarge"
-kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f "$SCRIPT_DIR/fp8-g7e.2xlarge-fp8kv-attn-triton.yaml"
+sed -e "s|012345678901.dkr.ecr.us-east-1|${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}|" \
+  "$SCRIPT_DIR/fp8-g7e.2xlarge-fp8kv-attn-triton.yaml" \
+  | kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f -
 # Wait for the weights to stage and the server to start.
 echo "==> Waiting for the Gemma 4 E4B server"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" rollout status \
