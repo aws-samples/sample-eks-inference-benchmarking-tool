@@ -61,12 +61,12 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/provision-capacity.sh "$INSTANCE_TYPE"
    ```
 
-5. Build the quantizer image in-cluster with kaniko, which creates the ECR repository if needed and pushes it to your repository. This step takes several minutes to complete. To build locally instead, on an x86 machine with Docker, run `./scripts/push-image.sh`.
+5. Build the quantizer tool image in-cluster with kaniko, create the ECR repository, and push it. This step takes several minutes to complete. Alternatively, to build locally on x86 Docker, run `./scripts/push-image.sh`.
    ```bash
    ./scripts/push-image-kaniko.sh
    ```
 
-6. Deploy the vLLM inference server, whose init container quantizes to FP8 on NVMe on first start, and confirm it serves the model.
+6. Deploy the inference server, whose init container quantizes Qwen2.5-7B to FP8 on NVMe on first start, and confirm it serves the model.
 
    ```bash
    ./vllm-recipes/qwen2.5-7b/fp8-g6e.12xlarge-deploy.sh

@@ -62,7 +62,7 @@ Complete the following tasks before you perform the steps in this runbook.
    ./scripts/provision-capacity.sh "$INSTANCE_TYPE"
    ```
 
-5. Build the quantizer tool image (the toolbox, not the model) in-cluster with kaniko, which creates the ECR repository and pushes it. Takes several minutes; to build locally on x86 Docker instead, run `./scripts/push-image.sh`.
+5. Build the quantizer tool image in-cluster with kaniko, create the ECR repository, and push it. This step takes several minutes to complete. Alternatively, to build locally on x86 Docker, run `./scripts/push-image.sh`.
    ```bash
    ./scripts/push-image-kaniko.sh
    ```
