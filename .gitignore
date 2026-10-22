@@ -71,3 +71,7 @@ docs/prompt_tokens/*.json
 
 # Build metadata from `pip install -e .`
 *.egg-info/
+
+# Draft docs parked out of git on purpose. Work-in-progress guidance that is not ready to
+# publish lives here so it stays on disk without shipping in a clone.
+docs/drafts/

@@ -79,7 +79,7 @@ Some runbooks stage published quantized checkpoints with Jobs from [`model-jobs/
 
 Each runbook below contains the prerequisites to run each benchmark, the steps to run the benchmark, and tear down steps. Choose a model below to find available recipes, with links to each runbook.
 
-The recipes in this section tune the server for throughput and real-time latency. Throughput and latency move in opposite directions across a concurrency sweep. Read the [batch vs real-time inference methodology](./docs/guides/BATCH-VS-REALTIME-INFERENCE.md) before benchmarking.
+The recipes in this section tune the server for throughput and real-time latency. Throughput and latency move in opposite directions across a concurrency sweep.
 
 > **Cost gate:** unless the GPUs are part of a prepaid capacity block, tear down on-demand or Spot nodes as soon as the run finishes.
 
