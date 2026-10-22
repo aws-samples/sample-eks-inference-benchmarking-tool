@@ -11,6 +11,7 @@ Use any one of the following runbook recipes to get started. For additional flag
 | `p6-b200.48xlarge` | NVFP4, FP8 KV cache | `TRITON_ATTN` | Single node, 1 replica | 8 | 8 | [Runbook](./nvfp4-p6-b200.48xlarge-fp8kv-32k-runbook.md) |
 | `p6-b200.48xlarge` | NVFP4, FP8 KV cache | `FLASH_ATTN` | Single node, 1 replica | 8 | 8 | [Runbook](./nvfp4-p6-b200.48xlarge-fp8kv-32k-flashattn-runbook.md) |
 | `p6-b200.48xlarge` | NVFP4, FP8 KV cache | `FLASHINFER` | Single node, 1 replica | 8 | 8 | [Runbook](./nvfp4-p6-b200.48xlarge-fp8kv-32k-flashinfer-runbook.md) |
+| `p6-b200.48xlarge` | NVFP4, FP8 KV cache | `FLASHINFER`, expert parallel | Single node, 1 replica | 8 | 8 | [Runbook](./nvfp4-p6-b200.48xlarge-fp8kv-32k-flashinfer-ep-runbook.md) |
 
 ## Results
 
