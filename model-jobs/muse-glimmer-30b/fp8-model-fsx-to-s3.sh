@@ -9,6 +9,11 @@ WEIGHTS_BUCKET="muse-glimmer-30b-model-weights-$(aws sts get-caller-identity --q
 echo "==> Creating bucket $WEIGHTS_BUCKET"
 aws s3api head-bucket --bucket "$WEIGHTS_BUCKET" >/dev/null 2>&1 \
   || aws s3 mb "s3://$WEIGHTS_BUCKET" --region "$AWS_REGION"
+# Apply the muse-glimmer-30b-bench ServiceAccount the copy Job runs as.
+echo "==> Applying ServiceAccount muse-glimmer-30b-bench"
+kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" create serviceaccount muse-glimmer-30b-bench \
+  --dry-run=client -o yaml \
+  | kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" apply -f -
 # Start the Job that copies the quantized checkpoint from the claim to S3.
 echo "==> Copying the Muse-Glimmer-30B checkpoint to s3://$WEIGHTS_BUCKET/muse-glimmer-30b-fp8-quantized/"
 sed -e "s|value: muse-glimmer-30b-model-weights-012345678901-us-east-1|value: ${WEIGHTS_BUCKET}|" \

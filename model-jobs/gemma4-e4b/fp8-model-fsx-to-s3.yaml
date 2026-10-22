@@ -16,6 +16,7 @@ spec:
         app: gemma4-e4b-fp8-fsx-to-s3
     spec:
       restartPolicy: Never
+      serviceAccountName: gemma4-e4b-bench
       containers:
         - name: stager
           image: public.ecr.aws/aws-cli/aws-cli:latest

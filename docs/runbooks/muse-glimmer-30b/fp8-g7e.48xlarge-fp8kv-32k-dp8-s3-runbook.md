@@ -26,15 +26,10 @@ Muse-Glimmer-30B is dense and its KV cache is light. 2 KV heads at head size 128
 
 ## Before you begin
 
-Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
+Complete the following tasks before you perform the steps in this runbook.
 
-- [Create a `g7e.48xlarge` node group](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (set the instance type)
-- [Mount its instance store as RAID0 for kubelet storage](../../../k8s/examples/nodeconfig-local-nvme-raid0.yaml) (eight replicas stage 256 GiB)
-- [Install the EKS Pod Identity Agent add-on](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-agent-setup.html)
-- [Associate an S3 read role with the `muse-glimmer-30b-bench` ServiceAccount in your namespace through Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-association.html)
-- [Create a `g7e.2xlarge` node group for quantization](../../../k8s/examples/eksctl-nodegroup-g7e-2xl-spot.yaml) (only if the checkpoint is not in S3 yet)
+- [Create an EKS cluster with Karpenter](../../../scripts/create-cluster.sh) (sets the discovery tags and node role that these steps rely on)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (only if the checkpoint is not in S3 yet)
-- [Grant S3 write access to the staging Job](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-association.html) (only if the checkpoint is not in S3 yet)
 
 ## Quickstart
 
@@ -59,12 +54,27 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-4. Quantize the model to ModelOpt FP8 and save the checkpoint to the `fsx-pvc` claim.
+4. Provision a GPU node pool with NVMe RAID0 for the instance type.
+   ```bash
+   ./scripts/provision-capacity.sh "$INSTANCE_TYPE"
+   ```
+
+5. Provision an on-demand GPU node pool with NVMe RAID0 for the quantizer.
+   ```bash
+   ./scripts/provision-capacity.sh g7e.2xlarge
+   ```
+
+6. Install the Pod Identity Agent and grant the `muse-glimmer-30b-bench` ServiceAccount S3 access.
+   ```bash
+   ./scripts/setup-pod-identity.sh muse-glimmer-30b-bench
+   ```
+
+7. Quantize the model to ModelOpt FP8 and save the checkpoint to the `fsx-pvc` claim.
    ```bash
    ./model-jobs/muse-glimmer-30b/fp8-model-quantize.sh
    ```
 
-5. Copy the quantized checkpoint from the claim to your S3 bucket.
+8. Copy the quantized checkpoint from the claim to your S3 bucket.
    ```bash
    ./model-jobs/muse-glimmer-30b/fp8-model-fsx-to-s3.sh
    ```
@@ -125,11 +135,13 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 ```bash
 kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete \
     -f vllm-recipes/muse-glimmer-30b/fp8-g7e.48xlarge-fp8kv-32k-dp8-s3.yaml --ignore-not-found
-aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-name gpu-spot-1node \
-    --region "$AWS_REGION" --scaling-config minSize=0,maxSize=1,desiredSize=0
+kubectl --context "$EKS_CLUSTER_NAME" delete \
+    nodepool/bench-g7e-48xlarge ec2nodeclass/bench-g7e-48xlarge --ignore-not-found
+kubectl --context "$EKS_CLUSTER_NAME" delete \
+    nodepool/bench-g7e-2xlarge ec2nodeclass/bench-g7e-2xlarge --ignore-not-found
 ```
 
-Scale the quantization node group to zero too if you created it for this run. The checkpoint in S3 survives, so a later run skips Quickstart steps 4 and 5.
+Deleting the server leaves the node empty, and Karpenter scales both the serving and quantize pools to zero. The checkpoint in S3 survives, so a later run skips Quickstart steps 5, 7 and 8.
 
 ---
 
@@ -148,5 +160,5 @@ Scale the quantization node group to zero too if you created it for this run. Th
 - **Weights come from S3 into an `emptyDir`, not from the claim.** Each replica syncs its own copy, so a pod restart re-downloads 32 GiB. The `fetch-weights` init container fails unless it finds `config.json`, 4 shards and at least 28 GiB.
 - **`serviceAccountName: muse-glimmer-30b-bench`** Supplies the pod-scoped S3 read identity through EKS Pod Identity. Node roles on clusters with an IMDS hop limit of 1 are unreachable from pods.
 - **The weights bucket is `muse-glimmer-30b-model-weights-<account-id>-<region>`.** The staging script creates it in `AWS_REGION` if it does not exist. The staging and deploy scripts fill the bucket name and `AWS_REGION` into each manifest as they apply it, so the files in git stay untouched.
-- **The S3 staging Job sets no ServiceAccount.** It runs as the namespace's `default` ServiceAccount, so that is the identity the write role must be associated with.
+- **The copy-to-S3 staging Job runs as `muse-glimmer-30b-bench`.** It uses the same ServiceAccount as the server, so the one `setup-pod-identity.sh` association grants both the server's S3 read and the staging Job's S3 write.
 - **The quantize Job runs in the serving image.** The quantizer image's transformers predates `model_type: muse_glimmer`, so the Job installs ModelOpt and a newer transformers into `vllm/vllm-openai:v0.29.0` at start. It keeps the image encoder, projector, embeddings and head in 16-bit.

@@ -23,10 +23,9 @@ The pool is not the constraint. `chat_terse` sends 96 wire input tokens with a 3
 
 ## Before you begin
 
-Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
+Complete the following tasks before you perform the steps in this runbook.
 
-- [Create a `g7e.2xlarge` node group](../../../k8s/examples/eksctl-nodegroup-g7e-2xl-spot.yaml) (give it every subnet in your FSx filesystem's availability zone)
-- [Create a `g7.2xlarge` node group for quantization](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (only if the checkpoint is not on the claim yet)
+- [Create an EKS cluster with Karpenter](../../../scripts/create-cluster.sh) (sets the discovery tags and node role that these steps rely on)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
 - [Export the checkpoint to S3](../../../model-jobs/gemma4-e4b/fp8-model-export.yaml) (only when the claim is in a region the checkpoint was not quantized in)
 - A Lustre filesystem at version 2.15 if you create one for this (a 2.10 filesystem fails to mount with `mount.lustre ... Invalid argument`)
@@ -55,12 +54,22 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-4. Build the quantizer image in-cluster with kaniko, which creates the ECR repository if needed and pushes it to your repository. This step takes several minutes to complete. To build locally instead, on an x86 machine with Docker, run `./scripts/push-image.sh`.
+4. Provision a GPU node pool with NVMe RAID0 for the instance type.
+   ```bash
+   ./scripts/provision-capacity.sh "$INSTANCE_TYPE"
+   ```
+
+5. Provision an on-demand GPU node pool with NVMe RAID0 for the quantizer.
+   ```bash
+   ./scripts/provision-capacity.sh g7.2xlarge
+   ```
+
+6. Build the quantizer image in-cluster with kaniko, which creates the ECR repository if needed and pushes it to your repository. This step takes several minutes to complete. To build locally instead, on an x86 machine with Docker, run `./scripts/push-image.sh`.
    ```bash
    ./scripts/push-image-kaniko.sh
    ```
 
-5. Quantize the model to ModelOpt FP8 on the `fsx-pvc` claim, then verify the checkpoint.
+7. Quantize the model to ModelOpt FP8 on the `fsx-pvc` claim, then verify the checkpoint.
    ```bash
    ./model-jobs/gemma4-e4b/fp8-model-quantize.sh
    ```
@@ -128,18 +137,20 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 ```bash
 kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete \
     -f vllm-recipes/gemma4-e4b/fp8-g7e.2xlarge-fp8kv-attn-triton.yaml --ignore-not-found
-aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-name g7e-2xl-spot \
-    --region "$AWS_REGION" --scaling-config minSize=0,maxSize=1,desiredSize=0
+kubectl --context "$EKS_CLUSTER_NAME" delete \
+    nodepool/bench-g7e-2xlarge ec2nodeclass/bench-g7e-2xlarge --ignore-not-found
+kubectl --context "$EKS_CLUSTER_NAME" delete \
+    nodepool/bench-g7-2xlarge ec2nodeclass/bench-g7-2xlarge --ignore-not-found
 ```
 
-The checkpoint on `fsx-pvc` survives, so a later run needs no requantization.
+Deleting the server leaves the node empty, and Karpenter scales both the serving and quantize pools to zero. The checkpoint on `fsx-pvc` survives, so a later run needs no requantization.
 
 ---
 
 ## Settings
 
 - **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
-- **The checkpoint stays on the claim.** A later run can skip Quickstart steps 4 and 5.
+- **The checkpoint stays on the claim.** A later run can skip Quickstart steps 6 and 7.
 - **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable. It logs `Unknown vLLM environment variable detected: VLLM_ATTENTION_BACKEND` and proceeds on its auto-selected backend. The deploy script fails unless the server log reports `TRITON_ATTN`.
 - **The backend is pinned rather than auto-selected** because vLLM's auto-priority tables are written for sm_10x B200. This card is sm_120, so leaving it unset makes the backend an unrecorded variable.
 - **Why `TRITON_ATTN`.** It is portable across GPU generations and head sizes. `FLASH_ATTN` refuses an FP8 KV cache on this GPU at startup (`FP8 KV cache requires FA3 on SM90 or FA4 on SM100`). `FLASHINFER` serves, but its XQA decode path rejects `head_dim=512` and falls back to a slower native decode for the full-attention layers.

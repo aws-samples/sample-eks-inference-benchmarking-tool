@@ -25,14 +25,11 @@ The pool is not the constraint. `chat_terse` sends 96 wire input tokens with a 3
 
 ## Before you begin
 
-Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
+Complete the following tasks before you perform the steps in this runbook.
 
-- [Create a `p5.4xlarge` Capacity Block node pool](../../../k8s/examples/karpenter-capacity-block-nodepool.yaml) (it mounts the instance store as RAID0)
-- [Install the EKS Pod Identity Agent add-on](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-agent-setup.html)
-- [Associate an S3 read role with the `gemma4-e4b-bench` ServiceAccount in your namespace through Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-association.html)
-- [Create a `g7.2xlarge` node group for quantization](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (only if the checkpoint is not in S3 yet)
+- [Create an EKS cluster with Karpenter](../../../scripts/create-cluster.sh) (sets the discovery tags and node role that these steps rely on)
+- [Purchase a p5.4xlarge Capacity Block for ML](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-capacity-blocks.html) (p5 is not available on demand; note its reservation id for Quickstart step 4)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (only if the checkpoint is not in S3 yet)
-- [Grant S3 write access to the staging Job](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-association.html) (only if the checkpoint is not in S3 yet)
 
 ## Quickstart
 
@@ -44,6 +41,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-gemma4-e4b-fp8kv-triton-p5-4xlarge
    export INSTANCE_TYPE=p5.4xlarge
+   export RESERVATION_ID=<your-capacity-block-id>
    ```
 
 2. Install the `eks-bench` CLI into a Python virtual environment.
@@ -58,17 +56,32 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/install-prerequisites.sh
    ```
 
-4. Build the quantizer image in-cluster with kaniko, which creates the ECR repository if needed and pushes it to your repository. This step takes several minutes to complete. To build locally instead, on an x86 machine with Docker, run `./scripts/push-image.sh`.
+4. Provision a Capacity Block GPU node pool with NVMe RAID0 for the instance type.
+   ```bash
+   ./scripts/provision-capacity-block.sh "$INSTANCE_TYPE" "$RESERVATION_ID"
+   ```
+
+5. Provision an on-demand GPU node pool with NVMe RAID0 for the quantizer.
+   ```bash
+   ./scripts/provision-capacity.sh g7.2xlarge
+   ```
+
+6. Install the Pod Identity Agent and grant the `gemma4-e4b-bench` ServiceAccount S3 access.
+   ```bash
+   ./scripts/setup-pod-identity.sh gemma4-e4b-bench
+   ```
+
+7. Build the quantizer image in-cluster with kaniko, which creates the ECR repository if needed and pushes it to your repository. This step takes several minutes to complete. To build locally instead, on an x86 machine with Docker, run `./scripts/push-image.sh`.
    ```bash
    ./scripts/push-image-kaniko.sh
    ```
 
-5. Quantize the model to ModelOpt FP8 on the `fsx-pvc` claim, then verify the checkpoint.
+8. Quantize the model to ModelOpt FP8 on the `fsx-pvc` claim, then verify the checkpoint.
    ```bash
    ./model-jobs/gemma4-e4b/fp8-model-quantize.sh
    ```
 
-6. Copy the quantized checkpoint from the claim to your S3 bucket.
+9. Copy the quantized checkpoint from the claim to your S3 bucket.
    ```bash
    ./model-jobs/gemma4-e4b/fp8-model-fsx-to-s3.sh
    ```
@@ -131,11 +144,13 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 ```bash
 kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete \
     -f vllm-recipes/gemma4-e4b/fp8-p5.4xlarge-fp8kv-attn-triton.yaml --ignore-not-found
-kubectl --context "$EKS_CLUSTER_NAME" delete nodepool bench-capacity-block --ignore-not-found
-kubectl --context "$EKS_CLUSTER_NAME" delete ec2nodeclass bench-capacity-block --ignore-not-found
+kubectl --context "$EKS_CLUSTER_NAME" delete \
+    nodepool/bench-cb-p5-4xlarge ec2nodeclass/bench-cb-p5-4xlarge --ignore-not-found
+kubectl --context "$EKS_CLUSTER_NAME" delete \
+    nodepool/bench-g7-2xlarge ec2nodeclass/bench-g7-2xlarge --ignore-not-found
 ```
 
-Scale the quantization node group to zero too if you created it for this run. The checkpoint in S3 survives, so a later run skips Quickstart steps 4 to 6.
+Deleting the server leaves the node empty, and Karpenter scales both the serving and quantize pools to zero. The checkpoint in S3 survives, so a later run skips Quickstart steps 5 and 7 to 9.
 
 ---
 
@@ -152,4 +167,4 @@ Scale the quantization node group to zero too if you created it for this run. Th
 - **The instance store must back the `emptyDir`.** The Capacity Block node class sets `instanceStorePolicy: RAID0`; without it the sync lands on the EBS root volume. Throughput step 2 confirms where `/models` is.
 - **`serviceAccountName: gemma4-e4b-bench`** Supplies the pod-scoped S3 read identity through EKS Pod Identity.
 - **The weights bucket is `gemma4-e4b-model-weights-<account-id>-<region>`.** The staging script creates it in `AWS_REGION` if it does not exist. The staging and deploy scripts fill the bucket name and `AWS_REGION` into each manifest as they apply it, so the files in git stay untouched.
-- **The S3 staging Job sets no ServiceAccount.** It runs as the namespace's `default` ServiceAccount, so that is the identity the write role must be associated with.
+- **The copy-to-S3 staging Job runs as `gemma4-e4b-bench`.** It uses the same ServiceAccount as the server, so the one `setup-pod-identity.sh` association grants both the server's S3 read and the staging Job's S3 write.
