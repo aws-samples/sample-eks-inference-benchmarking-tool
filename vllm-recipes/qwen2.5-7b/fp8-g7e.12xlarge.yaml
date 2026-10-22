@@ -1,6 +1,8 @@
 # Qwen2.5-7B-Instruct at ModelOpt FP8 on one GPU of a g7e.12xlarge, with a 16-bit KV cache: the checkpoint
-# carries no KV scales, and an FP8 KV cache without them fails the accuracy gate.
-# SUBSTITUTE: fsx-pvc if your claim is named differently.
+# carries no KV scales, and an FP8 KV cache without them fails the accuracy gate. An init container
+# quantizes the model to FP8 onto the node's NVMe emptyDir at /models on first start, and vLLM serves from
+# it; no FSx claim or S3 is involved, and a pod restart simply re-quantizes.
+# SUBSTITUTE: 012345678901 and us-east-1 in the quantizer image reference (the deploy script fills these).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,6 +10,7 @@ metadata:
   labels: { app: qwen7b-vllm-g7e }
 spec:
   replicas: 1
+  strategy: { type: Recreate }
   selector:
     matchLabels: { app: qwen7b-vllm-g7e }
   template:
@@ -15,11 +18,50 @@ spec:
       labels: { app: qwen7b-vllm-g7e }
     spec:
       nodeSelector:
-        nvidia.com/gpu.present: "true"
+        node.kubernetes.io/instance-type: "g7e.12xlarge"
       tolerations:
         - key: nvidia.com/gpu
           operator: Exists
           effect: NoSchedule
+      initContainers:
+        # Quantizes Qwen2.5-7B to ModelOpt FP8 onto the shared /models emptyDir, then exits and hands
+        # the GPU to vLLM. quantize.py fails the pod if the export does not verify.
+        - name: quantize
+          image: 012345678901.dkr.ecr.us-east-1.amazonaws.com/serving-sweep-quantizer:latest
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+              cd /app/src && exec python quantize.py
+          env:
+            - name: MODEL_ID
+              value: "Qwen/Qwen2.5-7B-Instruct"
+            - name: QUANTIZATION_FORMAT
+              value: "fp8"
+            - name: MODEL_CACHE_DIR
+              value: "/models/cache"
+            - name: OUTPUT_DIR
+              value: "/models/quantized"
+            - name: MODELOPT_REAL_EXPORT
+              value: "1"
+            - name: CALIBRATE
+              value: "1"
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef: { name: hf-token, key: token }
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+            requests:
+              cpu: "4"
+              memory: 20Gi
+          volumeMounts:
+            - { name: model-storage, mountPath: /models }
+            - { name: dshm, mountPath: /dev/shm }
       containers:
         - name: vllm
           image: public.ecr.aws/deep-learning-containers/vllm:0.21.0-gpu-py312
@@ -84,8 +126,10 @@ spec:
       volumes:
         - name: dshm
           emptyDir: { medium: Memory }
+        # Node-local NVMe (the RAID0 instance store provision-capacity.sh sets up); holds the base
+        # download plus the quantized checkpoint, and is discarded with the pod.
         - name: model-storage
-          persistentVolumeClaim: { claimName: fsx-pvc }
+          emptyDir: { sizeLimit: 100Gi }
       terminationGracePeriodSeconds: 120
 ---
 apiVersion: v1

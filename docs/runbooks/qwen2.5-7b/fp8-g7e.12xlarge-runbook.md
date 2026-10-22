@@ -29,7 +29,6 @@ KV cache per layer per token is `2 x kv_heads x head_dim x bytes_per_element`, w
 Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
 
 - [Create an EKS cluster with Karpenter](../../../scripts/create-cluster.sh) (sets the discovery tags and node role that these steps rely on)
-- [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
 
 ## Quickstart
 
@@ -67,18 +66,13 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ./scripts/push-image-kaniko.sh
    ```
 
-6. Quantize the model to ModelOpt FP8 and save the checkpoint to the `fsx-pvc` claim.
-   ```bash
-   ./model-jobs/qwen2.5-7b/fp8-model-quantize.sh
-   ```
-
-7. Deploy the vLLM inference server and confirm it serves the model.
+6. Deploy the vLLM inference server, whose init container quantizes to FP8 on NVMe on first start, and confirm it serves the model.
 
    ```bash
    ./vllm-recipes/qwen2.5-7b/fp8-g7e.12xlarge-deploy.sh
    ```
 
-8. Generate the accuracy gate (.JSON) that the benchmark checks against.
+7. Generate the accuracy gate (.JSON) that the benchmark checks against.
 
    ```bash
    eks-bench capture-reference \
@@ -89,7 +83,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --out-dir docs/results
    ```
 
-9. Dry-run the exact in-cluster benchmark.
+8. Dry-run the exact in-cluster benchmark.
 
    ```bash
    eks-bench measure \
@@ -104,7 +98,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-10. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
+9. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
 
    ```bash
    eks-bench measure \
@@ -132,7 +126,7 @@ kubectl --context "$EKS_CLUSTER_NAME" delete \
 ## Settings
 
 - **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
-- **The checkpoint stays on the claim.** A later run can skip Quickstart steps 5 and 6.
+- **The checkpoint is node-local and ephemeral.** The init container re-quantizes to the NVMe `emptyDir` on every pod start, so there is no claim or S3 copy to persist; at 7B this adds a few minutes to startup.
 - **`QUANTIZATION=modelopt`** Serves the ModelOpt FP8 export the quantize step writes, using its `hf_quant_config.json` and calibrated input scales.
 - **16-bit KV cache.** The checkpoint carries no KV scales (`kv_cache_quant_algo` is `None`), and with `--kv-cache-dtype fp8_e4m3` the accuracy gate rejects the server because answers collapse into repetition.
 - **`--no-enable-prefix-caching`** `legacy_corpus` repeats five fixed prompts, so a cache-enabled server measures cache hits rather than prefill. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
