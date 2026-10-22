@@ -10,11 +10,8 @@ Recipes that share an instance type differ in their serving configuration, so th
 
 | Instance | Precision | `--config` | Node | GPUs | TP | PP | Runbook |
 | -------- | --------- | ---------- | ---- | ---- | -- | -- | ------- |
-| `p6-b200.48xlarge` | MXFP4 | `sts` | Multi node inference | 16 | 8 | 2 | [Runbook](./mxfp4-p6-b200.48xlarge-sts-runbook.md) |
 | `p6-b300.48xlarge` | MXFP4 | `baseline` | Single node inference | 8 | 8 | none | [Runbook](./mxfp4-p6-b300.48xlarge-baseline-runbook.md) |
 | `p6-b300.48xlarge` | MXFP4 | `dspark` | Single node inference | 8 | 8 | none | [Runbook](./mxfp4-p6-b300.48xlarge-dspark-runbook.md) |
-
-The multi node recipe uses 16 GPUs across two `p6-b200.48xlarge` nodes. It is a StatefulSet that runs tensor parallelism inside each node and pipeline parallelism between the two, with the rank 0 pod serving the API and rank 1 running headless.
 
 ## Results
 
