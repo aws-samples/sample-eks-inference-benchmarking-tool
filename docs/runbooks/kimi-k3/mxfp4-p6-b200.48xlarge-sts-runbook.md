@@ -24,10 +24,11 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
 
 ## Before you begin
 
-- [Create two `p6-b200.48xlarge` nodes with EFA interfaces](../../../k8s/examples/eksctl-nodegroup-gpu-efa.yaml)
+- [Create an EKS cluster with Karpenter](../../../scripts/create-cluster.sh) (sets the discovery tags and node role that these steps rely on)
+- [Purchase a p6-b200.48xlarge Capacity Block for ML sized for two nodes](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-capacity-blocks.html) (B200 is not available on demand; note its reservation id for Quickstart step 4)
 - [Create an ECR repository in your cluster's region](https://docs.aws.amazon.com/AmazonECR/latest/userguide/repository-create.html) for the custom vLLM image
 - [Build and push the custom vLLM image as `vllm-kimi-k3-efa:nccl2.29.7-efa1.49.0`](../../../k8s/examples/job-build-image-kaniko.yaml) (builds in-cluster on a CPU node)
-- [Install the EFA device plugin](https://github.com/aws/eks-charts/tree/master/stable/aws-efa-k8s-device-plugin) so each node advertises `vpc.amazonaws.com/efa: 8`
+- [Install the EFA device plugin](../../../scripts/install-efa-device-plugin.sh) so each node advertises `vpc.amazonaws.com/efa: 8`
 
 ## Quickstart
 
@@ -40,6 +41,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-kimi-k3-mxfp4-p6-b200-sts
    export INSTANCE_TYPE=p6-b200.48xlarge
+   export RESERVATION_ID=<your-capacity-block-id>
    ```
 
 2. Install the `eks-bench` CLI into a Python virtual environment.
@@ -55,22 +57,27 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
    ./scripts/install-prerequisites.sh
    ```
 
-4. Install the Pod Identity Agent and grant the `kimi-k3-bench` ServiceAccount S3 access.
+4. Provision a two-node Capacity Block GPU node pool with EFA and NVMe RAID0 for the instance type.
+   ```bash
+   ./scripts/provision-capacity-block-efa.sh "$INSTANCE_TYPE" "$RESERVATION_ID"
+   ```
+
+5. Install the Pod Identity Agent and grant the `kimi-k3-bench` ServiceAccount S3 access.
    ```bash
    ./scripts/setup-pod-identity.sh kimi-k3-bench
    ```
 
-5. Copy the published checkpoint from Hugging Face to your S3 bucket.
+6. Copy the published checkpoint from Hugging Face to your S3 bucket.
    ```bash
    ./model-jobs/kimi-k3/mxfp4-model-download.sh
    ```
 
-6. Deploy the vLLM inference server and confirm it serves the model.
+7. Deploy the vLLM inference server and confirm it serves the model.
    ```bash
    ./vllm-recipes/kimi-k3/mxfp4-p6-b200.48xlarge-sts-deploy.sh
    ```
 
-7. Generate the accuracy gate (.JSON) that the benchmark checks against.
+8. Generate the accuracy gate (.JSON) that the benchmark checks against.
 
    ```bash
    eks-bench capture-reference \
@@ -82,7 +89,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
        --out-dir docs/results
    ```
 
-8. Dry-run the exact in-cluster benchmark.
+9. Dry-run the exact in-cluster benchmark.
 
    ```bash
    eks-bench measure \
@@ -98,7 +105,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
        --dry-run
    ```
 
-9. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
+10. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
 
    ```bash
    eks-bench measure \
@@ -116,13 +123,18 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
 ## Tear down
 
 ```bash
-kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/kimi-k3/mxfp4-p6-b200.48xlarge-sts.yaml
+kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete \
+    -f vllm-recipes/kimi-k3/mxfp4-p6-b200.48xlarge-sts.yaml --ignore-not-found
+kubectl --context "$EKS_CLUSTER_NAME" delete \
+    nodepool/bench-cb-efa-p6-b200-48xlarge ec2nodeclass/bench-cb-efa-p6-b200-48xlarge --ignore-not-found
 ```
+
+Deleting the server leaves both nodes empty, and Karpenter scales them to zero. The checkpoint in S3 survives, so a later run skips Quickstart step 6.
 
 ## Settings
 
 - **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
-- **The checkpoint stays in S3.** A later run can skip Quickstart step 4; rerunning only copies files that are missing.
+- **The checkpoint stays in S3.** A later run can skip Quickstart step 6; rerunning only copies files that are missing.
 - **`publishNotReadyAddresses: true`** Publishes rank DNS before readiness and avoids a circular rendezvous wait.
 - **`Service/kimi-k3-b200-api`** Selects only `kimi-k3-b200-0`, the rank that owns the API server.
 - **`RANK="${HOSTNAME##*-}"`** Uses the StatefulSet ordinal as the distributed node rank.
@@ -133,6 +145,7 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/kim
 - **`memory: 1500Gi`** Constrains page-cache pressure inside the pod cgroup.
 - **`emptyDir: { sizeLimit: 2000Gi }`** Is pod-local ephemeral storage rooted wherever kubelet stores `emptyDir`; the free-space check does not prove NVMe placement. A replaced pod syncs the checkpoint again.
 - **`NCCL_DEBUG=INFO`** Records whether NCCL selected OFI/EFA rather than sockets.
+- **Prove EFA is active before trusting cross-node figures.** The container runs `verify-efa-nccl` and logs NCCL's transport at startup. Karpenter attaches EFA only because the pod requests `vpc.amazonaws.com/efa`, so confirm the server log shows NCCL chose OFI/EFA, not TCP, before recording a result. A silent TCP fallback still serves but reports degraded cross-node throughput. This two-node EFA path over a Karpenter pool is unvalidated until a live run confirms it.
 - **`add: ["IPC_LOCK"]`** Supplies the capability required by EFA/libfabric.
 - **`vllm-kimi-k3-efa:nccl2.29.7-efa1.49.0`** Carries matched NCCL and `aws-ofi-nccl` versions, recorded in the tag. Without the plugin NCCL can fall back to TCP while the server still starts.
 - **The weights bucket is `kimi-k3-model-weights-<account-id>-<region>`.** The staging script creates it in `AWS_REGION` if it does not exist. The staging and deploy scripts fill the bucket name, `AWS_REGION` and the image registry from `AWS_ACCOUNT_ID` into each manifest as they apply it, so the files in git stay untouched.

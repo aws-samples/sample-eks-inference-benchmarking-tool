@@ -35,7 +35,6 @@ Model ids like `Qwen/Qwen2.5-7B-Instruct` are real values and are left as-is, so
 | File | Kind | Purpose |
 |---|---|---|
 | `eksctl-cluster.yaml` | ClusterConfig | EKS cluster with the add-ons a GPU benchmark needs, and a CPU node group only |
-| `eksctl-nodegroup-gpu-efa.yaml` | ClusterConfig | Multi-node GPU group with EFA, one AZ, for distributed serving |
 | `eksctl-nodegroup-gpu-spot.yaml` | ClusterConfig | Single-node Spot GPU group with node-local weights, several AZs |
 | `persistentvolume-fsx-lustre.yaml` | PersistentVolume + PersistentVolumeClaim | Bind an FSx for Lustre filesystem and claim it as `fsx-pvc` |
 | `configmap-vllm-sitecustomize.yaml` | ConfigMap | The runtime patch every `vllm-recipes/` manifest mounts |
@@ -90,18 +89,6 @@ aws ec2 get-spot-placement-scores \
 ```
 
 Use only zones that the cluster has subnets in. Multi-node EFA and FSx-backed workloads normally narrow this further to one zone.
-
-### `eksctl-nodegroup-gpu-efa.yaml`
-
-The node label gives a serving manifest's `nodeSelector` something to target. The taint keeps general workloads off GPU nodes, and serving pods tolerate it explicitly. ECR read access is needed to pull the serving image.
-
-All nodes must sit in one availability zone, which is why there is a single subnet, and that zone should match the filesystem. Create the group from a substituted copy:
-
-```bash
-eksctl create nodegroup -f my-efa-nodegroup.yaml   # copy of k8s/examples/eksctl-nodegroup-gpu-efa.yaml
-```
-
-For multi-node EFA installation, allocatable-resource checks, and transport verification, follow the [Kimi K3 two-node StatefulSet runbook](../../docs/runbooks/kimi-k3/mxfp4-p6-b200.48xlarge-sts-runbook.md#quickstart).
 
 ### `eksctl-nodegroup-gpu-spot.yaml`
 

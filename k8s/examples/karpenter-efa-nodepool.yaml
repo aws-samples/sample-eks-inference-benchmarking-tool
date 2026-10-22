@@ -1,0 +1,63 @@
+#
+# Karpenter NodePool and EC2NodeClass for a multi-node GPU serving run over EFA, launched into one EC2
+# Capacity Block. It is the capacity-block pool with two differences: the GPU limit covers more than one
+# node, and the pod drives EFA. Karpenter attaches the instance's EFA network interfaces when a pod
+# requests the vpc.amazonaws.com/efa resource, so no EFA field is set here; the recipe makes that request
+# and the EFA device plugin advertises the interfaces. The Capacity Block reservation co-locates its
+# instances, so the nodes land in one Availability Zone and RDMA stays intra-AZ.
+#
+# The pool name is distinct from the single-node bench-cb-<instance> pool so the two never overwrite each
+# other when both target the same instance type.
+#
+# scripts/provision-capacity-block-efa.sh fills the placeholders and applies this. Do not kubectl apply it directly.
+# SUBSTITUTE: NODE_NAME, NODE_ROLE, CLUSTER_NAME, INSTANCE_TYPE, RESERVATION_ID, GPU_LIMIT (the script fills these).
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: NODE_NAME
+spec:
+  # Resolves to the accelerated AL2023 AMI (NVIDIA driver) for GPU instance types.
+  amiSelectorTerms:
+    - alias: al2023@latest
+  role: NODE_ROLE
+  subnetSelectorTerms:
+    - tags: { karpenter.sh/discovery: CLUSTER_NAME }
+  securityGroupSelectorTerms:
+    - tags: { karpenter.sh/discovery: CLUSTER_NAME }
+  capacityReservationSelectorTerms:
+    - id: RESERVATION_ID
+  # Mounts every instance-store NVMe device as one RAID0 array for kubelet ephemeral storage.
+  instanceStorePolicy: RAID0
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs: { volumeSize: 100Gi, volumeType: gp3, encrypted: true, deleteOnTermination: true }
+  metadataOptions:
+    httpEndpoint: enabled
+    httpTokens: required
+    httpPutResponseHopLimit: 1
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: NODE_NAME
+spec:
+  template:
+    metadata:
+      labels:
+        workload: gpu-efa
+    spec:
+      nodeClassRef: { group: karpenter.k8s.aws, kind: EC2NodeClass, name: NODE_NAME }
+      requirements:
+        # "reserved" only: nothing launches outside the reservation, so no on-demand spill.
+        - { key: karpenter.sh/capacity-type, operator: In, values: [reserved] }
+        - { key: node.kubernetes.io/instance-type, operator: In, values: [INSTANCE_TYPE] }
+      taints:
+        - { key: nvidia.com/gpu, effect: NoSchedule }
+      expireAfter: 720h
+  # Covers every node of the multi-node run, so the pool stops once all its nodes are up.
+  limits:
+    nvidia.com/gpu: GPU_LIMIT
+  # Remove a node only once it is empty, so a benchmark is never evicted mid-run.
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 1h
