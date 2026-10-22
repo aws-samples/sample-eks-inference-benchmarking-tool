@@ -65,7 +65,7 @@ Use these sentences for runbook steps, word for word, in the order the steps occ
 |---|---|
 | Variables | Set environment variables. |
 | CLI | Install the `eks-bench` CLI into a Python virtual environment. |
-| Prerequisites | Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret. |
+| Prerequisites | Configure the EKS context and namespace, install the NVIDIA device plugin, create the `hf-token` secret, and grant ECR push permissions. |
 | Provision capacity | Provision a GPU node pool with NVMe RAID0 for the instance type. |
 | Provision capacity, Capacity Block | Provision a Capacity Block GPU node pool with NVMe RAID0 for the instance type. |
 | Pod Identity | Install the Pod Identity Agent and grant the `<model>-bench` ServiceAccount S3 access. |

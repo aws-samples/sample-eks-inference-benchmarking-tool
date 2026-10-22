@@ -27,7 +27,6 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
 - [Create a `g7e.2xlarge` node group](../../../k8s/examples/eksctl-nodegroup-g7e-2xl-spot.yaml) (give it every subnet in your FSx filesystem's availability zone)
 - [Create a `g7.2xlarge` node group for quantization](../../../k8s/examples/eksctl-nodegroup-gpu-spot.yaml) (only if the checkpoint is not on the claim yet)
-- [Install Docker](https://docs.docker.com/get-started/get-docker/) (builds the quantizer image on your machine)
 - [Install the FSx CSI driver and create the `fsx-pvc` claim](../../../k8s/examples/README.md#creating-the-weights-filesystem) (nothing mounts without the driver)
 - A node with more than 8 allocatable CPU for the benchmark client, which is not the GPU node (an 8 vCPU node offers 7910m, so the Job stays Pending)
 - [Export the checkpoint to S3](../../../model-jobs/gemma4-e4b/fp8-model-export.yaml) (only when the claim is in a region the checkpoint was not quantized in)
@@ -52,14 +51,14 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    pip install -e '.[tokenizer]'
    ```
 
-3. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
+3. Configure the EKS context and namespace, install the NVIDIA device plugin, create the `hf-token` secret, and grant ECR push permissions.
    ```bash
    ./scripts/install-prerequisites.sh
    ```
 
-4. Before proceeding, **log-in to Docker**. Build the quantizer image, create the ECR repository if needed, and push the image to your repository. This step takes several minutes to complete.
+4. Build the quantizer image in-cluster with kaniko, which creates the ECR repository if needed and pushes it to your repository. This step takes several minutes to complete. To build locally instead, on an x86 machine with Docker, run `./scripts/push-image.sh`.
    ```bash
-   ./scripts/push-image.sh
+   ./scripts/push-image-kaniko.sh
    ```
 
 5. Quantize the model to ModelOpt FP8 on the `fsx-pvc` claim, then verify the checkpoint.

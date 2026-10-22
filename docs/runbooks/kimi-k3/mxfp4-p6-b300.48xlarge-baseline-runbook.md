@@ -49,7 +49,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
    pip install -e '.[tokenizer]'
    ```
 
-3. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
+3. Configure the EKS context and namespace, install the NVIDIA device plugin, create the `hf-token` secret, and grant ECR push permissions.
 
    ```bash
    ./scripts/install-prerequisites.sh

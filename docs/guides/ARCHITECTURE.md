@@ -122,7 +122,8 @@ sample-eks-inference-benchmarking-tool/
 │       └── profile.sh                 # Launch-wraps `vllm serve` under nsys
 ├── scripts/
 │   ├── install-prerequisites.sh       # Configure EKS namespace, plugin, secret, and node check.
-│   ├── push-image.sh                  # Build and push the quantizer image to ECR
+│   ├── push-image.sh                  # Build and push the quantizer image to ECR (local Docker)
+│   ├── push-image-kaniko.sh           # Build and push the quantizer image to ECR, in-cluster with kaniko (no local Docker)
 │   ├── setup-pod-identity.sh          # Install the Pod Identity Agent and grant a ServiceAccount S3 access
 │   ├── patch-efa-plugin.sh            # Fixes the EFA device plugin's stale allow-list
 ├── k8s/examples/                      # Examples, not runnable as written. One per purpose,

@@ -4,10 +4,9 @@
 # Builds on an amd64 cluster node with no Docker daemon, so no local Docker is required and an
 # arm64 laptop never has to emulate the ~25 GB base. Pair of push-image.sh, which builds locally.
 #
-# The build identity (the ServiceAccount named by BUILD_SA, or the node role when it is "default")
-# must be allowed to push to ECR: ecr:GetAuthorizationToken, ecr:BatchCheckLayerAvailability,
-# ecr:InitiateLayerUpload, ecr:UploadLayerPart, ecr:CompleteLayerUpload, ecr:PutImage,
-# ecr:BatchGetImage. The build node needs ~120Gi of free ephemeral storage to unpack the base.
+# The ServiceAccount named by BUILD_SA (default quantizer-build) must have ECR push; create and
+# grant it once with scripts/setup-ecr-push.sh. The build node needs ~120Gi of free ephemeral
+# storage to unpack the base.
 #
 # Usage, from any directory:
 #   EKS_CLUSTER_NAME=my-cluster NAMESPACE=default AWS_REGION=us-east-1 \
@@ -19,7 +18,7 @@ set -euo pipefail
 : "${AWS_REGION:?Set AWS_REGION before running this script}"
 : "${AWS_ACCOUNT_ID:?Set AWS_ACCOUNT_ID to your 12-digit AWS account id}"
 TAG=${1:-latest}
-BUILD_SA=${BUILD_SA:-default}
+BUILD_SA=${BUILD_SA:-quantizer-build}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"

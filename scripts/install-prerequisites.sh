@@ -5,6 +5,7 @@ set -euo pipefail
 : "${EKS_CLUSTER_NAME:?Set EKS_CLUSTER_NAME before running this script}"
 : "${HUGGING_FACE_HUB_TOKEN:?Set HUGGING_FACE_HUB_TOKEN before running this script}"
 : "${NAMESPACE:?Set NAMESPACE before running this script}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Configure kubectl with a context named after the EKS cluster.
 echo "==> Configuring kubeconfig context $EKS_CLUSTER_NAME"
@@ -49,3 +50,9 @@ kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
 # Confirm the Hugging Face token secret exists.
 echo "==> Confirming secret $NAMESPACE/hf-token"
 kubectl --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" get secret hf-token
+
+# Grant the quantizer build ServiceAccount ECR push, so an in-cluster kaniko image build can push.
+# Quantization is the common path, so this is part of the standard prerequisites rather than a
+# per-runbook step. It needs IAM permissions (iam:CreateRole, iam:PutRolePolicy) and Pod Identity.
+echo "==> Granting the quantizer build ServiceAccount ECR push"
+"$SCRIPT_DIR/setup-ecr-push.sh"

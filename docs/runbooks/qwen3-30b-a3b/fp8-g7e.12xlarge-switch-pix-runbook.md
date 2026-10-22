@@ -56,7 +56,7 @@ Create the following before you start.
    pip install -e '.[tokenizer]'
    ```
 
-3. Configure the EKS context and namespace, install the NVIDIA device plugin, and create the `hf-token` secret.
+3. Configure the EKS context and namespace, install the NVIDIA device plugin, create the `hf-token` secret, and grant ECR push permissions.
    ```bash
    ./scripts/install-prerequisites.sh
    ```
