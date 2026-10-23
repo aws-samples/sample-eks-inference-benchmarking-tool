@@ -36,7 +36,8 @@ Every recipe passes `--no-enable-prefix-caching`, so its benchmarks measure unca
 
 | Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
 |:---|:---|:---|:---|:---|:---|:---|:---|:---|
-| [Runbook](../docs/runbooks/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-dp2tp4-flashinfer-ep-runbook.md) | `p6-b200.48xlarge` | NVFP4 | FP8 | `FLASHINFER` | 8x B200 | DP2 × TP4, expert parallel | Deployment, Service | Upstream vLLM |
+| [Runbook](../docs/runbooks/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-dp2tp4-bf16seq512-flashinfer-ep-runbook.md) | `p6-b200.48xlarge` | NVFP4 | FP8 | `FLASHINFER` | 8x B200 | DP2 × TP4, expert parallel | Deployment, Service | Upstream vLLM |
+| [Runbook](../docs/runbooks/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-dp2tp4-mtp5-flashinfer-ep-runbook.md) | `p6-b200.48xlarge` | NVFP4 | FP8 | `FLASHINFER` | 8x B200 | DP2 × TP4, expert parallel, MTP | Deployment, Service | Upstream vLLM |
 
 ### Muse-Glimmer 30B
 

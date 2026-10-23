@@ -1,25 +1,26 @@
 # Nemotron 3 Ultra 550B A55B at NVFP4 on one p6-b200.48xlarge, 8 GPUs, data parallel 2 over tensor
-# parallel 4 with expert parallelism, FP8 KV cache, 32k context, FLASHINFER attention backend.
-# Data-parallel attention (--data-parallel-size 2 --tensor-parallel-size 4) replaces TP8 on top of
-# EP; it is the only change from the -flashinfer-ep arm. Each DP rank owns an independent KV pool and
-# shards the weights TP4, which fits where pure DP8 OOMs; experts shard EP.
+# parallel 4 with expert parallelism, FP8 KV cache, 32k context, FLASHINFER attention backend, and
+# native MTP speculative decoding proposing 5 tokens.
+# --speculative-config (mtp, 5 tokens) is the only change from the -flashinfer-ep-dp2tp4 arm; it is
+# the A/B variable. The win shows in the low-concurrency latency pass; acceptance is captured
+# separately as a vllm:spec_decode_* delta. NVIDIA's Dynamo recipe runs this model with 5 MTP tokens.
 # SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION in the init container.
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4
-  labels: { app: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4 }
+  name: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4-mtp5
+  labels: { app: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4-mtp5 }
 spec:
   # The S3 weight sync outlasts the 600 s default progress deadline.
   progressDeadlineSeconds: 7200
   replicas: 1
   strategy: { type: Recreate }
   selector:
-    matchLabels: { app: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4 }
+    matchLabels: { app: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4-mtp5 }
   template:
     metadata:
-      labels: { app: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4 }
+      labels: { app: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4-mtp5 }
     spec:
       serviceAccountName: nemotron-3-ultra-bench
       nodeSelector:
@@ -90,7 +91,8 @@ spec:
               echo "=== flag surface check ==="
               for f in --attention-backend --kv-cache-dtype --max-cudagraph-capture-size \
                        --stream-interval --scheduling-policy --async-scheduling \
-                       --no-enable-prefix-caching --max-num-batched-tokens --enable-expert-parallel; do
+                       --no-enable-prefix-caching --max-num-batched-tokens --enable-expert-parallel \
+                       --speculative-config; do
                 vllm serve --help=all 2>/dev/null | grep -q -- "$f" \
                   && echo "  OK     $f" || echo "  ABSENT $f  <-- fix the command below"
               done
@@ -102,6 +104,7 @@ spec:
                 --data-parallel-size 2
                 --tensor-parallel-size 4
                 --enable-expert-parallel
+                --speculative-config '{"method": "mtp", "num_speculative_tokens": 5}'
                 --kv-cache-dtype "${KV_CACHE_DTYPE}"
                 --attention-backend "${ATTENTION_BACKEND}"
                 --gpu-memory-utilization "${GPU_MEM_UTIL}"
@@ -137,15 +140,20 @@ spec:
               value: "fcfs"
             - name: MAX_CUDAGRAPH
               value: "256"
+            # 0.80, not 0.90: MTP's draft pass and 5-token speculative buffers need headroom the KV
+            # pool would otherwise claim. At 0.90 warmup OOM'd needing ~15 GiB that was not reserved.
             - name: GPU_MEM_UTIL
-              value: "0.90"
+              value: "0.80"
             # Passed as --attention-backend because vLLM 0.29.0 ignores VLLM_ATTENTION_BACKEND.
             - name: ATTENTION_BACKEND
               value: "FLASHINFER"
+            # MTP compiles a draft pass on top of the target, so warmup outlasts the 600 s default.
+            - name: VLLM_ENGINE_READY_TIMEOUT_S
+              value: "1800"
             - name: INSTANCE_TYPE
               value: "p6-b200.48xlarge"
             - name: BENCH_CONFIG
-              value: "b200-fp8kv-32k-dp2tp4-flashinfer-ep"
+              value: "b200-fp8kv-32k-dp2tp4-flashinfer-ep-mtp5"
             - name: PYTHONUNBUFFERED
               value: "1"
             # INFO logs the selected attention backend and quantization method at startup.
@@ -183,8 +191,8 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4
+  name: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4-mtp5
 spec:
-  selector: { app: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4 }
+  selector: { app: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4-mtp5 }
   ports:
     - { protocol: TCP, port: 8000, targetPort: 8000 }
