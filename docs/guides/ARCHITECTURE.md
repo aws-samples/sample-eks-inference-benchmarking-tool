@@ -99,7 +99,7 @@ sample-eks-inference-benchmarking-tool/
 │   │   │   ├── arrival_rate.py        # Open loop (MLPerf LoadGen): SLA at a target QPS
 │   │   │   ├── aiperf_harness.py      # Second client (NVIDIA AIPerf) behind the same seam
 │   │   │   ├── aiperf_profiles.py     # Pinned profiles -> AIPerf custom-dataset JSONL
-│   │   │   ├── accuracy.py            # Correctness gate: fingerprint + GSM8K score
+│   │   │   ├── accuracy.py            # Accuracy gate: fingerprint + GSM8K score
 │   │   │   ├── suite.py               # Protocol-locked runner: reps, medians, protocol lock
 │   │   │   ├── launcher.py            # `measure`: suite or reference capture over cluster DNS
 │   │   │   ├── build_profiles.py      # Generate app/bench/data/prompt_profiles/ (deterministic)
