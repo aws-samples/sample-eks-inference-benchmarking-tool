@@ -8,7 +8,6 @@ Use any one of the following runbook recipes to get started. For additional flag
 
 | Instance | Precision | Attention backend | Node | GPUs | TP | Runbook |
 | -------- | --------- | ----------------- | ---- | ---- | -- | ------- |
-| `g7e.48xlarge` | FP8, FP8 KV cache | `TRITON_ATTN` | Single node, 8 replicas | 8 | unset | [Runbook](./fp8-g7e.48xlarge-fp8kv-32k-dp8-s3-runbook.md) |
 | `g7e.48xlarge` | FP8, FP8 KV cache | `FLASHINFER` | Single node, 8 replicas | 8 | unset | [Runbook](./fp8-g7e.48xlarge-fp8kv-32k-dp8-s3-flashinfer-runbook.md) |
 | `p6-b200.48xlarge` | FP8, FP8 KV cache | `FLASHINFER` | Single node, 1 replica | 1 | unset | [Runbook](./fp8-p6-b200.48xlarge-fp8kv-32k-flashinfer-runbook.md) |
 

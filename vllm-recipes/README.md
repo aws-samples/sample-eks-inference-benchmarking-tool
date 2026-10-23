@@ -43,7 +43,6 @@ Every recipe passes `--no-enable-prefix-caching`, so its benchmarks measure unca
 
 | Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
 |:---|:---|:---|:---|:---|:---|:---|:---|:---|
-| [Runbook](../docs/runbooks/muse-glimmer-30b/fp8-g7e.48xlarge-fp8kv-32k-dp8-s3-runbook.md) | `g7e.48xlarge` | FP8 | FP8 | `TRITON_ATTN` | 8x RTX PRO 6000 | N/A | Deployment, Service | Upstream vLLM |
 | [Runbook](../docs/runbooks/muse-glimmer-30b/fp8-g7e.48xlarge-fp8kv-32k-dp8-s3-flashinfer-runbook.md) | `g7e.48xlarge` | FP8 | FP8 | `FLASHINFER` | 8x RTX PRO 6000 | N/A | Deployment, Service | Upstream vLLM |
 | [Runbook](../docs/runbooks/muse-glimmer-30b/fp8-p6-b200.48xlarge-fp8kv-32k-flashinfer-runbook.md) | `p6-b200.48xlarge` | FP8 | FP8 | `FLASHINFER` | 1x B200 | N/A | Deployment, Service | Upstream vLLM |
 
