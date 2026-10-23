@@ -1,25 +1,27 @@
-# Llama 4 Maverick 17B 128E Instruct at FP8 on one p6-b200.48xlarge, 8 GPUs, tensor parallel 8,
-# FP8 KV cache, 32k context, FLASH_ATTN attention backend.
+# Nemotron 3 Ultra 550B A55B at NVFP4 on one p6-b200.48xlarge, 8 GPUs, data parallel 2 over tensor
+# parallel 4 with expert parallelism, FP8 KV cache, 32k context, FLASHINFER attention backend.
+# Data-parallel attention (--data-parallel-size 2 --tensor-parallel-size 4) replaces TP8 on top of
+# EP; it is the only change from the -flashinfer-ep arm. Each DP rank owns an independent KV pool and
+# shards the weights TP4, which fits where pure DP8 OOMs; experts shard EP.
 # SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION in the init container.
 ---
-# On B200, FLASH_ATTN selects FlashAttention 4, which supports an FP8 KV cache at head size 128.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: llama4-maverick-vllm-b200-fp8kv-32k-flashattn
-  labels: { app: llama4-maverick-vllm-b200-fp8kv-32k-flashattn }
+  name: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4
+  labels: { app: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4 }
 spec:
   # The S3 weight sync outlasts the 600 s default progress deadline.
   progressDeadlineSeconds: 7200
   replicas: 1
   strategy: { type: Recreate }
   selector:
-    matchLabels: { app: llama4-maverick-vllm-b200-fp8kv-32k-flashattn }
+    matchLabels: { app: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4 }
   template:
     metadata:
-      labels: { app: llama4-maverick-vllm-b200-fp8kv-32k-flashattn }
+      labels: { app: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4 }
     spec:
-      serviceAccountName: llama4-maverick-bench
+      serviceAccountName: nemotron-3-ultra-bench
       nodeSelector:
         node.kubernetes.io/instance-type: p6-b200.48xlarge
       tolerations:
@@ -47,20 +49,20 @@ spec:
                 exit 1
               fi
 
-              aws s3 sync "s3://${WEIGHTS_BUCKET}/${WEIGHTS_PREFIX}/" /models/llama4-maverick-fp8/ \
+              aws s3 sync "s3://${WEIGHTS_BUCKET}/${WEIGHTS_PREFIX}/" /models/nemotron-3-ultra-nvfp4/ \
                 --region "${AWS_REGION}" --only-show-errors
-              SZ=$(du -s --block-size=1G /models/llama4-maverick-fp8 | cut -f1)
-              SHARDS=$(find /models/llama4-maverick-fp8 -name '*.safetensors' | wc -l)
+              SZ=$(du -s --block-size=1G /models/nemotron-3-ultra-nvfp4 | cut -f1)
+              SHARDS=$(find /models/nemotron-3-ultra-nvfp4 -name '*.safetensors' | wc -l)
               echo "weights staged ${SZ} GiB, ${SHARDS} shards  $(date -u)"
-              test "$SZ" -ge 360 || { echo "FATAL: expected ~388 GiB, got ${SZ} GiB" >&2; exit 1; }
-              test "$SHARDS" -eq 84 || { echo "FATAL: expected 84 shards, got ${SHARDS}" >&2; exit 1; }
+              test "$SZ" -ge 300 || { echo "FATAL: expected ~328 GiB, got ${SZ} GiB" >&2; exit 1; }
+              test "$SHARDS" -eq 113 || { echo "FATAL: expected 113 shards, got ${SHARDS}" >&2; exit 1; }
           env:
             - name: MIN_FREE_GIB
-              value: "450"
+              value: "400"
             - name: WEIGHTS_BUCKET
-              value: llama4-maverick-model-weights-012345678901-us-east-1
+              value: nemotron-3-ultra-model-weights-012345678901-us-east-1
             - name: WEIGHTS_PREFIX
-              value: "llama4-maverick-fp8"
+              value: "nemotron-3-ultra-nvfp4"
             - name: AWS_REGION
               value: "us-east-1"
           volumeMounts:
@@ -88,16 +90,18 @@ spec:
               echo "=== flag surface check ==="
               for f in --attention-backend --kv-cache-dtype --max-cudagraph-capture-size \
                        --stream-interval --scheduling-policy --async-scheduling \
-                       --no-enable-prefix-caching --max-num-batched-tokens; do
+                       --no-enable-prefix-caching --max-num-batched-tokens --enable-expert-parallel; do
                 vllm serve --help=all 2>/dev/null | grep -q -- "$f" \
                   && echo "  OK     $f" || echo "  ABSENT $f  <-- fix the command below"
               done
 
-              echo "=== starting vLLM on ${INSTANCE_TYPE}: $(date -u) - loading ~388 GiB ==="
+              echo "=== starting vLLM on ${INSTANCE_TYPE}: $(date -u) - loading ~328 GiB ==="
               ARGS=(
-                /models/llama4-maverick-fp8
-                --served-model-name llama4-maverick
-                --tensor-parallel-size 8
+                /models/nemotron-3-ultra-nvfp4
+                --served-model-name nemotron-3-ultra
+                --data-parallel-size 2
+                --tensor-parallel-size 4
+                --enable-expert-parallel
                 --kv-cache-dtype "${KV_CACHE_DTYPE}"
                 --attention-backend "${ATTENTION_BACKEND}"
                 --gpu-memory-utilization "${GPU_MEM_UTIL}"
@@ -117,7 +121,7 @@ spec:
           ports:
             - containerPort: 8000
           env:
-            # No --quantization flag: vLLM detects the compressed-tensors FP8 export from the
+            # No --quantization flag: vLLM detects the mixed NVFP4/FP8 ModelOpt export from the
             # checkpoint config.
             - name: KV_CACHE_DTYPE
               value: "fp8"
@@ -137,11 +141,11 @@ spec:
               value: "0.90"
             # Passed as --attention-backend because vLLM 0.29.0 ignores VLLM_ATTENTION_BACKEND.
             - name: ATTENTION_BACKEND
-              value: "FLASH_ATTN"
+              value: "FLASHINFER"
             - name: INSTANCE_TYPE
               value: "p6-b200.48xlarge"
             - name: BENCH_CONFIG
-              value: "b200-fp8kv-32k-tp8-flashattn"
+              value: "b200-fp8kv-32k-dp2tp4-flashinfer-ep"
             - name: PYTHONUNBUFFERED
               value: "1"
             # INFO logs the selected attention backend and quantization method at startup.
@@ -171,7 +175,7 @@ spec:
             - { name: dshm, mountPath: /dev/shm }
       volumes:
         - name: models
-          emptyDir: { sizeLimit: 900Gi }
+          emptyDir: { sizeLimit: 800Gi }
         - name: dshm
           emptyDir: { medium: Memory, sizeLimit: 64Gi }
       terminationGracePeriodSeconds: 120
@@ -179,8 +183,8 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: llama4-maverick-vllm-b200-fp8kv-32k-flashattn
+  name: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4
 spec:
-  selector: { app: llama4-maverick-vllm-b200-fp8kv-32k-flashattn }
+  selector: { app: nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4 }
   ports:
     - { protocol: TCP, port: 8000, targetPort: 8000 }

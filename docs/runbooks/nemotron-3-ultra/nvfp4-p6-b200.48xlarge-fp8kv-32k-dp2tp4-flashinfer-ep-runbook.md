@@ -1,10 +1,12 @@
-# Nemotron 3 Ultra NVFP4 with an FP8 KV cache on p6-b200.48xlarge, FlashInfer attention
+# Nemotron 3 Ultra NVFP4 with an FP8 KV cache on p6-b200.48xlarge, FlashInfer attention, data-parallel attention over expert parallel
 
-Serves NVIDIA's published NVFP4 checkpoint [`nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4`](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4) as one tensor-parallel copy across all eight GPUs of a p6-b200.48xlarge, using [`nvfp4-p6-b200.48xlarge-fp8kv-32k-flashinfer.yaml`](../../../vllm-recipes/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-flashinfer.yaml).
+Serves NVIDIA's published NVFP4 checkpoint [`nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4`](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4) across all eight GPUs of a p6-b200.48xlarge as two data-parallel replicas, each a four-way tensor-parallel shard, with expert parallelism, using [`nvfp4-p6-b200.48xlarge-fp8kv-32k-flashinfer-ep-dp2tp4.yaml`](../../../vllm-recipes/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-flashinfer-ep-dp2tp4.yaml). Two independent engines (`--data-parallel-size 2`), each sharding the weights `--tensor-parallel-size 4` with `--enable-expert-parallel`, carry their own KV pool. On `corpus`/`coding_repo_context` this sustained about 4,057 tokens/sec at concurrency 512, well above a single eight-way tensor-parallel copy.
 
 ## Capacity sizing
 
-Nemotron 3 Ultra is a hybrid of Mamba-2 and mixture-of-experts layers, so most of its per-sequence memory is fixed state rather than KV cache. Only 12 of its 108 layers are attention layers. 2 KV heads at head size 128 across those 12 cost 6 KiB per token at FP8, so a full 32,768-token sequence holds 0.19 GiB of KV. Each of the 48 Mamba-2 layers keeps a float32 SSM state of 8 MiB, which adds about 0.38 GiB per sequence whatever its length. A full-length sequence therefore costs about 0.56 GiB across the eight GPUs, and the 256-sequence cap about 145 GiB. At a 0.90 memory fraction the ~328 GiB checkpoint leaves well over 800 GiB, so the 256-sequence cap, not memory, bounds the batch. vLLM pages attention and Mamba state together, so read `KV capacity from` and `KV full-ctx seqs` in the result file's provenance block for the allocation in force rather than dividing by the per-token figure.
+Nemotron 3 Ultra is a hybrid of Mamba-2 and mixture-of-experts layers with 512 routed experts, 22 active per token. A single eight-way tensor-parallel copy splits every matrix across all eight GPUs and serves one KV pool. This recipe instead runs two independent replicas of four GPUs each: each replica shards the weights four ways and owns its own KV pool, and the front end load-balances requests across the two. That roughly doubles the aggregate KV capacity and the number of concurrent sequences the node sustains, which is where the throughput gain comes from.
+
+Four-way tensor parallelism is the reason this fits. Pure data parallelism (`--data-parallel-size 8`, one GPU per replica) replicates the whole ~328 GiB checkpoint on every GPU and runs out of memory during KV allocation. Four-way sharding keeps each GPU's weight footprint near 51 GiB, leaving room for a 15.7M-token FP8 KV pool per replica. Enabling or changing any engine feature moves the KV pool, so re-read `KV capacity from` and `KV full-ctx seqs` in the result file's provenance block rather than assuming this allocation.
 
 `coding_repo_context` sends about 18.8k wire input tokens with this tokenizer and asks for up to 1,024 output tokens. Prompt processing through ~55B active parameters per token, not KV memory, is the limit for this workload.
 
@@ -18,7 +20,10 @@ Nemotron 3 Ultra is a hybrid of Mamba-2 and mixture-of-experts layers, so most o
 | **Mamba state per sequence** | ~0.38 GiB, float32 | `256 heads x 64 x 128 state x 4 bytes x 48 layers`; `mamba_ssm_cache_dtype` |
 | **Checkpoint size, NVFP4** | ~328 GiB, 113 safetensors shards | `fetch-weights` init container checks |
 | **Instance** | p6-b200.48xlarge, 8x B200 at 180 GB, sm_100, NVLink | `nvidia.com/gpu: "8"` |
-| **Tensor parallel size** | 8 | `--tensor-parallel-size 8` |
+| **Data parallel size** | 2 replicas | `--data-parallel-size 2` |
+| **Tensor parallel size** | 4 per replica | `--tensor-parallel-size 4` |
+| **Expert parallelism** | enabled | `--enable-expert-parallel` |
+| **KV pool** | 15,749,120 tokens per replica, ~480x concurrency | Result provenance, `KV capacity from` |
 | **Weight precision** | ModelOpt mixed NVFP4 and FP8, 243 modules kept high precision | Checkpoint `quantization_config`; no `--quantization` flag |
 | **KV cache precision** | FP8 | `KV_CACHE_DTYPE` |
 | **Attention backend** | `FLASHINFER` | `ATTENTION_BACKEND` |
@@ -41,7 +46,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    export AWS_REGION=<your-cluster-region>
    export EKS_CLUSTER_NAME=<your-cluster-name>
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
-   export NAMESPACE=vb-nemotron-3-ultra-fp8kv-32k-flashinfer-p6-b200-48xlarge
+   export NAMESPACE=vb-nemotron-3-ultra-fp8kv-32k-dp2tp4-flashinfer-ep-p6-b200-48xlarge
    export INSTANCE_TYPE=p6-b200.48xlarge
    export RESERVATION_ID=<your-capacity-block-id>
    ```
@@ -77,16 +82,16 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
 1. Deploy the inference server and confirm it serves the model.
    ```bash
-   ./vllm-recipes/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-flashinfer-deploy.sh
+   ./vllm-recipes/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-flashinfer-ep-dp2tp4-deploy.sh
    ```
 
 2. Generate the accuracy gate (.JSON) that the benchmark checks against.
    ```bash
    eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
-       --service nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer \
+       --service nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4 \
        --mode fingerprint \
-       --model-tag nemotron-3-ultra --config fp8kv-32k-flashinfer \
+       --model-tag nemotron-3-ultra --config fp8kv-32k-dp2tp4-flashinfer-ep \
        --model-id nemotron-3-ultra \
        --out-dir docs/results
    ```
@@ -95,10 +100,10 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
-       --service nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer \
+       --service nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4 \
        --protocol corpus --profile coding_repo_context \
        --instance p6-b200.48xlarge --model-tag nemotron-3-ultra \
-       --config fp8kv-32k-flashinfer --quant nvfp4 \
+       --config fp8kv-32k-dp2tp4-flashinfer-ep --quant nvfp4 \
        --model-id nemotron-3-ultra \
        --tokenizer nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4 \
        --out-dir docs/results \
@@ -110,10 +115,10 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
-       --service nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer \
+       --service nemotron-3-ultra-vllm-b200-fp8kv-32k-flashinfer-ep-dp2tp4 \
        --protocol corpus --profile coding_repo_context \
        --instance p6-b200.48xlarge --model-tag nemotron-3-ultra \
-       --config fp8kv-32k-flashinfer --quant nvfp4 \
+       --config fp8kv-32k-dp2tp4-flashinfer-ep --quant nvfp4 \
        --model-id nemotron-3-ultra \
        --tokenizer nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4 \
        --out-dir docs/results \
@@ -124,7 +129,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
 
 ```bash
 kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete \
-    -f vllm-recipes/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-flashinfer.yaml --ignore-not-found
+    -f vllm-recipes/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-flashinfer-ep-dp2tp4.yaml --ignore-not-found
 kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete \
     job/nemotron-3-ultra-nvfp4-hf-to-s3 --ignore-not-found
 kubectl --context "$EKS_CLUSTER_NAME" delete \
@@ -138,20 +143,20 @@ Deleting the server leaves the node empty, and Karpenter scales it to zero. The 
 ## Settings
 
 - **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
-- **One copy across all eight GPUs.** The recipe requests `nvidia.com/gpu: "8"` and shards one copy with `--tensor-parallel-size 8`, so results are per-node figures. The server prints `nvidia-smi topo -m` at start and warns when it finds no NVLink pairs; do not trust a run that logged that warning.
-- **One arm at a time.** Each attention-backend arm takes the whole node and runs in its own namespace, so tear one down before deploying the next. One vLLM pod per namespace means `measure` needs no `--pod`.
+- **Two data-parallel replicas of four GPUs each.** `--data-parallel-size 2` runs two independent engines; `--tensor-parallel-size 4` shards the weights across the four GPUs of each. The front end load-balances requests across the replicas, and each replica owns an independent KV pool, so the node serves roughly twice the concurrent sequences of a single eight-way tensor-parallel copy. The server prints `nvidia-smi topo -m` at start and warns when it finds no NVLink pairs; do not trust a run that logged that warning.
+- **Four-way tensor parallelism is what makes this fit.** Pure data parallelism (`--data-parallel-size 8`) replicates the full ~328 GiB checkpoint on each GPU and runs out of memory during KV allocation on B200. Sharding each replica four ways keeps the per-GPU weight footprint near 51 GiB and leaves room for the KV pool.
+- **Re-read the KV pool from this run's provenance.** Each replica reported a 15,749,120-token FP8 pool at about 480x concurrency. Changing any engine feature moves that number, so read `KV capacity from` in the run you publish rather than carrying this one over.
+- **Expert parallelism is on.** `--enable-expert-parallel` places whole experts on individual ranks within each replica. The server's provenance block records `expert parallel on`; confirm it before attributing a result.
 - **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable. The deploy script fails unless the server logs `Using AttentionBackendEnum.FLASHINFER backend`.
 - **NVFP4 on Blackwell is not comparable to a Hopper run.** On sm_100 the checkpoint runs the native cutlass W4A4 GEMM path. A Hopper GPU would fall back to FP4-Marlin W4A16, so never read this recipe's results against a Hopper one.
 - **No `--quantization` flag.** The checkpoint's `quantization_config` declares a ModelOpt mixed NVFP4 and FP8 export, and the loader resolves it. Pinning a single method would mis-read the mixed export.
-- **`--stream-interval 10`** The server streams in 10-token chunks. That changes inter-token latency only, so never compare ITL against a recipe with a different stream interval. All three Nemotron arms share it.
+- **`--stream-interval 10`** The server streams in 10-token chunks. That changes inter-token latency only; never compare ITL against a recipe with a different stream interval.
 - **`--no-enable-prefix-caching`** Held off for an uncached measurement. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
-- **`--async-scheduling` and `--enable-chunked-prefill`** On in all three arms, so neither is a variable between them.
+- **`--async-scheduling` and `--enable-chunked-prefill`** Both on.
 - **`MAX_NUM_SEQS=256`, `MAX_CUDAGRAPH=256` and `MAX_NUM_BATCHED_TOKENS=32768`.** The CUDA graph capture size matches the sequence cap. A 32,768-token batch budget prefills a full `coding_repo_context` prompt in one chunk.
 - **No reasoning parser.** The recipe sets no `--reasoning-parser`, so any reasoning trace arrives in the message content and counts against the profile's 1,024-token output cap. The corpus protocol truncates a reasoning model's output by design.
-- **The checkpoint ships an MTP layer that this recipe leaves off.** `config.json` sets `num_nextn_predict_layers: 1`, but the recipe passes no `--speculative-config`.
+- **Speculative decoding is left off.** `config.json` ships an MTP layer (`num_nextn_predict_layers: 1`), but this recipe passes no `--speculative-config`. MTP is a separate latency optimization, measured on its own.
 - **`--served-model-name nemotron-3-ultra`** The server answers to that name rather than its path, so `--model-id` is `nemotron-3-ultra`.
-- **Weights come from S3 into an `emptyDir` on the NVMe array.** A pod restart re-downloads ~328 GiB. The `fetch-weights` init container fails unless `/models` has 400 GiB free, then fails unless it finds 113 shards and at least 300 GiB. Its log prints `df -h /models`; confirm that is the NVMe array.
+- **Weights come from S3 into an `emptyDir` on the NVMe array.** A pod restart re-downloads ~328 GiB. The `fetch-weights` init container fails unless `/models` has 400 GiB free, then fails unless it finds 113 shards and at least 300 GiB.
 - **`progressDeadlineSeconds: 7200`** The S3 sync and load outlast the 600-second default. The deploy script waits the same 7,200 seconds, and the startup probe allows 3,600 seconds once the init container finishes.
-- **`serviceAccountName: nemotron-3-ultra-bench`** Supplies the pod-scoped S3 identity through EKS Pod Identity. The staging Job runs as the same ServiceAccount, so its role also needs write access to the prefix while staging. `setup-pod-identity.sh` associates the role in each namespace that runs an arm.
-- **The weights bucket is `nemotron-3-ultra-model-weights-<account-id>-<region>`.** The staging script creates it in `AWS_REGION` if it does not exist. The staging and deploy scripts fill the bucket name and `AWS_REGION` into each manifest as they apply it, so the files in git stay untouched.
-- **The staging Job tolerates the GPU taint and requests 350 GiB of ephemeral storage.** On most clusters that places it on the GPU node's NVMe array. It fails on a shard-count, partial-file or size mismatch, so a completed Job means all 113 shards reached S3.
+- **`serviceAccountName: nemotron-3-ultra-bench`** Supplies the pod-scoped S3 identity through EKS Pod Identity. The staging Job runs as the same ServiceAccount. Run `setup-pod-identity.sh nemotron-3-ultra-bench` in this namespace.

@@ -24,8 +24,6 @@ Every recipe passes `--no-enable-prefix-caching`, so its benchmarks measure unca
 
 | Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
 |:---|:---|:---|:---|:---|:---|:---|:---|:---|
-| [Runbook](../docs/runbooks/llama4-maverick/fp8-p6-b200.48xlarge-fp8kv-32k-runbook.md) | `p6-b200.48xlarge` | FP8 | FP8 | `TRITON_ATTN` | 8x B200 | TP8 | Deployment, Service | Upstream vLLM |
-| [Runbook](../docs/runbooks/llama4-maverick/fp8-p6-b200.48xlarge-fp8kv-32k-flashattn-runbook.md) | `p6-b200.48xlarge` | FP8 | FP8 | `FLASH_ATTN` | 8x B200 | TP8 | Deployment, Service | Upstream vLLM |
 | [Runbook](../docs/runbooks/llama4-maverick/fp8-p6-b200.48xlarge-fp8kv-32k-flashinfer-runbook.md) | `p6-b200.48xlarge` | FP8 | FP8 | `FLASHINFER` | 8x B200 | TP8 | Deployment, Service | Upstream vLLM |
 
 ### Mistral Large 3
@@ -38,9 +36,7 @@ Every recipe passes `--no-enable-prefix-caching`, so its benchmarks measure unca
 
 | Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
 |:---|:---|:---|:---|:---|:---|:---|:---|:---|
-| [Runbook](../docs/runbooks/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-runbook.md) | `p6-b200.48xlarge` | NVFP4 | FP8 | `TRITON_ATTN` | 8x B200 | TP8 | Deployment, Service | Upstream vLLM |
-| [Runbook](../docs/runbooks/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-flashattn-runbook.md) | `p6-b200.48xlarge` | NVFP4 | FP8 | `FLASH_ATTN` | 8x B200 | TP8 | Deployment, Service | Upstream vLLM |
-| [Runbook](../docs/runbooks/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-flashinfer-runbook.md) | `p6-b200.48xlarge` | NVFP4 | FP8 | `FLASHINFER` | 8x B200 | TP8 | Deployment, Service | Upstream vLLM |
+| [Runbook](../docs/runbooks/nemotron-3-ultra/nvfp4-p6-b200.48xlarge-fp8kv-32k-dp2tp4-flashinfer-ep-runbook.md) | `p6-b200.48xlarge` | NVFP4 | FP8 | `FLASHINFER` | 8x B200 | DP2 × TP4, expert parallel | Deployment, Service | Upstream vLLM |
 
 ### Muse-Glimmer 30B
 

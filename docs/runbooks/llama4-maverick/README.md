@@ -4,14 +4,11 @@ The runbooks listed in this section are for [meta-llama/Llama-4-Maverick-17B-128
 
 ## Recipes
 
-Use any one of the following runbook recipes to get started. For additional flags and configurations, see [Which benchmark to run](../../guides/REFERENCE.md#which-benchmark-to-run).
+Use the following runbook recipe to get started. For additional flags and configurations, see [Which benchmark to run](../../guides/REFERENCE.md#which-benchmark-to-run).
 
 | Instance | Precision | Attention backend | Node | GPUs | TP | Runbook |
 | -------- | --------- | ----------------- | ---- | ---- | -- | ------- |
-| `p6-b200.48xlarge` | FP8, FP8 KV cache | `TRITON_ATTN` | Single node, 1 replica | 8 | 8 | [Runbook](./fp8-p6-b200.48xlarge-fp8kv-32k-runbook.md) |
-| `p6-b200.48xlarge` | FP8, FP8 KV cache | `FLASH_ATTN` | Single node, 1 replica | 8 | 8 | [Runbook](./fp8-p6-b200.48xlarge-fp8kv-32k-flashattn-runbook.md) |
 | `p6-b200.48xlarge` | FP8, FP8 KV cache | `FLASHINFER` | Single node, 1 replica | 8 | 8 | [Runbook](./fp8-p6-b200.48xlarge-fp8kv-32k-flashinfer-runbook.md) |
-| `p6-b200.48xlarge` | FP8, FP8 KV cache | `FLASHINFER`, expert parallel | Single node, 1 replica | 8 | 8 | [Runbook](./fp8-p6-b200.48xlarge-fp8kv-32k-flashinfer-ep-runbook.md) |
 
 ## Results
 
