@@ -147,4 +147,4 @@ kubectl --context "$EKS_CLUSTER_NAME" delete \
     nodepool/bench-p5en-48xlarge ec2nodeclass/bench-p5en-48xlarge --ignore-not-found
 ```
 
-Deleting the server leaves the node empty, and Karpenter scales it to zero. The checkpoint in S3 survives, so a later run skips Quickstart step 6.
+Deleting the server leaves the node empty, and Karpenter scales it to zero. The checkpoint in S3 survives, so a later run skips weights staging in previous steps.

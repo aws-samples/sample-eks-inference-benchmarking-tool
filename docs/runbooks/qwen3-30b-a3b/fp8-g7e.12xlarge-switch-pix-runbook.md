@@ -159,7 +159,7 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete \
     -f vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml --ignore-not-found
 ```
 
-Once both arms are measured, scale the node groups to zero. The checkpoint in S3 survives, so a later run skips Quickstart step 5.
+Once both arms are measured, scale the node groups to zero. The checkpoint in S3 survives, so a later run skips weights staging in previous steps.
 
 ```bash
 aws eks update-nodegroup-config --cluster-name "$EKS_CLUSTER_NAME" --nodegroup-name gpu-spot-1node \
