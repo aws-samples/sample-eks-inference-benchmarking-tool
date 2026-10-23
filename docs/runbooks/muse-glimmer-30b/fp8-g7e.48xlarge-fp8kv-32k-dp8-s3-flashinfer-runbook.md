@@ -142,23 +142,3 @@ kubectl --context "$EKS_CLUSTER_NAME" delete \
 ```
 
 Deleting the server leaves the node empty, and Karpenter scales both the serving and quantize pools to zero. The checkpoint in S3 survives, so a later run skips Quickstart steps 5, 7 and 8.
-
----
-
-## Settings
-
-- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
-- **Eight copies rather than one split copy.** The model fits one GPU, and g7e GPUs talk over PCIe with no NVLink, so tensor parallelism pays a transfer cost on every layer. Independent replicas trade that for one Service balancing requests between them.
-- **The Service balances per connection, not per request.** The benchmark client holds one persistent connection per in-flight request, so at low concurrency some replicas can sit idle.
-- **`--pod` names one replica for provenance.** `measure` reads the image, KV pool and server log from that pod. Every replica runs the same spec.
-- **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable and falls back to its auto-selected backend. The deploy script fails unless the server logs `Using AttentionBackendEnum.FLASHINFER backend`.
-- **Why `FLASHINFER`.** It serves an FP8 KV cache on sm_120, where `FLASH_ATTN` refuses one.
-- **KV scales are uncalibrated.** vLLM 0.29.0 rejects `--calculate-kv-scales`, so each server logs `Using KV cache scaling factor 1.0 for fp8_e4m3`. This bounds any quality comparison.
-- **`--no-enable-prefix-caching`** Held off for an uncached measurement. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
-- **`MAX_NUM_SEQS=64` and `MAX_CUDAGRAPH=64`.** Held at the Gemma 4 31B 32k recipe's values so the batch ceiling is not a variable between the two models. The pool would allow roughly 60 full-length sequences, and more at this workload's length.
-- **`MAX_NUM_BATCHED_TOKENS=32768`.** A full `coding_repo_context` prompt prefills in one chunk.
-- **Weights come from S3 into an `emptyDir`, not from the claim.** Each replica syncs its own copy, so a pod restart re-downloads 32 GiB. The `fetch-weights` init container fails unless it finds `config.json`, 4 shards and at least 28 GiB.
-- **`serviceAccountName: muse-glimmer-30b-bench`** Supplies the pod-scoped S3 read identity through EKS Pod Identity. Node roles on clusters with an IMDS hop limit of 1 are unreachable from pods.
-- **The weights bucket is `muse-glimmer-30b-model-weights-<account-id>-<region>`.** The staging script creates it in `AWS_REGION` if it does not exist. The staging and deploy scripts fill the bucket name and `AWS_REGION` into each manifest as they apply it, so the files in git stay untouched.
-- **The copy-to-S3 staging Job runs as `muse-glimmer-30b-bench`.** It uses the same ServiceAccount as the server, so the one `setup-pod-identity.sh` association grants both the server's S3 read and the staging Job's S3 write.
-- **The quantize Job runs in the serving image.** The quantizer image's transformers predates `model_type: muse_glimmer`, so the Job installs ModelOpt and a newer transformers into `vllm/vllm-openai:v0.29.0` at start. It keeps the image encoder, projector, embeddings and head in 16-bit.

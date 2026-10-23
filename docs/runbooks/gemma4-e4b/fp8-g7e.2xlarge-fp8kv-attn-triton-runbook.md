@@ -129,17 +129,3 @@ kubectl --context "$EKS_CLUSTER_NAME" delete \
 ```
 
 Deleting the server leaves the node empty, and Karpenter scales it to zero.
-
----
-
-## Settings
-
-- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
-- **The checkpoint is node-local and ephemeral.** The init container re-quantizes to the NVMe `emptyDir` on every pod start, so there is no claim or S3 copy to persist; at 8B this adds a few minutes to startup.
-- **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable. It logs `Unknown vLLM environment variable detected: VLLM_ATTENTION_BACKEND` and proceeds on its auto-selected backend. The deploy script fails unless the server log reports `TRITON_ATTN`.
-- **The backend is pinned rather than auto-selected** because vLLM's auto-priority tables are written for sm_10x B200. This card is sm_120, so leaving it unset makes the backend an unrecorded variable.
-- **Why `TRITON_ATTN`.** It is portable across GPU generations and head sizes. `FLASH_ATTN` refuses an FP8 KV cache on this GPU at startup (`FP8 KV cache requires FA3 on SM90 or FA4 on SM100`). `FLASHINFER` serves, but its XQA decode path rejects `head_dim=512` and falls back to a slower native decode for the full-attention layers.
-- **KV scales are uncalibrated.** vLLM 0.29.0 rejects `--calculate-kv-scales`, so the server logs `Using KV cache scaling factor 1.0 for fp8_e4m3`. This bounds any quality comparison.
-- **`--no-enable-prefix-caching`** Held off for an uncached measurement. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
-- **g7e.2xlarge spot capacity is thin.** A single-subnet node group spent several minutes returning `InsufficientInstanceCapacity`. Check `aws ec2 get-spot-placement-scores` first and consider on-demand if the score is low.
-- **The benchmark client runs on the standing `bench-cpu` NodePool.** `measure` runs the client as a Job requesting 8 CPU, pinned off the serving node, so Karpenter launches a CPU node for it and scales it to zero after the run.

@@ -148,26 +148,3 @@ kubectl --context "$EKS_CLUSTER_NAME" delete \
 ```
 
 Deleting the server leaves the node empty, and Karpenter scales it to zero. The checkpoint in S3 survives, so a later run skips Quickstart step 6.
-
----
-
-## Settings
-
-- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
-- **One copy across eight GPUs.** All experts stay resident, so `--tensor-parallel-size 8` splits every layer over the node's NVLink mesh. The server logs `WARNING: no NVLink pairs in topo matrix` at startup if `nvidia-smi topo -m` shows none; do not trust a result from that pod.
-- **`FLASH_ATTN_MLA` was the fastest Hopper MLA backend tested.** `TRITON_MLA` and `FLASHMLA` also run on H200. `FLASHINFER_MLA` fails at startup on sm_90 with `compute capability not supported`. The deploy script fails unless the server logs `Using AttentionBackendEnum.FLASH_ATTN_MLA backend`.
-- **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable.
-- **`--tokenizer-mode mistral --config-format mistral --load-format mistral`.** The checkpoint ships `params.json`, `tekken.json` and `consolidated-*.safetensors` shards, with no Hugging Face `config.json`.
-- **No `--quantization` flag.** `params.json` declares a compressed-tensors FP8 export with block scales, and the loader resolves it. `VLLM_LOGGING_LEVEL=INFO` keeps the selected FP8 kernel in the server log.
-- **16-bit KV cache.** The checkpoint ships no KV-cache scales (`kv_cache_scheme` is null), so `KV_CACHE_DTYPE=auto` keeps the cache at the model dtype.
-- **`--no-enable-prefix-caching`** Held off for an uncached measurement. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
-- **`--stream-interval 10`** The server streams in 10-token chunks. That changes inter-token latency only, so compare ITL only against recipes with the same stream interval.
-- **Weights come from S3 into a 1,000 GiB `emptyDir`, not from a claim.** A pod restart re-downloads ~635 GiB. The `fetch-weights` init container fails unless `/models` has 700 GiB free before the sync and holds 272 shards and at least 600 GiB after it.
-- **The free-space check does not prove NVMe placement.** The example node group's 1,600 GiB EBS root volume also passes it. Throughput step 2 confirms `/models` is the RAID0 array; without the RAID0 NodeConfig, the sync lands on EBS.
-- **The staging Job tolerates the GPU taint.** It requests 700 GiB of ephemeral storage, which rules out typical system CPU nodes, so it can schedule onto the GPU node's instance store.
-- **`serviceAccountName: mistral-large-3-bench`** The recipe and the staging Job both run as this ServiceAccount, which the staging and deploy scripts create. Quickstart step 4 creates the IAM role `<cluster>-mistral-large-3-bench-s3` with read and write on `mistral-large-3-model-weights-<account-id>-<region>` only, and associates it with the ServiceAccount through Pod Identity. Rerunning the step leaves an existing add-on, role or association in place.
-- **The weights bucket is `mistral-large-3-model-weights-<account-id>-<region>`.** The staging script creates it in `AWS_REGION` if it does not exist. The staging and deploy scripts fill the bucket name and `AWS_REGION` into each manifest as they apply it, so the files in git stay untouched.
-- **`--served-model-name mistral-large-3`** The server answers to that name rather than its path, so `--model-id` is `mistral-large-3`.
-- **The chat template adds about 600 tokens.** Mistral's system prompt is part of every request, so `chat_typical` measures about 1,245 wire input tokens against a nominal 512.
-- **`--reps 1`** One repetition, so the result has no spread to check. Raise `--reps` before quoting a figure.
-- **Not comparable to a Blackwell run.** Results are labelled with the instance.

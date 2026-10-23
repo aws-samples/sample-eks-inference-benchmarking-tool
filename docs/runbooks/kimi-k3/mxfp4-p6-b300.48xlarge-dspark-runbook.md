@@ -138,19 +138,3 @@ kubectl --context "$EKS_CLUSTER_NAME" delete \
 ```
 
 Deleting the server leaves the node empty, and Karpenter scales it to zero.
-
-## Settings
-
-- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
-- **The checkpoint stays in S3.** A later run can skip Quickstart steps 6 and 7; rerunning only copies files that are missing.
-- **`serviceAccountName: kimi-k3-bench`** Supplies the pod-scoped S3 identity used by the init container.
-- **`test -n "$(ls -A /models/kimi-k3-dspark 2>/dev/null)"`** Fails before model loading when the staged draft prefix is empty.
-- **`--speculative-config`** Loads `/models/kimi-k3-dspark` with the `dspark` method, seven speculative tokens, probabilistic draft sampling, and block rejection sampling.
-- **`--max-model-len 32768`** Pins the served context length.
-- **`--no-enable-prefix-caching`** Turns off prefix caching, which vLLM enables by default. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
-- **`--max-cudagraph-capture-size 512`** Covers the configured scheduler ceiling.
-- **`memory: 3000Gi`** Constrains page-cache pressure inside the pod cgroup while leaving node headroom.
-- **`emptyDir: { sizeLimit: 2000Gi }`** Is pod-local ephemeral storage rooted wherever kubelet stores `emptyDir`; the free-space check does not prove NVMe placement. A replaced pod syncs the checkpoint again.
-- **`failureThreshold: 280`** Allows up to 70 minutes for both syncs and server startup.
-- **`vllm-kimi-k3-efa:nccl2.29.7-efa1.49.0`** Carries matched NCCL and `aws-ofi-nccl` versions, recorded in the tag; this single-node recipe does not use EFA.
-- **The weights bucket is `kimi-k3-model-weights-<account-id>-<region>`.** The staging script creates it in `AWS_REGION` if it does not exist. The staging and deploy scripts fill the bucket name, `AWS_REGION` and the image registry from `AWS_ACCOUNT_ID` into each manifest as they apply it, so the files in git stay untouched.

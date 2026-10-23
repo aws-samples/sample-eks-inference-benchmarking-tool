@@ -120,21 +120,3 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/qwe
 kubectl --context "$EKS_CLUSTER_NAME" delete \
     nodepool/bench-g6e-12xlarge ec2nodeclass/bench-g6e-12xlarge --ignore-not-found
 ```
-
----
-
-
-## Settings
-
-- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
-- **The checkpoint is node-local and ephemeral.** The init container re-quantizes to the NVMe `emptyDir` on every pod start, so there is no claim or S3 copy to persist; at 7B this adds a few minutes to startup.
-- **`QUANTIZATION=modelopt`** Serves the ModelOpt FP8 export the quantize step writes, using its `hf_quant_config.json` and calibrated input scales.
-- **16-bit KV cache.** The checkpoint carries no KV scales (`kv_cache_quant_algo` is `None`), and with `--kv-cache-dtype fp8_e4m3` the accuracy gate rejects the server because answers collapse into repetition.
-- **The backend is pinned with `--attention-backend TRITON_ATTN`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 ignores that environment variable. `TRITON_ATTN` is portable across GPU generations and serves a 16-bit KV cache; the deploy script fails unless the server logs `Using AttentionBackendEnum.TRITON_ATTN backend`. `FLASH_ATTN` may be faster here and is worth an A/B, because the 16-bit KV cache does not carry the FP8-KV restriction that forces Triton on some other recipes.
-- **`--async-scheduling` and `--max-cudagraph-capture-size 512`.** Async scheduling overlaps CPU-side scheduling with GPU compute, and the CUDA-graph capture size matches `MAX_NUM_SEQS`, so every batch up to the cap is graph-captured.
-- **`--no-enable-prefix-caching`** `legacy_corpus` repeats five fixed prompts, so a cache-enabled server measures cache hits rather than prefill. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
-- **`--enable-chunked-prefill`** Breaks long prefills into chunks so they share a step with decodes.
-- **`--gpu-memory-utilization=0.95`** Leaves the rest of the 48 GB card for activations and CUDA graphs.
-- **`nvidia.com/gpu: 1`** The 7B model fits one of the four GPUs, so the pod takes one.
-- **`strategy: Recreate`** Stops the old pod before starting its replacement, so a redeploy never holds a second GPU.
-- **`VLLM_LOGGING_LEVEL=INFO`** Logs the KV cache size and prefix cache hit rate the provenance block reads.

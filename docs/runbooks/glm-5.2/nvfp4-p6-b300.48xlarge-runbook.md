@@ -128,24 +128,3 @@ kubectl --context "$EKS_CLUSTER_NAME" delete \
 ```
 
 Deleting the server leaves the node empty, and Karpenter scales it to zero.
-
----
-
-
-## Settings
-
-- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
-- **`fetch-weights` init container** Downloads `nvidia/GLM-5.2-NVFP4` from Hugging Face into `/models/glm-5.2-nvfp4`. It verifies at least 500 GiB is free, installs `huggingface_hub==1.28.0`, uses `/models/.hf-cache`, enables high-performance Xet with `HF_XET_HIGH_PERFORMANCE=1`, and verifies that every shard is complete before vLLM starts.
-
-- **`weights: emptyDir: { sizeLimit: 800Gi }`** Stores both the checkpoint and Hugging Face cache in pod-local storage shared by the init container and vLLM. Kubernetes deletes this volume with the pod, so replacement or scale-to-zero discards all downloaded data and the new pod downloads it again. This recipe does not use a PVC and does not preserve downloads across pods; two observed cold downloads took about 2h15m each.
-
-- **No local quantization step** The published checkpoint already contains Model Optimizer NVFP4 weights, and vLLM auto-detects that metadata without a `--quantization` flag.
-
-- **`ARGS=(`** Build argv as an ARRAY. A '#' comment cannot follow a '\' line continuation: bash ends the command there and silently discards every remaining flag, and the server still starts successfully.
-
-
-- **`--max-cudagraph-capture-size 512`** MUST be >= --max-num-seqs. A batch wider than the largest captured CUDA graph falls back to eager execution, which costs most of the graph speedup. Setting it below --max-num-seqs is the single most expensive misconfiguration in this recipe.
-
-- **`startupProbe:`** The Hugging Face download happens in the init container, so this probe covers weight load and graph capture. Keep generous headroom: a restart creates a replacement pod with a new `emptyDir`, which forces the checkpoint and cache to be downloaded again.
-
-- **Node-local `emptyDir`, not PVC or hostPath** The p6-b300 instance store backs the kubelet and containerd roots, so the pod's `emptyDir` lands there. `/mnt` is on the much smaller root volume on this node shape; do not change this recipe to `/mnt` hostPath without first verifying the actual NVMe mount with `df -h`. The current storage is intentionally ephemeral and never survives pod replacement.

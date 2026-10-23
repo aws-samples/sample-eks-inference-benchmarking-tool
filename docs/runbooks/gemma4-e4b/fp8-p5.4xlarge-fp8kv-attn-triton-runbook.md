@@ -128,18 +128,3 @@ kubectl --context "$EKS_CLUSTER_NAME" delete \
 ```
 
 Deleting the server leaves the node empty, and Karpenter scales it to zero.
-
----
-
-## Settings
-
-- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
-- **The checkpoint is node-local and ephemeral.** The init container re-quantizes to the NVMe `emptyDir` on every pod start, so there is no claim or S3 copy to persist. At 8B this adds a few minutes to startup, and on this Capacity Block node those minutes come out of the reserved GPU window.
-- **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable. It logs `Unknown vLLM environment variable detected: VLLM_ATTENTION_BACKEND` and proceeds on its auto-selected backend. The deploy script fails unless the server log reports `TRITON_ATTN`.
-- **`--config p5-fp8kv-attn-triton`** The `p5-` prefix gives this server its own accuracy gate, because the same checkpoint on a different GPU produces a different fingerprint.
-- **KV scales are uncalibrated.** vLLM 0.29.0 rejects `--calculate-kv-scales`, so the server logs `Using KV cache scaling factor 1.0 for fp8_e4m3`. This bounds any quality comparison.
-- **`--no-enable-prefix-caching`** Held off for an uncached measurement. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
-- **`--stream-interval 10`** The server streams in 10-token chunks. That changes inter-token latency only, so never compare ITL against a recipe with a different stream interval.
-- **`MAX_CUDAGRAPH=512`.** Matches the top concurrency level of the sweep, so every measured batch size is graph-captured and nothing is captured above it.
-- **The instance store must back the `emptyDir`.** The Capacity Block node class sets `instanceStorePolicy: RAID0`; without it the quantize output lands on the EBS root volume. Throughput step 2 confirms where `/models` is.
-- **The benchmark client runs on the standing `bench-cpu` NodePool.** `measure` runs the client as a Job requesting 8 CPU, pinned off the serving node, so Karpenter launches a CPU node for it and scales it to zero after the run.

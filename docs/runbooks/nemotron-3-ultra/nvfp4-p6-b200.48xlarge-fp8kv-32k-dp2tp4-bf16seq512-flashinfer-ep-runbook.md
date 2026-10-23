@@ -138,28 +138,3 @@ kubectl --context "$EKS_CLUSTER_NAME" delete \
 ```
 
 Deleting the server leaves the node empty, and Karpenter scales it to zero. The checkpoint in S3 survives, so a later run skips Quickstart step 6.
-
----
-
-## Settings
-
-- **`source .venv/bin/activate`** Puts `eks-bench` on your PATH in the current terminal only. If you open a new terminal, run it again from the repository root before continuing.
-- **This is the throughput recipe; MTP is the latency recipe.** It maximizes aggregate tokens/sec under load. For the lowest single-request latency, serve the [MTP arm](./nvfp4-p6-b200.48xlarge-fp8kv-32k-dp2tp4-mtp5-flashinfer-ep-runbook.md) instead, which trades peak throughput for a roughly threefold lower per-token latency.
-- **bfloat16 Mamba SSM cache funds the higher sequence ceiling.** `--mamba-ssm-cache-dtype bfloat16` halves the per-sequence Mamba state versus the float32 default, and the freed memory is spent on `--max-num-seqs 512`. The two move together: raising the sequence cap without the memory saving would not fit. The deploy script prints `mamba_ssm_cache_dtype` from the live metrics; confirm it reads `bfloat16`.
-- **The gain is modest because the workload is compute-bound.** Doubling the concurrent-batch ceiling lifted throughput only about 5% at concurrency 512, since prompt processing through ~55B active parameters, not KV memory, is the limit. The KV pool nonetheless grew to 20,368,042 tokens per replica (~621x concurrency); re-read `KV capacity from` in the run you publish.
-- **Two data-parallel replicas of four GPUs each.** `--data-parallel-size 2` runs two independent engines; `--tensor-parallel-size 4` shards the weights across the four GPUs of each. The server prints `nvidia-smi topo -m` at start and warns when it finds no NVLink pairs; do not trust a run that logged that warning.
-- **Four-way tensor parallelism is what makes this fit.** Pure data parallelism (`--data-parallel-size 8`) replicates the full ~328 GiB checkpoint on each GPU and runs out of memory during KV allocation on B200. Sharding each replica four ways keeps the per-GPU weight footprint near 51 GiB.
-- **Expert parallelism is on.** `--enable-expert-parallel` places whole experts on individual ranks within each replica. The server's provenance block records `expert parallel on`; confirm it before attributing a result.
-- **The backend is pinned with `--attention-backend`, not `VLLM_ATTENTION_BACKEND`.** vLLM 0.29.0 does not read that environment variable. The deploy script fails unless the server logs `Using AttentionBackendEnum.FLASHINFER backend`.
-- **NVFP4 on Blackwell is not comparable to a Hopper run.** On sm_100 the checkpoint runs the native cutlass W4A4 GEMM path. A Hopper GPU would fall back to FP4-Marlin W4A16, so never read this recipe's results against a Hopper one.
-- **No `--quantization` flag.** The checkpoint's `quantization_config` declares a ModelOpt mixed NVFP4 and FP8 export, and the loader resolves it. Pinning a single method would mis-read the mixed export.
-- **`--stream-interval 10`** The server streams in 10-token chunks. That changes inter-token latency only; never compare ITL against a recipe with a different stream interval.
-- **`--no-enable-prefix-caching`** Held off for an uncached measurement. Confirm `Prefix cache hit` reads 0.0% in the provenance block before publishing any figure.
-- **`--async-scheduling` and `--enable-chunked-prefill`** Both on.
-- **`MAX_NUM_SEQS=512`, `MAX_CUDAGRAPH=512` and `MAX_NUM_BATCHED_TOKENS=32768`.** The CUDA graph capture size matches the sequence cap. A 32,768-token batch budget prefills a full `coding_repo_context` prompt in one chunk.
-- **No reasoning parser.** The recipe sets no `--reasoning-parser`, so any reasoning trace arrives in the message content and counts against the profile's 1,024-token output cap. The corpus protocol truncates a reasoning model's output by design.
-- **Speculative decoding is left off.** This is the throughput arm; MTP is measured on its own.
-- **`--served-model-name nemotron-3-ultra`** The server answers to that name rather than its path, so `--model-id` is `nemotron-3-ultra`.
-- **Weights come from S3 into an `emptyDir` on the NVMe array.** A pod restart re-downloads ~328 GiB. The `fetch-weights` init container fails unless `/models` has 400 GiB free, then fails unless it finds 113 shards and at least 300 GiB.
-- **`progressDeadlineSeconds: 7200`** The S3 sync and load outlast the 600-second default. The deploy script waits the same 7,200 seconds, and the startup probe allows 3,600 seconds once the init container finishes.
-- **`serviceAccountName: nemotron-3-ultra-bench`** Supplies the pod-scoped S3 identity through EKS Pod Identity. The staging Job runs as the same ServiceAccount. Run `setup-pod-identity.sh nemotron-3-ultra-bench` in this namespace.
