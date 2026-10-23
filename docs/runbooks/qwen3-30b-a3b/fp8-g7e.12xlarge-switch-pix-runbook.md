@@ -1,4 +1,4 @@
-# Qwen3-30B-A3B FP8 on g7e.12xlarge, TP2 with expert parallel, explicit PIX peer-to-peer
+# Qwen3-30B-A3B FP8 on g7e.12xlarge, TP2 with expert parallel, explicit PIX peer-to-peer (Study)
 
 Serves [`Qwen/Qwen3-30B-A3B-FP8`](https://huggingface.co/Qwen/Qwen3-30B-A3B-FP8) across both GPUs of one g7e.12xlarge (2x RTX PRO 6000 Blackwell, sm_120, PCIe, no NVLink) with tensor and expert parallelism, using [`fp8-g7e.12xlarge-switch-pix.yaml`](../../../vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml). It sets `NCCL_P2P_LEVEL=PIX`.
 

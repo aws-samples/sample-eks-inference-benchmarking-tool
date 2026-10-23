@@ -120,3 +120,5 @@ kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f vllm-recipes/qwe
 kubectl --context "$EKS_CLUSTER_NAME" delete \
     nodepool/bench-g7e-12xlarge ec2nodeclass/bench-g7e-12xlarge --ignore-not-found
 ```
+
+Deleting the server leaves the node empty, and Karpenter scales it to zero.
