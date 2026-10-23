@@ -26,10 +26,7 @@ Each capability names the tool it is built on. This repo does not reimplement wh
 
 ## Prerequisites
 
-- [Create an EKS cluster with GPU nodes](https://docs.aws.amazon.com/eks/latest/userguide/getting-started.html) (g6e, g7e, p5, p6 or p6e family)
-- [Install the NVIDIA device plugin](https://github.com/NVIDIA/k8s-device-plugin#quick-start)
-- [Get a Hugging Face token](https://huggingface.co/settings/tokens) (read-only access)
-- [Create the weights filesystem and the `fsx-pvc` claim](./k8s/examples/README.md#creating-the-weights-filesystem)
+- [Create an EKS cluster with Karpenter, Karpenter discovery tags and node role](../../../scripts/create-cluster.sh)
 
 ## Quickstart
 
@@ -72,26 +69,9 @@ Some runbooks stage published quantized checkpoints with Jobs from [`model-jobs/
 
 ## vLLM recipes
 
-Each runbook below contains the prerequisites to run each benchmark, the steps to run the benchmark, and tear down steps. Choose a model below to find available recipes, with links to each runbook.
+Each runbook below contains the prerequisites to run each benchmark, the steps to run the benchmark, and tear down steps. Choose a model below to find available recipes, with links to each runbook. 
 
-The recipes in this section tune the server for throughput and real-time latency. Throughput and latency move in opposite directions across a concurrency sweep.
-
-> **Cost gate:** unless the GPUs are part of a prepaid capacity block, tear down on-demand or Spot nodes as soon as the run finishes.
-
-| Model | Precisions | Instance types | Model guide |
-| ----- | ---------- | -------------- | ----------- |
-| GLM-5.2 | FP8, NVFP4 | `p6-b200.48xlarge`, `p6-b300.48xlarge` | [README](./docs/runbooks/glm-5.2/README.md) |
-| Kimi K3 | MXFP4 | `p6-b300.48xlarge` | [README](./docs/runbooks/kimi-k3/README.md) |
-| Llama 4 Maverick | FP8 | `p6-b200.48xlarge` | [README](./docs/runbooks/llama4-maverick/README.md) |
-| Mistral Large 3 | FP8 | `p5en.48xlarge`, `p6-b200.48xlarge` | [README](./docs/runbooks/mistral-large-3/README.md) |
-| Nemotron 3 Ultra | NVFP4 | `p6-b200.48xlarge` | [README](./docs/runbooks/nemotron-3-ultra/README.md) |
-| Muse-Glimmer 30B | FP8 | `g7e.48xlarge`, `p6-b200.48xlarge` | [README](./docs/runbooks/muse-glimmer-30b/README.md) |
-| Qwen2.5-7B-Instruct | FP8 | `g6e.12xlarge`, `g7e.12xlarge` | [README](./docs/runbooks/qwen2.5-7b/README.md) |
-| Qwen3-30B-A3B | FP8 | `g7e.12xlarge` | [README](./docs/runbooks/qwen3-30b-a3b/README.md) |
-| Gemma 4 31B | FP8 | `p6-b200.48xlarge` | [README](./docs/runbooks/gemma4-31b/README.md) |
-| Gemma 4 E4B | FP8 | `g7e.2xlarge`, `p5.4xlarge` | [README](./docs/runbooks/gemma4-e4b/README.md) |
-
-Each model guide lists every recipe for that model and links its runbook. [`vllm-recipes/README.md`](./vllm-recipes/README.md) indexes all of them in one table, with instance, GPU count, parallelism, workload kind and serving image per recipe. Recipes whose purpose is to measure the interconnect rather than serving performance are documented under [Interconnect studies](./experiments/README.md#interconnect-studies) in [`experiments/`](./experiments/) instead, and are absent from the model guides for that reason. The exception is Qwen3-30B-A3B: its default and `PIX` study arms are its top results, so they stay in `vllm-recipes/` and have runbooks in its model guide.
+Follow the [vllm-recipes/README.md](./vllm-recipes/README.md) for an index of all runbooks, with instance, GPU count, parallelism, workload kind and serving image per recipe. 
 
 ---
 
@@ -99,7 +79,7 @@ Each model guide lists every recipe for that model and links its runbook. [`vllm
 
 NCCL is NVIDIA's collective communications library, and it moves tensors between GPUs on every step of a tensor-parallel forward pass. These studies measure the interconnect rather than the model: microbenchmarks with no model or vLLM stack at all, and serving arms that run vLLM like a recipe but exist to compare `NCCL_P2P_LEVEL` settings rather than to measure serving performance.
 
-Follow the [experiments README](./experiments/README.md) for what belongs there, the PCIe-switch-vs-host-copy study, and the recipes that measure the interconnect with their runbooks.
+Follow the [experiments/README](./experiments/README.md) for experiments and studies, including the PCIe-switch-vs-host-copy study, and the recipes that measure the interconnect.
 
 ---
 
@@ -107,7 +87,7 @@ Follow the [experiments README](./experiments/README.md) for what belongs there,
 
 The benchmark harnesses in this project tell you *how slow*. An Nsight Systems trace tells you *why*: how step time splits across GEMM, the NCCL collective, attention, softmax, sampling and scheduling gaps. Reach for it when a sweep shows a ceiling and nothing explains it. A trace has already overturned one published conclusion: it showed the NCCL collective consuming a substantial share of GPU kernel time after the P2P study above had called it a small, well-overlapped fraction of step time.
 
-Follow the [Profile GPUs with Nsight Systems runbook](./docs/runbooks/studies/g7e.12xlarge-profile-gpus-nsight-systems-runbook.md) for the prerequisites and the capture itself, an eight-step in-cluster walkthrough, an ad-hoc variant for a container you are already inside, and the gotchas that each cost a capture run.
+Follow the [Profile GPUs with Nsight Systems runbook](./docs/runbooks/studies/g7e.12xlarge-profile-gpus-nsight-systems-runbook.md) for the prerequisites and the capture itself, an eight-step in-cluster walkthrough.
 
 ---
 
