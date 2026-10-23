@@ -56,7 +56,7 @@ Recipes without a published quantized checkpoint build the quantizer image in-cl
 
 ### 3. Follow the selected runbook
 
-Choose a serving runbook from [vLLM recipes](#vllm-recipes). Each one stands on its own: it sets its environment, repeats the install above, stages weights with a script that fails on an incomplete checkpoint, and deploys a server whose model and flags are checked before use. Every benchmark runs behind the [correctness gate](#core-capabilities), follows an identical `--dry-run`, and records its own provenance. Run the steps in order.
+Choose a serving runbook from [vLLM recipes](#vllm-recipes). Each one stands on its own: it sets its environment, stages weights with a script that fails on an incomplete checkpoint, and deploys a server whose model and flags are checked before use. Every benchmark runs behind the [correctness gate](#core-capabilities), follows an identical `--dry-run`, and records its own provenance. Run the steps in order.
 
 ---
 
