@@ -2,7 +2,7 @@
 
 A benchmarking tool for sizing self-managed vLLM inference on Amazon EKS. Concurrency sweeps with a correctness gate, a protocol lock on every result, and a serving recipe with a runbook for every model, precision and instance type.
 
-**[Quickstart](#quickstart)** | **[Recipes](./vllm-recipes/)** | **[Runbooks](./docs/runbooks/README.md)** | **[Guides](./docs/guides/README.md)** | **[Architecture](./docs/guides/ARCHITECTURE.md)** | **[Reference](./docs/guides/REFERENCE.md)** | **[Troubleshooting](./docs/guides/TROUBLESHOOTING.md)** | **[FAQs](./docs/guides/FAQS.md)**
+**[Quickstart](#quickstart)** | **[Recipes](./vllm-recipes/)** | **[Runbooks](./docs/runbooks/README.md)** | **[Guides](./docs/guides/README.md)** | **[Architecture](./docs/guides/ARCHITECTURE.md)** | **[Reference](./docs/guides/REFERENCE.md)** | **[FAQs](./docs/guides/FAQS.md)**
 
 ## Core capabilities
 
@@ -13,8 +13,8 @@ Each capability names the tool it is built on. This repo does not reimplement wh
 | ✅ [**Correctness gate**](./docs/accuracy/README.md) | Compares the live server's output against a pinned reference before any measurement runs, scoring a pinned [GSM8K](https://github.com/openai/grade-school-math) subset committed to this repo | A misconfigured server aborts the run instead of producing a fast, wrong result. The gate fails closed, so a missing reference stops the run rather than passing it |
 | 🔒 [**Protocol lock and provenance**](./docs/results/README.md) | Opens every result file with the conditions the run was taken under, and closes it with the serving pod's argv, NCCL transport, KV sizing and GPU topology | A number cannot drift away from what produced it, so a result stays comparable against one taken a year later |
 | 📝 [**Pinned prompt profiles**](./app/bench/data/prompt_profiles/README.md) | Ships the literal prompt text as committed JSON, generated deterministically, with per-model wire token counts measured offline through Hugging Face Transformers | Every model receives byte-identical input, so a difference between two models belongs to the models. Input size is recorded in every result rather than inferred from a generator |
-| 🧪 [**Manifest validation**](./docs/guides/TROUBLESHOOTING.md#a-recipe-applies-cleanly-but-serves-the-wrong-configuration) | Re-runs each recipe's script with [vLLM](https://github.com/vllm-project/vllm) stubbed out and compares the argv that arrives against the flags the recipe is written to pass | Catches a recipe that applies cleanly but serves the wrong configuration, before GPU time is spent trusting it |
-| ☸️ [**In-cluster measurement**](./docs/guides/TROUBLESHOOTING.md#a-latency-result-looks-off-or-ttft-is-much-higher-than-expected) | Runs the harness as a Job beside the server, reaching it over cluster DNS | A port-forward adds tunnel setup to every TTFT sample, so the harness refuses to report first-token latency through one |
+| 🧪 **Manifest validation** | Re-runs each recipe's script with [vLLM](https://github.com/vllm-project/vllm) stubbed out and compares the argv that arrives against the flags the recipe is written to pass | Catches a recipe that applies cleanly but serves the wrong configuration, before GPU time is spent trusting it |
+| ☸️ **In-cluster measurement** | Runs the harness as a Job beside the server, reaching it over cluster DNS | A port-forward adds tunnel setup to every TTFT sample, so the harness refuses to report first-token latency through one |
 | 📈 [**Closed-loop concurrency sweeps**](./docs/guides/REFERENCE.md#protocols) | Sweeps 1 to 512 concurrent requests on this repo's own aiohttp client, reporting tokens/sec, req/sec and TTFT, TPOT and ITL across three reps with medians | Converts a latency SLA into a node count, which is the sizing decision |
 | 🎯 [**Open-loop SLA verification**](./docs/guides/REFERENCE.md#trusting-the-open-loop-verdict) | Issues Poisson arrivals at a target QPS through [MLPerf LoadGen](https://github.com/mlcommons/inference/tree/master/loadgen), with direct issue-rate accounting | Answers whether the SLA holds at a given arrival rate, a different question from the sweeps, so the two never share a table |
 | 🔀 [**Cross-client calibration**](./docs/guides/REFERENCE.md#what-may-be-compared-with-what) | Reruns the same workload through [NVIDIA AIPerf](https://github.com/ai-dynamo/aiperf) behind the same protocol seam, and replays committed agentic traces with real think-time gaps | Two independent clients on one server show whether a figure belongs to the server or to the client that measured it |
@@ -97,10 +97,6 @@ Follow the [Profile GPUs with Nsight Systems runbook](./docs/runbooks/studies/g7
 Use the [Reference](./docs/guides/REFERENCE.md) guide to learn about the measurement CLI: the `measure` and `measure-local` commands, their flags, the environment variables a run sets, the benchmark protocols, and the rules for which results may be compared with which. It includes [Which benchmark to run](./docs/guides/REFERENCE.md#which-benchmark-to-run), which covers what each protocol measures, what tables it returns and what it does not report.
 
 Run `eks-bench --help` for the command list, and `eks-bench <command> --help` for a command's flags. Click and Rich stay in the operator CLI and do not remain on the measurement path after dispatch: each command execs `app/bench/src/main.py`, which depends only on the standard library and aiohttp.
-
-## Troubleshooting
-
-Use the [Troubleshooting](./docs/guides/TROUBLESHOOTING.md) guide to find errors and solutions, organized by error string. It covers GPU nodes that report `Ready` while advertising no GPUs, two `sm_120` failures on g7e, one from an attention backend with no Blackwell kernels and one during CUDA-graph capture, a checkpoint missing its `quantization_config` block, a context length set above the batched-token budget, and served-model-name mismatches that fail preflight or return 404.
 
 ## FAQs
 

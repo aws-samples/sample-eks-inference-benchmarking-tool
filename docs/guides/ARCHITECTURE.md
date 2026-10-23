@@ -138,7 +138,7 @@ sample-eks-inference-benchmarking-tool/
 │   ├── g7e12-nccl-p2p-shm-matrix.yaml #   anything here.
 │   └── g7e12-switch-study-storage-and-model-stage.yaml
 └── docs/
-    ├── guides/                        # Architecture, reference, troubleshooting, and methodology.
+    ├── guides/                        # Architecture, reference, and methodology.
     ├── reports/                       # Written analyses. Gitignored; README.md documents
     │   └── README.md                  #   the report format and what ships with it
     ├── accuracy/                      # Accuracy references per model. Gitignored; capture your
