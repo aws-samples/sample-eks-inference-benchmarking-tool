@@ -9,6 +9,8 @@ NCCL interconnect studies that serve a model are recorded in [`experiments/`](..
 | Runbook | Question it answers | Scope |
 | ------- | ------------------- | ----- |
 | [`g7e.12xlarge-pix-vs-phb-proxy-runbook.md`](./g7e.12xlarge-pix-vs-phb-proxy-runbook.md) | What does inference lose when two GPUs lose direct peer access and NCCL stages through host memory? | Llama 3.3 70B FP8 and Qwen3-30B-A3B FP8, TP2, three arms, five repetitions |
+| [`g7e.12xlarge-switch-default-runbook.md`](./g7e.12xlarge-switch-default-runbook.md) | How does Qwen3-30B-A3B FP8 serve on one g7e.12xlarge under NCCL's default transport selection? | Qwen3-30B-A3B FP8, TP2 with expert parallel, single arm (NCCL default) |
+| [`g7e.12xlarge-switch-pix-runbook.md`](./g7e.12xlarge-switch-pix-runbook.md) | How does Qwen3-30B-A3B FP8 serve with peer-to-peer forced to `PIX`? | Qwen3-30B-A3B FP8, TP2 with expert parallel, single arm (`NCCL_P2P_LEVEL=PIX`) |
 | [`g7e.12xlarge-profile-gpus-nsight-systems-runbook.md`](./g7e.12xlarge-profile-gpus-nsight-systems-runbook.md) | Where is a serving pod actually spending GPU time? | Any recipe. The walkthrough uses Qwen2.5-7B at TP=2; the ad-hoc variant wraps any reachable `vllm serve` |
 
 ## Naming

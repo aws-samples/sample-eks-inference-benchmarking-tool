@@ -64,8 +64,8 @@ MANIFESTS=(
   experiments/g7e12-switch-llama3.3-70b-default.yaml
   experiments/g7e12-switch-llama3.3-70b-pix.yaml
   experiments/g7e12-switch-llama3.3-70b-shm.yaml
-  vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml
-  vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml
+  experiments/g7e12-switch-qwen3-30b-a3b-default.yaml
+  experiments/g7e12-switch-qwen3-30b-a3b-pix.yaml
   experiments/g7e12-switch-qwen3-30b-a3b-shm.yaml
 )
 sha256sum "${MANIFESTS[@]}" > "$ARTIFACT_ROOT/manifest-sha256.txt"
@@ -234,11 +234,11 @@ Run one deployment at a time in this recorded order. The default arm is a negati
 | 1 | `experiments/g7e12-switch-llama3.3-70b-default.yaml` | `llama33-70b-g7e12-switch-default` | `llama3.3-70b` | `fp8-switch-default` | `llama3.3-70b-fp8` | `nvidia/Llama-3.3-70B-Instruct-FP8` | none |
 | 2 | `experiments/g7e12-switch-llama3.3-70b-pix.yaml` | `llama33-70b-g7e12-switch-pix` | `llama3.3-70b` | `fp8-switch-pix` | `llama3.3-70b-fp8` | same | none |
 | 3 | `experiments/g7e12-switch-llama3.3-70b-shm.yaml` | `llama33-70b-g7e12-switch-shm` | `llama3.3-70b` | `fp8-switch-shm` | `llama3.3-70b-fp8` | same | none |
-| 4 | `vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml` | `qwen3-30b-a3b-g7e12-switch-default` | `qwen3-30b-a3b` | `fp8-switch-default` | `qwen3-30b-a3b-fp8` | `Qwen/Qwen3-30B-A3B-FP8` | `--thinking off` |
-| 5 | `vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml` | `qwen3-30b-a3b-g7e12-switch-pix` | `qwen3-30b-a3b` | `fp8-switch-pix` | `qwen3-30b-a3b-fp8` | same | `--thinking off` |
+| 4 | `experiments/g7e12-switch-qwen3-30b-a3b-default.yaml` | `qwen3-30b-a3b-g7e12-switch-default` | `qwen3-30b-a3b` | `fp8-switch-default` | `qwen3-30b-a3b-fp8` | `Qwen/Qwen3-30B-A3B-FP8` | `--thinking off` |
+| 5 | `experiments/g7e12-switch-qwen3-30b-a3b-pix.yaml` | `qwen3-30b-a3b-g7e12-switch-pix` | `qwen3-30b-a3b` | `fp8-switch-pix` | `qwen3-30b-a3b-fp8` | same | `--thinking off` |
 | 6 | `experiments/g7e12-switch-qwen3-30b-a3b-shm.yaml` | `qwen3-30b-a3b-g7e12-switch-shm` | `qwen3-30b-a3b` | `fp8-switch-shm` | `qwen3-30b-a3b-fp8` | same | `--thinking off` |
 
-For each row, set the variables and run the function below. `RECIPE` is the manifest path from the repository root; only the arms under `vllm-recipes/` go through `validate-manifests`. Use `THINKING_ARGS=()` for Llama and `THINKING_ARGS=(--thinking off)` for Qwen. Only `capture-reference` takes it; `measure` reads the mode from the stored reference.
+For each row, set the variables and run the function below. `RECIPE` is the manifest path from the repository root. All six arms now live under `experiments/`, which `validate-manifests` does not check, so the validation step is skipped for them; the `case` still guards any arm placed under `vllm-recipes/`. Use `THINKING_ARGS=()` for Llama and `THINKING_ARGS=(--thinking off)` for Qwen. Only `capture-reference` takes it; `measure` reads the mode from the stored reference.
 
 ```bash
 run_arm() {
@@ -350,8 +350,8 @@ for recipe in \
   experiments/g7e12-switch-llama3.3-70b-default.yaml \
   experiments/g7e12-switch-llama3.3-70b-pix.yaml \
   experiments/g7e12-switch-llama3.3-70b-shm.yaml \
-  vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml \
-  vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix.yaml \
+  experiments/g7e12-switch-qwen3-30b-a3b-default.yaml \
+  experiments/g7e12-switch-qwen3-30b-a3b-pix.yaml \
   experiments/g7e12-switch-qwen3-30b-a3b-shm.yaml; do
   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete -f "$recipe" --ignore-not-found=true
 done
