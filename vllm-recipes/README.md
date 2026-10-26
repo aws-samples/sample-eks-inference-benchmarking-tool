@@ -52,13 +52,6 @@ Every recipe passes `--no-enable-prefix-caching`, so its benchmarks measure unca
 | [Runbook](../docs/runbooks/qwen2.5-7b/fp8-g6e.12xlarge-runbook.md) | `g6e.12xlarge` | FP8 | 16-bit | Auto | 1x L40S | TP1 | Deployment, Service | AWS DLC |
 | [Runbook](../docs/runbooks/qwen2.5-7b/fp8-g7e.12xlarge-runbook.md) | `g7e.12xlarge` | FP8 | 16-bit | Auto | 1x RTX PRO 6000 | TP1 | Deployment, Service | AWS DLC |
 
-### Qwen3-30B-A3B
-
-| Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
-|:---|:---|:---|:---|:---|:---|:---|:---|:---|
-| [Runbook](../docs/runbooks/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default-runbook.md) | `g7e.12xlarge` | FP8 | BF16 | Auto | 2x RTX PRO 6000 | TP2, expert parallel | Deployment, Service | Upstream vLLM |
-| [Runbook](../docs/runbooks/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-pix-runbook.md) | `g7e.12xlarge` | FP8 | BF16 | Auto | 2x RTX PRO 6000 | TP2, expert parallel | Deployment, Service | Upstream vLLM |
-
 ### Gemma 4 31B
 
 | Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |

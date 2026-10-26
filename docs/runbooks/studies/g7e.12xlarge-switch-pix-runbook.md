@@ -1,6 +1,6 @@
-# Qwen3-30B-A3B FP8 on g7e.12xlarge, TP2 with expert parallel, NCCL default transport (Study)
+# Qwen3-30B-A3B FP8 on g7e.12xlarge, TP2 with expert parallel, explicit PIX peer-to-peer (Study)
 
-Serves [`Qwen/Qwen3-30B-A3B-FP8`](https://huggingface.co/Qwen/Qwen3-30B-A3B-FP8) across both GPUs of one g7e.12xlarge (2x RTX PRO 6000 Blackwell, sm_120, PCIe, no NVLink) with tensor and expert parallelism, using [`fp8-g7e.12xlarge-switch-default.yaml`](../../../vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml). It sets no NCCL transport override.
+Serves [`Qwen/Qwen3-30B-A3B-FP8`](https://huggingface.co/Qwen/Qwen3-30B-A3B-FP8) across both GPUs of one g7e.12xlarge (2x RTX PRO 6000 Blackwell, sm_120, PCIe, no NVLink) with tensor and expert parallelism, using [`g7e12-switch-qwen3-30b-a3b-pix.yaml`](../../../experiments/g7e12-switch-qwen3-30b-a3b-pix.yaml). It sets `NCCL_P2P_LEVEL=PIX`.
 
 ## Capacity sizing
 
@@ -21,7 +21,7 @@ Qwen3-30B-A3B is a mixture-of-experts model. Each of its 48 layers holds 128 exp
 | **Parallelism** | TP2 with expert parallel, `allgather_reducescatter` | `--tensor-parallel-size`, `--enable-expert-parallel`, `--all2all-backend` |
 | **Weight precision** | FP8 E4M3, 128x128 blocks | Checkpoint `quantization_config`; the recipe passes no `--quantization` |
 | **KV cache precision** | BF16 | `--kv-cache-dtype` |
-| **NCCL transport** | NCCL default selection, no override | No `NCCL_P2P_LEVEL` or `NCCL_P2P_DISABLE` in `env` |
+| **NCCL transport** | P2P allowed up to `PIX`, a shared PCIe switch | `NCCL_P2P_LEVEL` |
 | **Context length** | 8,192 | `--max-model-len` |
 | **Max sequences** | 512 | `--max-num-seqs` |
 | **Batched tokens per step** | 8,192 | `--max-num-batched-tokens` |
@@ -74,19 +74,19 @@ Create the following before you start.
 
 1. Deploy the inference server on `GPU_NODE` and confirm it serves the model.
    ```bash
-   ./vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default-deploy.sh
+   ./experiments/g7e12-switch-qwen3-30b-a3b-pix-deploy.sh
    ```
 
 2. Confirm `/models` is on the NVMe RAID0 array, not the EBS root volume.
    ```bash
-   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" exec deployment/qwen3-30b-a3b-g7e12-switch-default \
+   kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" exec deployment/qwen3-30b-a3b-g7e12-switch-pix \
        --container vllm -- df -h /models
    ```
 
-3. Confirm no NCCL transport override is set and NCCL chose P2P, not SHM.
+3. Confirm `NCCL_P2P_LEVEL=PIX` is set and NCCL chose P2P, not SHM.
    ```bash
    SERVER_LOG=$(kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" logs \
-       deployment/qwen3-30b-a3b-g7e12-switch-default -c vllm)
+       deployment/qwen3-30b-a3b-g7e12-switch-pix -c vllm)
    grep -E 'NCCL transport override|^NCCL_P2P_(LEVEL|DISABLE)=' <<<"$SERVER_LOG"
    grep -cE 'P2P/direct pointer|via P2P/' <<<"$SERVER_LOG"
    grep -cE 'via SHM/' <<<"$SERVER_LOG"
@@ -96,9 +96,9 @@ Create the following before you start.
    ```bash
    eks-bench capture-reference \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
-       --service qwen3-30b-a3b-g7e12-switch-default \
+       --service qwen3-30b-a3b-g7e12-switch-pix \
        --mode fingerprint \
-       --model-tag qwen3-30b-a3b --config fp8-switch-default \
+       --model-tag qwen3-30b-a3b --config fp8-switch-pix \
        --model-id qwen3-30b-a3b-fp8 \
        --thinking off \
        --out-dir docs/results
@@ -108,14 +108,14 @@ Create the following before you start.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
-       --service qwen3-30b-a3b-g7e12-switch-default \
+       --service qwen3-30b-a3b-g7e12-switch-pix \
        --protocol corpus --profile legacy_corpus \
        --instance g7e.12xlarge --model-tag qwen3-30b-a3b \
-       --config fp8-switch-default --quant fp8 \
+       --config fp8-switch-pix --quant fp8 \
        --model-id qwen3-30b-a3b-fp8 \
        --tokenizer Qwen/Qwen3-30B-A3B-FP8 \
        --pod "$(kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get pods \
-           -l app=qwen3-30b-a3b-g7e12-switch-default -o jsonpath='{.items[0].metadata.name}')" \
+           -l app=qwen3-30b-a3b-g7e12-switch-pix -o jsonpath='{.items[0].metadata.name}')" \
        --out-dir docs/results \
        --reps 5 \
        --dry-run
@@ -125,14 +125,14 @@ Create the following before you start.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
-       --service qwen3-30b-a3b-g7e12-switch-default \
+       --service qwen3-30b-a3b-g7e12-switch-pix \
        --protocol corpus --profile legacy_corpus \
        --instance g7e.12xlarge --model-tag qwen3-30b-a3b \
-       --config fp8-switch-default --quant fp8 \
+       --config fp8-switch-pix --quant fp8 \
        --model-id qwen3-30b-a3b-fp8 \
        --tokenizer Qwen/Qwen3-30B-A3B-FP8 \
        --skip-accuracy --no-latency --no-provenance \
-       --out-dir /tmp/qwen3-30b-a3b-switch-warmup/fp8-switch-default \
+       --out-dir /tmp/qwen3-30b-a3b-switch-warmup/fp8-switch-pix \
        --reps 1
    ```
 
@@ -140,14 +140,14 @@ Create the following before you start.
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
-       --service qwen3-30b-a3b-g7e12-switch-default \
+       --service qwen3-30b-a3b-g7e12-switch-pix \
        --protocol corpus --profile legacy_corpus \
        --instance g7e.12xlarge --model-tag qwen3-30b-a3b \
-       --config fp8-switch-default --quant fp8 \
+       --config fp8-switch-pix --quant fp8 \
        --model-id qwen3-30b-a3b-fp8 \
        --tokenizer Qwen/Qwen3-30B-A3B-FP8 \
        --pod "$(kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" get pods \
-           -l app=qwen3-30b-a3b-g7e12-switch-default -o jsonpath='{.items[0].metadata.name}')" \
+           -l app=qwen3-30b-a3b-g7e12-switch-pix -o jsonpath='{.items[0].metadata.name}')" \
        --out-dir docs/results \
        --reps 5
    ```
@@ -156,7 +156,7 @@ Create the following before you start.
 
 ```bash
 kubectl --context "$EKS_CLUSTER_NAME" -n "$NAMESPACE" delete \
-    -f vllm-recipes/qwen3-30b-a3b/fp8-g7e.12xlarge-switch-default.yaml --ignore-not-found
+    -f experiments/g7e12-switch-qwen3-30b-a3b-pix.yaml --ignore-not-found
 ```
 
 Once both arms are measured, scale the node groups to zero. The checkpoint in S3 survives, so a later run skips weights staging in previous steps.
