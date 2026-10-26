@@ -6,7 +6,6 @@ Each model directory under `docs/runbooks/<model>/` holds a `README.md` overview
 
 | Model | Configuration | Runbook | Weights come from | Also needs |
 |---|---|---|---|---|
-| GLM-5.2 | p6-b200.48xlarge — FP8, FP8 KV, TP8 | [`fp8-p6-b200.48xlarge-runbook.md`](./glm-5.2/fp8-p6-b200.48xlarge-runbook.md) | published FP8, Hugging Face to FSx | none |
 | GLM-5.2 | p6-b300.48xlarge — NVFP4, TP8 | [`nvfp4-p6-b300.48xlarge-runbook.md`](./glm-5.2/nvfp4-p6-b300.48xlarge-runbook.md) | published NVFP4, Hugging Face to node-local NVMe | node pinned by hostname |
 | Kimi K3 | p6-b300.48xlarge — MXFP4, FP8 KV, TP8 | [`mxfp4-p6-b300.48xlarge-baseline-runbook.md`](./kimi-k3/mxfp4-p6-b300.48xlarge-baseline-runbook.md) | published MXFP4, Hugging Face to S3 to node-local NVMe | Pod Identity; custom image |
 | Kimi K3 | p6-b300.48xlarge — MXFP4, FP8 KV, TP8, DSpark speculative decoding | [`mxfp4-p6-b300.48xlarge-dspark-runbook.md`](./kimi-k3/mxfp4-p6-b300.48xlarge-dspark-runbook.md) | published MXFP4 and DSpark draft, Hugging Face to S3 to node-local NVMe | Pod Identity; custom image |

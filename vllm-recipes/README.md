@@ -10,7 +10,6 @@ Every recipe passes `--no-enable-prefix-caching`, so its benchmarks measure unca
 
 | Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
 |:---|:---|:---|:---|:---|:---|:---|:---|:---|
-| [Runbook](../docs/runbooks/glm-5.2/fp8-p6-b200.48xlarge-runbook.md) | `p6-b200.48xlarge` | FP8 | FP8 | Auto | 8x B200 | TP8 | Deployment, Service | Upstream vLLM |
 | [Runbook](../docs/runbooks/glm-5.2/nvfp4-p6-b300.48xlarge-runbook.md) | `p6-b300.48xlarge` | NVFP4 | 16-bit | Auto | 8x B300 | TP8 | Deployment, Service | Upstream vLLM |
 
 ### Kimi K3
