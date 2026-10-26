@@ -11,7 +11,6 @@ A download stages weights that are already published. A quantize job produces a 
 | Job | Source weights | Lands on the PVC at |
 |---|---|---|
 | [`gemma4-31b/fp8-model-quantize.yaml`](gemma4-31b/fp8-model-quantize.yaml) | `google/gemma-4-31b-it` | `/models/quantized/gemma-4-31b-it-fp8` |
-| [`glm-5.2/fp8-model-download.yaml`](glm-5.2/fp8-model-download.yaml) | `zai-org/GLM-5.2-FP8` | `/models/glm-5.2-fp8` |
 | [`muse-glimmer-30b/fp8-model-quantize.yaml`](muse-glimmer-30b/fp8-model-quantize.yaml) | `meta-models/Muse-Glimmer-30B` | `/models/quantized/Muse-Glimmer-30B-fp8` |
 | [`qwen3-235b/fp8-model-download.yaml`](qwen3-235b/fp8-model-download.yaml) | `Qwen/Qwen3-235B-A22B-FP8` | `/models/qwen3-235b-a22b-fp8` |
 
