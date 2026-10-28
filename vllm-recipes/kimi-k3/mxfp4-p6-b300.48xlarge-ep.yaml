@@ -1,0 +1,176 @@
+# Kimi K3 (2.8T MoE) at MXFP4 on one p6-b300.48xlarge, 8x B300-SXM6-AC, tensor parallel 8 with
+# expert parallelism and the EPLB expert-load balancer. Changes exactly one thing from the baseline
+# recipe: expert parallelism, so its results isolate that contribution.
+# Single-node recipe: it uses the upstream vLLM image and no EFA, because all GPU-to-GPU traffic is
+# intra-node over NVLink.
+# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION in the init container.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kimi-k3-b300-ep
+  labels: { app: kimi-k3-b300-ep }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: kimi-k3-b300-ep }
+  template:
+    metadata:
+      labels: { app: kimi-k3-b300-ep }
+    spec:
+      serviceAccountName: kimi-k3-bench
+      nodeSelector:
+        node.kubernetes.io/instance-type: p6-b300.48xlarge
+      tolerations:
+        - operator: Exists
+      initContainers:
+        - name: fetch-weights
+          image: public.ecr.aws/aws-cli/aws-cli:latest
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              aws configure set default.s3.max_concurrent_requests 64
+              aws configure set default.s3.multipart_chunksize 64MB
+              aws configure set default.s3.max_queue_size 10000
+
+              echo "weights sync start $(date -u)"
+              # The emptyDir must be on the NVMe instance store; stop if it lacks the space.
+              avail=$(df -Pk /models | awk 'NR==2 {print int($4/1048576)}')
+              if [ "$avail" -lt "$MIN_FREE_GIB" ]; then
+                echo "FATAL: ${avail} GiB free at /models, need ${MIN_FREE_GIB} GiB." >&2
+                echo "  If that is a root disk rather than the NVMe array, this node's ephemeral" >&2
+                echo "  storage is not on the instance store and the sync would fill it." >&2
+                exit 1
+              fi
+
+              aws s3 sync "s3://${WEIGHTS_BUCKET}/${WEIGHTS_PREFIX}/" /models/kimi-k3-mxfp4/ \
+                --region "${AWS_REGION}" --only-show-errors
+              SZ=$(du -s --block-size=1G /models/kimi-k3-mxfp4 | cut -f1)
+              echo "weights staged ${SZ} GiB"
+              test "$SZ" -ge 1400 || (echo "FATAL: expected ~1454 GiB, got ${SZ} GiB" >&2; exit 1)
+              echo "sync done $(date -u)"
+          env:
+            - name: MIN_FREE_GIB
+              value: "1500"
+            - name: WEIGHTS_BUCKET
+              value: kimi-k3-model-weights-012345678901-us-east-1
+            - name: WEIGHTS_PREFIX
+              value: "kimi-k3-mxfp4"
+            - name: AWS_REGION
+              value: "us-east-1"
+          volumeMounts:
+            - { name: models, mountPath: /models }
+          resources:
+            requests: { cpu: "16", memory: 32Gi }
+            limits: { cpu: "32", memory: 64Gi }
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.29.0
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              echo "=== provenance (captured into the result bundle) ==="
+              nvidia-smi --query-gpu=index,name,memory.total --format=csv
+              nvidia-smi topo -m || true
+              if nvidia-smi topo -m 2>/dev/null | grep -qE '\bNV[0-9]+\b'; then
+                echo "  NVLink mesh detected - good."
+              else
+                echo "  WARNING: no NVLink pairs in topo matrix. Do not trust results."
+              fi
+
+              echo "=== flag surface check ==="
+              for f in --moe-backend --all2all-backend --attention-config \
+                       --max-cudagraph-capture-size --enable-expert-parallel \
+                       --enable-eplb --max-num-seqs; do
+                vllm serve --help=all 2>/dev/null | grep -q -- "$f" \
+                  && echo "  OK     $f" || echo "  ABSENT $f  <-- fix the command below"
+              done
+
+              echo "=== starting vLLM BASELINE + expert parallelism (EPLB): $(date -u) - loading ~1454 GiB ==="
+              ARGS=(
+                /models/kimi-k3-mxfp4
+                --served-model-name kimi-k3
+                --tensor-parallel-size 8
+                --enable-expert-parallel
+                --enable-eplb
+                --trust-remote-code
+                --load-format fastsafetensors
+                --moe-backend flashinfer_trtllm
+                --max-model-len "${MAX_MODEL_LEN}"
+                --max-num-seqs "${MAX_NUM_SEQS}"
+                --no-enable-prefix-caching
+                --gpu-memory-utilization 0.9
+                --max-cudagraph-capture-size 512
+                --kv-cache-dtype fp8
+                --attention-config '{"mla_prefill_backend":"FLASHINFER","use_prefill_query_quantization":true}'
+                --enable-auto-tool-choice
+                --tool-call-parser kimi_k3
+                --reasoning-parser kimi_k3
+                --port 8000
+              )
+              printf '  argv: %s\n' "${ARGS[@]}"
+              exec vllm serve "${ARGS[@]}"
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MAX_MODEL_LEN
+              value: "32768"
+            - name: MAX_NUM_SEQS
+              value: "512"
+            - name: VLLM_ENGINE_READY_TIMEOUT_S
+              value: "3600"
+            - name: NCCL_DMABUF_ENABLE
+              value: "0"
+            - name: VLLM_ALLREDUCE_USE_FLASHINFER
+              value: "1"
+            - name: VLLM_USE_RUST_FRONTEND
+              value: "1"
+            - name: VLLM_USE_V2_MODEL_RUNNER
+              value: "1"
+            - name: INSTANCE_TYPE
+              value: "p6-b300.48xlarge"
+            - name: QUANTIZATION
+              value: "mxfp4"
+            - name: BENCH_CONFIG
+              value: "b300-ep-tp8-eplb"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          resources:
+            limits:
+              nvidia.com/gpu: "8"
+              memory: 3000Gi
+            requests:
+              cpu: "96"
+              memory: 1024Gi
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 15
+            failureThreshold: 280
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 10
+            failureThreshold: 3
+          volumeMounts:
+            - { name: models, mountPath: /models }
+            - { name: dshm, mountPath: /dev/shm }
+      volumes:
+        - name: models
+          emptyDir: { sizeLimit: 2000Gi }
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 64Gi }
+      terminationGracePeriodSeconds: 120
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kimi-k3-b300-ep
+spec:
+  selector: { app: kimi-k3-b300-ep }
+  ports:
+    - { protocol: TCP, port: 8000, targetPort: 8000 }

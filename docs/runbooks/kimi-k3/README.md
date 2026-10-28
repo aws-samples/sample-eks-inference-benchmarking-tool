@@ -12,6 +12,8 @@ Recipes that share an instance type differ in their serving configuration, so th
 | -------- | --------- | ---------- | ---- | ---- | -- | -- | ------- |
 | `p6-b300.48xlarge` | MXFP4 | `baseline` | Single node inference | 8 | 8 | none | [Runbook](./mxfp4-p6-b300.48xlarge-baseline-runbook.md) |
 | `p6-b300.48xlarge` | MXFP4 | `dspark` | Single node inference | 8 | 8 | none | [Runbook](./mxfp4-p6-b300.48xlarge-dspark-runbook.md) |
+| `p6-b300.48xlarge` | MXFP4 | `ep-eplb` | Single node inference | 8 | 8 | none | [Runbook](./mxfp4-p6-b300.48xlarge-ep-runbook.md) |
+| `p6-b300.48xlarge` | MXFP4 | `dspark-spec{3,5,7}` | Single node inference | 8 | 8 | none | [Runbook](./mxfp4-p6-b300.48xlarge-dspark-sweep-runbook.md) |
 
 ## Results
 

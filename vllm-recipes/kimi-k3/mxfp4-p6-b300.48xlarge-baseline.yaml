@@ -1,5 +1,5 @@
 # Kimi K3 at MXFP4 on one p6-b300.48xlarge, 8 GPUs, tensor parallel 8, FlashInfer TRT-LLM MoE backend.
-# SUBSTITUTE: 012345678901 and us-east-1 in the image reference, and WEIGHTS_BUCKET and AWS_REGION in the init container.
+# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION in the init container.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -61,7 +61,7 @@ spec:
             limits: { cpu: "32", memory: 64Gi }
       containers:
         - name: vllm
-          image: 012345678901.dkr.ecr.us-east-1.amazonaws.com/vllm-kimi-k3-efa:nccl2.29.7-efa1.49.0
+          image: vllm/vllm-openai:v0.29.0
           command:
             - bash
             - -c
