@@ -5,8 +5,8 @@
 # and kube-system, and the karpenter.sh/discovery tags that scripts/provision-capacity.sh relies on. Add
 # GPU capacity afterwards with that script, not here.
 #
-# SUBSTITUTE: CLUSTER_NAME and AWS_REGION (scripts/create-cluster.sh fills these). Pick a Karpenter
-# version compatible with the Kubernetes version from the Karpenter compatibility matrix.
+# SUBSTITUTE: CLUSTER_NAME, AWS_REGION and AVAILABILITY_ZONES (scripts/create-cluster.sh fills these).
+# Pick a Karpenter version compatible with the Kubernetes version from the Karpenter compatibility matrix.
 apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 
@@ -18,6 +18,10 @@ metadata:
     # eksctl tags the shared node security group and subnets with this, so Karpenter's EC2NodeClass
     # discovers them. The capacity scripts default the discovery value to the cluster name.
     karpenter.sh/discovery: CLUSTER_NAME
+
+# Span every standard AZ in the region, so a Capacity Block in any of the region's zones has a subnet
+# in its AZ for Karpenter to launch into. scripts/create-cluster.sh fills this from the live AZ list.
+availabilityZones: AVAILABILITY_ZONES
 
 iam:
   withOIDC: true   # required for Karpenter

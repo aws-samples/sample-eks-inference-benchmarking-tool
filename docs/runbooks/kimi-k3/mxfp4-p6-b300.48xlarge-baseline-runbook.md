@@ -18,6 +18,7 @@ This recipe serves the published MXFP4 checkpoint [`moonshotai/Kimi-K3`](https:/
 | **Context length** | 32,768 | `MAX_MODEL_LEN` |
 | **Memory fraction** | 0.9 | `--gpu-memory-utilization 0.9` |
 | **Max sequences** | 512 | `MAX_NUM_SEQS` |
+| **Image** | `vllm/vllm-openai:v0.31.0` (upstream) | `image` |
 
 KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_element`, which is 0.56 KiB here. Multi-head latent attention caches one compressed latent per layer instead of a key and value per head, so KV cost scales with layer count rather than head count. The deploy helper reads the server's live cache configuration.
 
@@ -32,7 +33,6 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
 
    ```bash
    export AWS_REGION=<your-cluster-region>
-   export AWS_ACCOUNT_ID=<your-account-id>
    export EKS_CLUSTER_NAME=<your-cluster-name>
    export HUGGING_FACE_HUB_TOKEN=<your-hf-token>
    export NAMESPACE=vb-kimi-k3-mxfp4-p6-b300-baseline
@@ -68,18 +68,12 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
    ./model-jobs/kimi-k3/mxfp4-model-download.sh
    ```
 
-7. Build and push the custom vLLM EFA serving image to your ECR repository. This builds in-cluster on a CPU node and takes several minutes.
-   ```bash
-   REPOSITORY=vllm-kimi-k3-efa CONTEXT_DIR=app/vllm-efa \
-       ./scripts/push-image-kaniko.sh nccl2.29.7-efa1.49.0
-   ```
-
-8. Deploy the inference server and confirm it serves the model.
+7. Deploy the inference server and confirm it serves the model.
    ```bash
    ./vllm-recipes/kimi-k3/mxfp4-p6-b300.48xlarge-baseline-deploy.sh
    ```
 
-9. Generate the accuracy gate (.JSON) that the benchmark checks against.
+8. Generate the accuracy gate (.JSON) that the benchmark checks against.
 
    ```bash
    eks-bench capture-reference \
@@ -91,35 +85,49 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
        --out-dir docs/results
    ```
 
-10. Dry-run the exact in-cluster benchmark.
+9. Dry-run the exact in-cluster benchmark.
 
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service kimi-k3-b300 \
-       --protocol corpus --profile legacy_corpus \
+       --protocol corpus --profile chat_typical \
        --instance p6-b300.48xlarge --model-tag kimi-k3 \
        --config baseline --quant mxfp4 \
        --model-id kimi-k3 \
        --tokenizer moonshotai/Kimi-K3 \
-       --thinking off \
        --out-dir docs/results \
-       --reps 3 \
+       --reps 1 \
        --dry-run
    ```
 
-11. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
+10. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
 
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service kimi-k3-b300 \
-       --protocol corpus --profile legacy_corpus \
+       --protocol corpus --profile chat_typical \
        --instance p6-b300.48xlarge --model-tag kimi-k3 \
        --config baseline --quant mxfp4 \
        --model-id kimi-k3 \
        --tokenizer moonshotai/Kimi-K3 \
-       --thinking off \
        --out-dir docs/results \
-       --reps 3
+       --reps 1
+   ```
+
+## (Optional) Open-loop capacity test
+
+Measures the real-time capacity under Poisson arrivals: the request rate at which TTFT p99 stays within 500 ms and TPOT p99 within 50 ms. Open-loop figures are not comparable to the in-cluster concurrency sweep. Requires the server from step 7 to be running.
+
+1. (Optional) Dry-run the open-loop capacity test.
+
+   ```bash
+   ./vllm-recipes/kimi-k3/mxfp4-p6-b300.48xlarge-baseline-server-qps.sh --dry-run
+   ```
+
+2. (Optional) Run the open-loop capacity test.
+
+   ```bash
+   ./vllm-recipes/kimi-k3/mxfp4-p6-b300.48xlarge-baseline-server-qps.sh
    ```
 
 ## Tear down

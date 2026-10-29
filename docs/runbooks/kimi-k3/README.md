@@ -4,14 +4,13 @@ The runbooks listed in this section are for the [moonshotai/Kimi-K3](https://hug
 
 ## Recipes
 
-Use any one of the following runbook recipes to get started. For additional flags and configurations, see [Which benchmark to run](../../guides/REFERENCE.md#which-benchmark-to-run).
+Use the runbook recipe below to get started. For additional flags and configurations, see [Which benchmark to run](../../guides/REFERENCE.md#which-benchmark-to-run).
 
-Recipes that share an instance type differ in their serving configuration, so the `--config` column is what distinguishes them and what you pass to `measure`.
+The `--config` column is what you pass to `measure`.
 
 | Instance | Precision | `--config` | Node | GPUs | TP | PP | Runbook |
 | -------- | --------- | ---------- | ---- | ---- | -- | -- | ------- |
 | `p6-b300.48xlarge` | MXFP4 | `baseline` | Single node inference | 8 | 8 | none | [Runbook](./mxfp4-p6-b300.48xlarge-baseline-runbook.md) |
-| `p6-b300.48xlarge` | MXFP4 | `dspark` | Single node inference | 8 | 8 | none | [Runbook](./mxfp4-p6-b300.48xlarge-dspark-runbook.md) |
 
 ## Results
 

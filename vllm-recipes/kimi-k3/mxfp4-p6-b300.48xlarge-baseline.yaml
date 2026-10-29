@@ -1,5 +1,5 @@
-# Kimi K3 at MXFP4 on one p6-b300.48xlarge, 8 GPUs, tensor parallel 8, FlashInfer TRT-LLM MoE backend.
-# SUBSTITUTE: 012345678901 and us-east-1 in the image reference, and WEIGHTS_BUCKET and AWS_REGION in the init container.
+# Kimi K3 at MXFP4 on one p6-b300.48xlarge, 8 GPUs, tensor parallel 8; MoE backend auto-selected by vLLM.
+# SUBSTITUTE: WEIGHTS_BUCKET and AWS_REGION in the init container.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -8,6 +8,8 @@ metadata:
   labels: { app: kimi-k3-b300 }
 spec:
   replicas: 1
+  strategy: { type: Recreate }
+  progressDeadlineSeconds: 4200
   selector:
     matchLabels: { app: kimi-k3-b300 }
   template:
@@ -28,7 +30,6 @@ spec:
               set -euo pipefail
               aws configure set default.s3.max_concurrent_requests 64
               aws configure set default.s3.multipart_chunksize 64MB
-              aws configure set default.s3.max_queue_size 10000
 
               echo "weights sync start $(date -u)"; df -h /models | tail -1
               # The emptyDir must be on the NVMe instance store; stop if it lacks the space.
@@ -61,7 +62,7 @@ spec:
             limits: { cpu: "32", memory: 64Gi }
       containers:
         - name: vllm
-          image: 012345678901.dkr.ecr.us-east-1.amazonaws.com/vllm-kimi-k3-efa:nccl2.29.7-efa1.49.0
+          image: vllm/vllm-openai:v0.31.0
           command:
             - bash
             - -c
@@ -91,7 +92,6 @@ spec:
                 --tensor-parallel-size 8
                 --trust-remote-code
                 --load-format fastsafetensors
-                --moe-backend flashinfer_trtllm
                 --max-model-len "${MAX_MODEL_LEN}"
                 --max-num-seqs "${MAX_NUM_SEQS}"
                 --no-enable-prefix-caching
