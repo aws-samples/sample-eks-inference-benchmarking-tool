@@ -95,6 +95,10 @@ spec:
     spec:
       restartPolicy: OnFailure
       serviceAccountName: kimi-k3-bench
+      # Pin to the large-NVMe staging pool; the stager streams ~16 GiB shards through local scratch
+      # that the bench-cpu pool's EBS root cannot hold.
+      nodeSelector:
+        workload: cpu-nvme
       # Requests no GPU; the toleration lets it place where every autoscaled pool is GPU-tainted.
       tolerations:
         - key: nvidia.com/gpu

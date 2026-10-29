@@ -1,0 +1,68 @@
+#
+# Karpenter NodePool and EC2NodeClass for staging very large model checkpoints (Kimi K3 ~1.5 TiB, and
+# any future repo of that scale) from Hugging Face into S3. The HF->S3 stager streams shards through
+# local scratch (download, upload, delete), so its working set is tens to hundreds of GiB, more than
+# the benchmark-client bench-cpu pool's 100 GiB EBS root can hold. This pool RAID0-mounts the
+# instance-store NVMe as kubelet ephemeral storage, exactly like the GPU pools, and only selects
+# instance types that actually carry enough local NVMe. Staging Jobs target it with
+# nodeSelector workload: cpu-nvme. Nodes launch only when a stage runs and scale to zero when idle.
+#
+# scripts/create-cluster.sh fills the placeholders and applies this. Do not kubectl apply it directly.
+# SUBSTITUTE: NODE_ROLE and CLUSTER_NAME (scripts/create-cluster.sh fills these).
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: bench-cpu-nvme
+spec:
+  # Resolves to the standard AL2023 AMI for CPU instance types.
+  amiSelectorTerms:
+    - alias: al2023@latest
+  role: NODE_ROLE
+  subnetSelectorTerms:
+    - tags: { karpenter.sh/discovery: CLUSTER_NAME }
+  securityGroupSelectorTerms:
+    - tags: { karpenter.sh/discovery: CLUSTER_NAME }
+  # Mounts every instance-store NVMe device as one RAID0 array for kubelet ephemeral storage, so a
+  # staging Job's emptyDir scratch lands on NVMe instead of the EBS root volume. Same pattern as the
+  # GPU pools in karpenter-gpu-nodepool.yaml.
+  instanceStorePolicy: RAID0
+  # OS root only; kubelet ephemeral storage lives on the NVMe RAID0 array above.
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs: { volumeSize: 100Gi, volumeType: gp3, encrypted: true, deleteOnTermination: true }
+  metadataOptions:
+    httpEndpoint: enabled
+    httpTokens: required
+    httpPutResponseHopLimit: 1
+  tags:
+    Project: eks-inference-benchmarking
+    NodeType: cpu-nvme
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: bench-cpu-nvme
+spec:
+  template:
+    metadata:
+      labels:
+        workload: cpu-nvme
+    spec:
+      nodeClassRef: { group: karpenter.k8s.aws, kind: EC2NodeClass, name: bench-cpu-nvme }
+      requirements:
+        # On-demand: a Spot reclaim mid-stage would discard progress, though S3 lets a retry resume.
+        - { key: karpenter.sh/capacity-type, operator: In, values: [on-demand] }
+        - { key: kubernetes.io/arch, operator: In, values: [amd64] }
+        - { key: karpenter.k8s.aws/instance-category, operator: In, values: [c, m] }
+        - { key: karpenter.k8s.aws/instance-generation, operator: Gt, values: ["5"] }
+        # Only instance types whose local NVMe holds the stager's working set plus headroom. The value
+        # is in GiB, so Gt 1199 means at least 1200 GiB of instance-store NVMe (the `d` families).
+        - { key: karpenter.k8s.aws/instance-local-nvme, operator: Gt, values: ["1199"] }
+      expireAfter: 720h
+  # A ceiling on the pool; one large staging node at a time is the normal case.
+  limits:
+    cpu: "192"
+  # Remove the node only once it is empty, so a stage is never evicted mid-run.
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 5m

@@ -18,7 +18,7 @@ This recipe serves the published MXFP4 checkpoint [`moonshotai/Kimi-K3`](https:/
 | **Context length** | 32,768 | `MAX_MODEL_LEN` |
 | **Memory fraction** | 0.9 | `--gpu-memory-utilization 0.9` |
 | **Max sequences** | 512 | `MAX_NUM_SEQS` |
-| **Image** | `vllm/vllm-openai:v0.29.0` (upstream) | `image` |
+| **Image** | `vllm/vllm-openai:v0.31.0` (upstream) | `image` |
 
 KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_element`, which is 0.56 KiB here. Multi-head latent attention caches one compressed latent per layer instead of a key and value per head, so KV cost scales with layer count rather than head count. The deploy helper reads the server's live cache configuration.
 
@@ -90,14 +90,13 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service kimi-k3-b300 \
-       --protocol corpus --profile legacy_corpus \
+       --protocol corpus --profile chat_typical \
        --instance p6-b300.48xlarge --model-tag kimi-k3 \
        --config baseline --quant mxfp4 \
        --model-id kimi-k3 \
        --tokenizer moonshotai/Kimi-K3 \
-       --thinking off \
        --out-dir docs/results \
-       --reps 3 \
+       --reps 1 \
        --dry-run
    ```
 
@@ -106,14 +105,29 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" --service kimi-k3-b300 \
-       --protocol corpus --profile legacy_corpus \
+       --protocol corpus --profile chat_typical \
        --instance p6-b300.48xlarge --model-tag kimi-k3 \
        --config baseline --quant mxfp4 \
        --model-id kimi-k3 \
        --tokenizer moonshotai/Kimi-K3 \
-       --thinking off \
        --out-dir docs/results \
-       --reps 3
+       --reps 1
+   ```
+
+## (Optional) Open-loop capacity test
+
+Measures the real-time capacity under Poisson arrivals: the request rate at which TTFT p99 stays within 500 ms and TPOT p99 within 50 ms. Open-loop figures are not comparable to the in-cluster concurrency sweep. Requires the server from step 7 to be running.
+
+1. (Optional) Dry-run the open-loop capacity test.
+
+   ```bash
+   ./vllm-recipes/kimi-k3/mxfp4-p6-b300.48xlarge-baseline-server-qps.sh --dry-run
+   ```
+
+2. (Optional) Run the open-loop capacity test.
+
+   ```bash
+   ./vllm-recipes/kimi-k3/mxfp4-p6-b300.48xlarge-baseline-server-qps.sh
    ```
 
 ## Tear down
