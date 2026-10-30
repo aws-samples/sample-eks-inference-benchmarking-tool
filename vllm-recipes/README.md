@@ -17,8 +17,6 @@ Every recipe passes `--no-enable-prefix-caching`, so its benchmarks measure unca
 | Runbook | Instance | Weights Precision | KV Precision | Attention backend | GPUs | Parallelism | Kubernetes resources | Image |
 |:---|:---|:---|:---|:---|:---|:---|:---|:---|
 | [Runbook](../docs/runbooks/kimi-k3/mxfp4-p6-b300.48xlarge-baseline-runbook.md) | `p6-b300.48xlarge` | MXFP4 | FP8 | Auto; `FLASHINFER` for MLA prefill | 8x B300 | TP8 | Deployment, Service | Upstream vLLM |
-| [Runbook](../docs/runbooks/kimi-k3/mxfp4-p6-b300.48xlarge-dspark-runbook.md) | `p6-b300.48xlarge` | MXFP4 | FP8 | Auto; `FLASHINFER` for MLA prefill | 8x B300 | TP8 | Deployment, Service | Upstream vLLM |
-| [Runbook](../docs/runbooks/kimi-k3/mxfp4-p6-b300.48xlarge-ep-runbook.md) | `p6-b300.48xlarge` | MXFP4 | FP8 | Auto; `FLASHINFER` for MLA prefill | 8x B300 | TP8, expert parallel + EPLB | Deployment, Service | Upstream vLLM |
 
 ### Llama 4 Maverick
 
