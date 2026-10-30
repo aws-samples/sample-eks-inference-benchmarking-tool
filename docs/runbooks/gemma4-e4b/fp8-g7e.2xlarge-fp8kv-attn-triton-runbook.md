@@ -25,7 +25,7 @@ The pool is not the constraint. `chat_terse` sends 96 wire input tokens with a 3
 
 Complete the following tasks before you perform the steps in this runbook.
 
-- [Create an EKS cluster with Karpenter, Karpenter discovery tags and node role](../../../scripts/create-cluster.sh)
+- [Create an EKS cluster with Karpenter with `./scripts/create-cluster.sh`](../../../scripts/create-cluster.sh)
 
 ## Quickstart
 

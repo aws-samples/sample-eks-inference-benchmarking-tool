@@ -30,7 +30,7 @@ Mistral Large 3 is a mixture-of-experts model with multi-head latent attention (
 
 Complete the following tasks before you perform the steps in this runbook.
 
-- [Create an EKS cluster with Karpenter, Karpenter discovery tags and node role](../../../scripts/create-cluster.sh)
+- [Create an EKS cluster with Karpenter with `./scripts/create-cluster.sh`](../../../scripts/create-cluster.sh)
 
 ## Quickstart
 

@@ -34,7 +34,7 @@ Derived from the 1,380,864-token pool this server actually allocated, divided by
 
 Complete the following tasks before you perform the steps in this runbook.
 
-- [Create an EKS cluster with Karpenter, Karpenter discovery tags and node role](../../../scripts/create-cluster.sh)
+- [Create an EKS cluster with Karpenter with `./scripts/create-cluster.sh`](../../../scripts/create-cluster.sh)
 - [Purchase a p6-b300.48xlarge Capacity Block for ML](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-capacity-blocks.html)
 
 ## Quickstart

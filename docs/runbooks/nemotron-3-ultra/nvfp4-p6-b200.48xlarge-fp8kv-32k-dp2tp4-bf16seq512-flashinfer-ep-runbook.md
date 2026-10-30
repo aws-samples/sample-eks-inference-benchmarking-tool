@@ -37,7 +37,7 @@ Two changes versus a plain DP2xTP4 configuration (float32 Mamba cache, 256 seque
 
 Create the following in the namespace you deploy into. Secrets and ConfigMaps are namespaced.
 
-- [Create an EKS cluster with Karpenter, Karpenter discovery tags and node role](../../../scripts/create-cluster.sh)
+- [Create an EKS cluster with Karpenter with `./scripts/create-cluster.sh`](../../../scripts/create-cluster.sh)
 - [Purchase a p6-b200.48xlarge Capacity Block for ML](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-capacity-blocks.html) 
 
 ## Quickstart
