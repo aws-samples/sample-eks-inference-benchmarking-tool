@@ -27,7 +27,7 @@ Each capability names the tool it is built on. This repo does not reimplement wh
 ## Prerequisites
 
 - [Install Python 3.10+](https://www.python.org/downloads/)
-- [Create an EKS cluster with Karpenter, Karpenter discovery tags and node role](../../../scripts/create-cluster.sh)
+- [Create an EKS cluster with Karpenter with `./scripts/create-cluster.sh`](../../../scripts/create-cluster.sh)
 - [Get a Hugging Face token](https://huggingface.co/settings/tokens) (read-only access)
 
 ## Quickstart
