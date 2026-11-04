@@ -100,7 +100,7 @@ KV cache per layer per token is `(kv_lora_rank + qk_rope_head_dim) x bytes_per_e
        --dry-run
    ```
 
-10. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
+10. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. Each rep takes about an hour, so use `--reps 1` to run faster. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
 
    ```bash
    eks-bench measure \
@@ -126,6 +126,20 @@ Measures the real-time capacity under Poisson arrivals: the request rate at whic
 
 2. (Optional) Run the open-loop capacity test.
 
+   ```bash
+   ./vllm-recipes/kimi-k3/mxfp4-p6-b300.48xlarge-baseline-server-qps.sh
+   ```
+
+## Latency test
+
+Open-loop (Poisson arrivals) capacity: the request rate the server sustains within the SLA (TTFT p99 and TPOT p99 gates). Not comparable to the closed-loop `corpus` sweep in the throughput test. Requires the server from the throughput test to be running. Uses the `chat_typical` profile; read the achieved request-rate curve, not just the pass/fail line.
+
+1. (Optional) Dry-run the open-loop latency test.
+   ```bash
+   ./vllm-recipes/kimi-k3/mxfp4-p6-b300.48xlarge-baseline-server-qps.sh --dry-run
+   ```
+
+2. (Optional) Run the open-loop latency test.
    ```bash
    ./vllm-recipes/kimi-k3/mxfp4-p6-b300.48xlarge-baseline-server-qps.sh
    ```

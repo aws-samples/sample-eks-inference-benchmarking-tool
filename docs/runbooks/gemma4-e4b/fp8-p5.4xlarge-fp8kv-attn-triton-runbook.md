@@ -104,7 +104,7 @@ Complete the following tasks before you perform the steps in this runbook.
        --dry-run
    ```
 
-5. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
+5. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. Each rep takes about an hour, so use `--reps 1` to run faster. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
@@ -116,6 +116,20 @@ Complete the following tasks before you perform the steps in this runbook.
        --tokenizer google/gemma-4-E4B-it \
        --out-dir docs/results \
        --reps 3
+   ```
+
+## Latency test
+
+Open-loop (Poisson arrivals) capacity: the request rate the server sustains within the SLA (TTFT p99 and TPOT p99 gates). Not comparable to the closed-loop `corpus` sweep in the throughput test. Requires the server from the throughput test to be running. Uses the `chat_terse` profile; read the achieved request-rate curve, not just the pass/fail line.
+
+1. (Optional) Dry-run the open-loop latency test.
+   ```bash
+   ./vllm-recipes/gemma4-e4b/fp8-p5.4xlarge-fp8kv-attn-triton-server-qps.sh --dry-run
+   ```
+
+2. (Optional) Run the open-loop latency test.
+   ```bash
+   ./vllm-recipes/gemma4-e4b/fp8-p5.4xlarge-fp8kv-attn-triton-server-qps.sh
    ```
 
 ## Tear down

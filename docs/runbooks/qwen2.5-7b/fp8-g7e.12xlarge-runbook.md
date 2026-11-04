@@ -99,7 +99,7 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --dry-run
    ```
 
-9. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
+9. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. Each rep takes about an hour, so use `--reps 1` to run faster. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
 
    ```bash
    eks-bench measure \
@@ -111,6 +111,20 @@ Create the following in the namespace you deploy into. Secrets and ConfigMaps ar
        --tokenizer Qwen/Qwen2.5-7B-Instruct \
        --out-dir docs/results \
        --reps 3
+   ```
+
+## Latency test
+
+Open-loop (Poisson arrivals) capacity: the request rate the server sustains within the SLA (TTFT p99 and TPOT p99 gates). Not comparable to the closed-loop `corpus` sweep. Requires the model server from the Quickstart to be running. Uses the `legacy_corpus` profile; read the achieved request-rate curve, not just the pass/fail line.
+
+1. (Optional) Dry-run the open-loop latency test.
+   ```bash
+   ./vllm-recipes/qwen2.5-7b/fp8-g7e.12xlarge-server-qps.sh --dry-run
+   ```
+
+2. (Optional) Run the open-loop latency test.
+   ```bash
+   ./vllm-recipes/qwen2.5-7b/fp8-g7e.12xlarge-server-qps.sh
    ```
 
 ## Tear down
