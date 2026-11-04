@@ -104,7 +104,7 @@ Complete the following tasks before you perform the steps in this runbook.
        --dry-run
    ```
 
-5. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
+5. Run the benchmark in-cluster. If needed, repeat per protocol, changing `--protocol` and `--profile`. Each rep takes about an hour, so use `--reps 1` to run faster. For CLI configurations, see [`docs/guides/REFERENCE.md`](../../guides/REFERENCE.md#measure-flags).
    ```bash
    eks-bench measure \
        --context "$EKS_CLUSTER_NAME" --namespace "$NAMESPACE" \
