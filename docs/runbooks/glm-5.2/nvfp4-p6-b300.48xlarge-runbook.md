@@ -118,6 +118,20 @@ Complete the following tasks before you perform the steps in this runbook.
        --reps 3
    ```
 
+## Latency test
+
+Open-loop (Poisson arrivals) capacity: the request rate the server sustains within the SLA (TTFT p99 and TPOT p99 gates). Not comparable to the closed-loop `corpus` sweep. Requires the model server from the Quickstart to be running. Uses the `legacy_corpus` profile; read the achieved request-rate curve, not just the pass/fail line.
+
+1. (Optional) Dry-run the open-loop latency test.
+   ```bash
+   ./vllm-recipes/glm-5.2/nvfp4-p6-b300.48xlarge-server-qps.sh --dry-run
+   ```
+
+2. (Optional) Run the open-loop latency test.
+   ```bash
+   ./vllm-recipes/glm-5.2/nvfp4-p6-b300.48xlarge-server-qps.sh
+   ```
+
 ## Tear down
 
 ```bash
